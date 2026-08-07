@@ -66,7 +66,8 @@ Single-file Node entry point for the `tell` binary (CJS bundle, `#!/usr/bin/env 
 **Security**: `isHighRiskScript()` blocks patterns like `sudo`, `rm -rf`, `dd of=`, `curl|sh`, `mkfs`, writes to system paths (`/etc`, `/boot`, `/usr`, systemd units), crontab manipulation, etc. Execution timeout is 120s.
 
 Files:
-- `src/Tell.ts` — CLI: commander, stdin, exec, confirm/high-risk, contexto/logs, loop chain, system prompt, main
+- `src/Tell.ts` — CLI: commander, stdin, exec, confirm/high-risk, context/logs, loop chain, main
+- `src/systemPrompt.ts` — the `<RUN>`/injection-policy execution system prompt (`get_system_prompt()`), with `PromptOptions`
 - `src/env.ts` — Node-only: reads `process.env` + `~/.config/<vendor>.token` files, assembles the `SDKConfig` passed to `create_ask_ai()`
 
 ### Model alias conventions
