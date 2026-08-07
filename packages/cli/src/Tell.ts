@@ -14,6 +14,7 @@ import {
   strip_run_tags,
   strip_think_tags,
   summarize_context,
+  tell,
 } from '@tell-ai/sdk';
 import { Command } from 'commander';
 import { load_sdk_config } from './env';
@@ -469,9 +470,10 @@ async function run_scripts(scripts: string[], yes: boolean, execEnabled: boolean
 async function tell_silently(ai: AskInstance, message: string, options: PromptOptions = {}): Promise<string> {
   process.stderr.write('\x1b[2mThinking...\x1b[0m');
   try {
-    return await ai.ask(message, {
+    return await tell(message, {
+      ask: ai,
+      raw: true,
       system: get_system_prompt(options),
-      stream: false,
     });
   } finally {
     process.stderr.write('\r\x1b[K');

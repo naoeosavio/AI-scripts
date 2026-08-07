@@ -320,7 +320,11 @@ async function handle_cerebras(
 ): Promise<ModelHandle> {
   if (!CEREBRAS) {
     const api_key = get_api_key('cerebras', config);
-    CEREBRAS = createCerebras({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.cerebras;
+    CEREBRAS = createCerebras({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: CEREBRAS(model), reasoning, fast };
 }
@@ -333,7 +337,11 @@ async function handle_open_ai(
 ): Promise<ModelHandle> {
   if (!OPENAI) {
     const api_key = get_api_key('openai', config);
-    OPENAI = createOpenAI({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.openai;
+    OPENAI = createOpenAI({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: OPENAI(model), reasoning, fast };
 }
@@ -346,7 +354,11 @@ async function handle_anthropic(
 ): Promise<ModelHandle> {
   if (!ANTHROPIC) {
     const api_key = get_api_key('anthropic', config);
-    ANTHROPIC = createAnthropic({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.anthropic;
+    ANTHROPIC = createAnthropic({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: ANTHROPIC(model), reasoning, fast };
 }
@@ -354,7 +366,10 @@ async function handle_anthropic(
 async function handle_google(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
   if (!GOOGLE) {
     const api_key = get_api_key('google', config);
-    GOOGLE = api_key ? createGoogleGenerativeAI({ apiKey: api_key }) : createGoogleGenerativeAI();
+    const base_url = config.urls.google;
+    GOOGLE = api_key
+      ? createGoogleGenerativeAI({ apiKey: api_key, ...(base_url ? { baseURL: base_url } : {}) })
+      : createGoogleGenerativeAI({ ...(base_url ? { baseURL: base_url } : {}) });
   }
   return { model: GOOGLE(model), reasoning, fast };
 }
@@ -362,7 +377,11 @@ async function handle_google(model: string, reasoning: string, fast: boolean, co
 async function handle_xai(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
   if (!XAI) {
     const api_key = get_api_key('xai', config);
-    XAI = createXai({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.xai;
+    XAI = createXai({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: XAI(model), reasoning, fast };
 }
@@ -375,7 +394,11 @@ async function handle_deepseek(
 ): Promise<ModelHandle> {
   if (!DEEPSEEK) {
     const api_key = get_api_key('deepseek', config);
-    DEEPSEEK = createDeepSeek({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.deepseek;
+    DEEPSEEK = createDeepSeek({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: DEEPSEEK(model), reasoning, fast };
 }
@@ -388,7 +411,11 @@ async function handle_fireworks(
 ): Promise<ModelHandle> {
   if (!FIREWORKS) {
     const api_key = get_api_key('fireworks', config);
-    FIREWORKS = createFireworks({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.fireworks;
+    FIREWORKS = createFireworks({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: FIREWORKS(model), reasoning, fast };
 }
@@ -401,7 +428,11 @@ async function handle_moonshot_ai(
 ): Promise<ModelHandle> {
   if (!MOONSHOTAI) {
     const api_key = get_api_key('moonshotai', config);
-    MOONSHOTAI = createMoonshotAI({ ...(api_key ? { apiKey: api_key } : {}) });
+    const base_url = config.urls.moonshotai;
+    MOONSHOTAI = createMoonshotAI({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   const reasoning_effort = reasoning !== 'none' ? 'max' : undefined;
   return {
