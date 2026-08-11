@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>tell web — demo</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #111; color: #ddd; line-height: 1.5;
+    }
+    h1 { font-size: 16px; margin: 0 0 16px; }
+    .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap; }
+    label { font-size: 12px; color: #888; }
+    select, input, textarea, button {
+      background: #1c1c1c; border: 1px solid #333; color: #ddd;
+      padding: 8px; border-radius: 6px; font: inherit; font-size: 13px;
+    }
+    input[type="password"] { width: 380px; max-width: 100%; }
+    textarea { width: 100%; min-height: 90px; resize: vertical; }
+    button { cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: wait; }
+    #output { margin-top: 16px; white-space: pre-wrap; }
+    pre {
+      background: #1c1c1c; border: 1px solid #333; border-radius: 6px;
+      padding: 12px; overflow-x: auto; font-size: 13px;
+    }
+    .err { color: #f77; }
+    .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>tell web — tell() without command execution</h1>
+
+  <div class="row">
+    <label>Model</label>
+    <select id="model"></select>
+    <label>API key</label>
+    <input id="key" type="password" placeholder="your key (stays in your browser)" autocomplete="off" />
+    <label>Custom URL (proxy)</label>
+    <input id="url" type="text" placeholder="e.g. http://localhost:3000/openai" autocomplete="off" />
+  </div>
+
+  <textarea id="prompt" placeholder="Ask anything..."></textarea>
+  <div class="row" style="margin-top: 8px">
+    <button id="send">Send</button>
+    <span id="status" class="hint"></span>
+  </div>
+  <div class="hint">
+    Direct mode: Gemini/OpenRouter/Fireworks/Cerebras accept CORS — fill in your browser key.
+    <br />
+    Proxy mode (key stays on the server): run <code>bun examples/web/proxy.ts</code>, open this page at
+    http://localhost:3000/ and fill "Custom URL" with e.g. http://localhost:3000/google.
+    For Google the "proxy" placeholder is used automatically; other vendors accept the real key in the field.
+  </div>
+
+  <div id="output"></div>
+
+  <!-- <script src="./browser-global.global.js"></script>
+  <script>
+    const { tell, MODELS, get_system_prompt } = globalThis.TellSDK; -->
+  <script type="module">
+    import { tell, MODELS, get_system_prompt } from './browser.js';
+
+    const $ = (id) => document.getElementById(id);
+    const VENDORS = ['openai', 'anthropic', 'google', 'xai', 'deepseek', 'fireworks', 'cerebras', 'moonshotai', 'openrouter'];
+
+    const select = $('model');
+    for (const [alias, spec] of Object.entries(MODELS)) {
+      const option = document.createElement('option');
+      option.value = alias;
+      option.textContent = `${alias} — ${spec}`;
+      select.append(option);
+    }
+    select.value = 'g';
+    const vendor_of = (alias) => (MODELS[alias] ?? alias).split(':')[0];
+
+    const keyInput = $('key');
+    const urlInput = $('url');
+    const saved_keys = JSON.parse(localStorage.getItem('tell.web.keys') ?? '{}');
+    const saved_urls = JSON.parse(localStorage.getItem('tell.web.urls') ?? '{}');
+    keyInput.value = saved_keys[vendor_of(select.value)] ?? '';
+    urlInput.value = saved_urls[vendor_of(select.value)] ?? '';
+    keyInput.addEventListener('input', () => {
+      saved_keys[vendor_of(select.value)] = keyInput.value;
+      localStorage.setItem('tell.web.keys', JSON.stringify(saved_keys));
+    });
+    urlInput.addEventListener('input', () => {
+      saved_urls[vendor_of(select.value)] = urlInput.value;
+      localStorage.setItem('tell.web.urls', JSON.stringify(saved_urls));
+    });
+    select.addEventListener('change', () => {
+      keyInput.value = saved_keys[vendor_of(select.value)] ?? '';
+      urlInput.value = saved_urls[vendor_of(select.value)] ?? '';
+    });
+
+    const status = $('status');
+    const send = $('send');
+    send.addEventListener('click', async () => {
+      const prompt = $('prompt').value.trim();
+      if (!prompt) return;
+      const output = $('output');
+      output.textContent = '';
+      send.disabled = true;
+      status.textContent = 'thinking...';
+      try {
+        const key = keyInput.value || (urlInput.value && vendor_of(select.value) === 'google' ? 'proxy' : undefined);
+        const answer = await tell(prompt, {
+          model: select.value,
+          keys: { [vendor_of(select.value)]: key },
+          urls: { [vendor_of(select.value)]: urlInput.value || undefined },
+          platform: `web (${navigator.userAgent.split(')')[0]})`,
+        });
+        output.append(render_answer(answer));
+        status.textContent = '';
+      } catch (error) {
+        status.textContent = '';
+        output.append(render_error(error));
+      } finally {
+        send.disabled = false;
+      }
+    });
+
+    function render_answer(text) {
+      const container = document.createElement('div');
+      let rest = text;
+      while (rest) {
+        const match = /```(\w*)\n?([\s\S]*?)```/.exec(rest);
+        if (!match) {
+          container.append(document.createTextNode(rest));
+          break;
+        }
+        container.append(document.createTextNode(rest.slice(0, match.index)));
+        const pre = document.createElement('pre');
+        pre.textContent = match[2];
+        container.append(pre);
+        rest = rest.slice(match.index + match[0].length);
+      }
+      return container;
+    }
+
+    function render_error(error) {
+      const div = document.createElement('div');
+      div.className = 'err';
+      div.textContent = `Error: ${error?.message ?? String(error)}`;
+      return div;
+    }
+
+    window.tell = tell;
+    window.get_system_prompt = get_system_prompt;
+  </script>
+</body>
+</html>
