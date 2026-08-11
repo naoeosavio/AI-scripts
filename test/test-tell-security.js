@@ -90,6 +90,9 @@ async function runTell(args, response, opts = {}) {
     if (name === './env') {
       return { load_sdk_config: async () => ({ keys: {}, urls: {} }) };
     }
+    if (name === './systemPrompt') {
+      return { get_system_prompt: (options) => sdk.get_system_prompt(options) };
+    }
     if (name === 'child_process' || name === 'node:child_process') return { exec: mockExec };
     if (name === 'os' || name === 'node:os') return { ...require('node:os'), homedir: () => home };
     return require(name);
