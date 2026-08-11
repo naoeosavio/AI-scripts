@@ -2,7 +2,7 @@
   "name": "@tell-ai/sdk",
   "version": "0.1.0",
   "description": "Browser-safe AI provider layer for tell-ai: model resolution, vendor dispatch, RUN/think tag handling and context summarization",
-  "license": "GPL-3.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/naoeosavio/Tell-ai.git"
