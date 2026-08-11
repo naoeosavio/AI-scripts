@@ -13,16 +13,16 @@ This file provides guidance to AI when working with code in this repository.
 All commands run from the root and delegate to the packages:
 
 ```bash
-npm run build          # builds @tell-ai/sdk (ESM+CJS+dts) then tell-ai (minified CJS, bun shebang)
+npm run build          # builds @tell-ai/sdk (ESM+CJS+dts + 2 browser bundles) then tell-ai (minified CJS, bun shebang)
 npm run lint           # tsc --noEmit in both packages (type-check only)
 npm run format         # biome check --write packages/  (auto-fix formatting)
-npm run check:format   # biome check packages/  (check only)
+npm run check          # biome check packages/  (check only)
 npm test               # alias for test:security
 npm run test:security  # build the SDK, then node test/test-tell-security.js
 npm run ci             # build + lint + format check + test (runs in order)
 ```
 
-TypeScript is checked with `tsc` but bundled with `tsup` (ESBuild). Entry points: `packages/sdk/src/index.ts` → `packages/sdk/dist/` and `packages/cli/src/Tell.ts` → `packages/cli/dist/Tell.js`.
+TypeScript is checked with `tsc` but bundled with `tsup` (ESBuild). Entry points: `packages/sdk/src/index.ts` → `packages/sdk/dist/` and `packages/cli/src/Tell.ts` → `packages/cli/dist/Tell.js`. The SDK build also emits two browser bundles from `src/browser.ts` + `src/browser-global.ts`. After building, sanity-check them with `grep -cE '^import ' packages/sdk/dist/browser*.js` — must be `0` (self-contained; bare imports/dynamic `require` break the browser).
 
 ## Architecture
 
@@ -40,18 +40,30 @@ The codebase has three layers:
 Browser-safe AI provider layer: **zero `node:*` imports, zero `process.env` reads**. All environment concerns are injected via `SDKConfig` (`{ keys, urls }`, both partial). Built by tsup to ESM + CJS + `.d.ts`/`.d.cts`.
 
 Key exports from `packages/sdk/src/index.ts`:
-- **`MODELS`** — Record of 30+ short aliases (e.g., `g` → `openai:gpt-5.5:medium`)
+- **`MODELS`** — Record of 70+ short aliases (e.g., `g` → `openai:gpt-5.6-sol:medium`)
 - **`resolve_model_spec(model)`** — Parses `vendor:model:thinking` specs, handles dot-prefix fast mode
 - **`create_ask_ai(spec, config)`** — Returns an `AskInstance` with an `ask()` method backed by `generateText()`
+- **`tell(message, options)`** — `tell --no-exec` as a function: builds the system prompt (execution disabled by default), calls the model, returns the answer with `<think>`/`<RUN>` stripped. `TellOptions`: `model?`, `keys?`, `urls?`, `exec?`, `cwd?`, `platform?`, `context?`, `system?`, `ask?` (reuse an existing `AskInstance`), `raw?` (skip stripping, used by the CLI's `tell_silently`)
+- **`get_system_prompt(options)`** — Shared tell system prompt with `PromptOptions { chain?, exec?, cwd?, platform? }`; `exec: false` emits the no-command-execution variant used by `tell()` in the browser
 - **`extract_runs`, `strip_run_tags`, `strip_think_tags`, `strip_markdown_code_blocks`** — `<RUN>`/`<think>`/markdown handling
 - **`summarize_context(ai, text)`** — AI-driven conversation history compression
 
 Files:
-- `src/index.ts` — `create_ask_ai()` factory, public exports
-- `src/models.ts` — `MODELS` table, alias resolution, provider instances, injected key/url lookup
+- `src/index.ts` — public exports
+- `src/browser.ts` — browser ESM entry (re-exports the browser-safe API)
+- `src/browser-global.ts` — IIFE entry: assigns `globalThis.TellSDK`
+- `src/shims/node.cjs` — CJS stubs for `path`/`fs`/`os` aliased into the browser bundles (see below)
+- `src/ask.ts` — `create_ask_ai()` factory, `AskInstance`
+- `src/models.ts` — `MODELS` table, alias resolution, provider instances, injected key/url lookup (all providers honor `config.urls` via `baseURL`)
 - `src/config.ts` — `SDKConfig`/`SDKKeys`/`SDKUrls` types (partial, injected)
-- `src/tags.ts` — pure `<RUN>`/`<think>`/code-block strip & extract functions
+- `src/systemPrompt.ts` — shared exec/no-exec system prompt (`get_system_prompt()`), `PromptOptions`
+- `src/tell.ts` — `tell()` one-shot no-exec function
+- `src/tags.ts` — pure `<RUN>`/` thinking`/code-block strip & extract functions
 - `src/summarize.ts` — `summarize_context`
+
+Builds: tsup emits ESM + CJS + dts (`dist/`) plus two self-contained browser bundles: `dist/browser.js` (ESM, exported as `@tell-ai/sdk/browser`) and `dist/browser-global.global.js` (IIFE, `@tell-ai/sdk/browser-global`, defines `globalThis.TellSDK`, listed in `sideEffects`; also the `unpkg`/`jsdelivr` targets).
+
+To keep the browser bundles self-contained, `tsup.config.ts` lists `ai` + all `@ai-sdk/*` providers in `noExternal` **explicitly** — a `'@ai-sdk/*'` glob does not match scoped packages and silently leaves bare imports. `@vercel/oidc` (a transitive dep of `ai`) requires `path`/`fs`/`os` and touches `process` at module scope, so those builtins are aliased to `src/shims/node.cjs` and a `var process = { version:'', env:{}, platform:'browser' }` banner is prepended. Full variant comparison: `docs/sdk/imports.md`.
 
 ### CLI: `packages/cli` (`tell-ai` — ~500 lines)
 
@@ -72,12 +84,12 @@ Files:
 
 ### Model alias conventions
 
-- **First character(s)** = vendor+model: `g` = GPT-5.5, `o` = Claude Opus 4.8, `s` = Claude Sonnet 4.6, `f` = Claude Fable 5, `l` = Gemini 3.1 Flash, `d` = DeepSeek V4 Pro, `df` = DeepSeek V4 Flash
+- **First character(s)** = vendor+model: `g` = GPT-5.6 Sol, `o` = Claude Opus 5, `s` = Claude Sonnet 5, `f` = Claude Fable 5, `l` = Gemini 3.6 Flash, `j` = Gemini 3.5 Flash Lite, `d` = DeepSeek V4 Flash
 - **Suffix** = thinking budget: `--` none, `-` low, (none) medium, `+` high, `++` xhigh/max
 - **Dot prefix** (`.g`) = fast mode
 - **Self-hosted**: `q` = local `/root/model`, `v` = vast `/root/model`
 
-Canonical format: `vendor:official_model_name:thinking_budget` (e.g., `openai:gpt-5.5:high`).
+Canonical format: `vendor:official_model_name:thinking_budget` (e.g., `openai:gpt-5.6-sol:high`).
 
 ## Dependencies
 
@@ -99,4 +111,7 @@ API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OP
 
 ## Related docs
 
+- `docs/sdk/imports.md` — SDK build variants (Node ESM/CJS vs browser ESM vs IIFE global)
+- `docs/usage.md`, `docs/integrations.md` — CLI usage and integrations
+- `examples/web/` — browser demo: `proxy.ts` (API proxy + static serving) + `index.html` (uses the IIFE `TellSDK` build) + `demo.ts` (end-to-end walkthrough)
 - `CHANGELOG_AI.md` — Version history

@@ -6,6 +6,7 @@
 !examples/**/*
 !examples/
 !docs/examples/*
+!docs/**/*
 !docs/*
 !docs/
 !test/*
