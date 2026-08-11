@@ -3,6 +3,7 @@
 
 # Re-include distribution output and metadata
 !examples/*
+!examples/**/*
 !examples/
 !docs/examples/*
 !docs/*
@@ -21,6 +22,8 @@
 !packages/
 !packages/*/
 !packages/**/src/
+!packages/**/src/**
+!packages/**/src/**/*
 !packages/**/src/*
 !packages/*/package.json
 !packages/*/tsconfig.json

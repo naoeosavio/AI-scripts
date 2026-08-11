@@ -22,7 +22,30 @@ export default defineConfig([
     treeshake: true,
     minify: true,
     target: 'es2020',
-    noExternal: ['ai', '@ai-sdk/*'],
+    noExternal: [
+      'ai',
+      '@ai-sdk/anthropic',
+      '@ai-sdk/cerebras',
+      '@ai-sdk/deepseek',
+      '@ai-sdk/fireworks',
+      '@ai-sdk/google',
+      '@ai-sdk/moonshotai',
+      '@ai-sdk/openai',
+      '@ai-sdk/xai',
+    ],
+    esbuildOptions(options) {
+      options.alias = {
+        path: './src/shims/node.cjs',
+        fs: './src/shims/node.cjs',
+        os: './src/shims/node.cjs',
+        'node:path': './src/shims/node.cjs',
+        'node:fs': './src/shims/node.cjs',
+        'node:os': './src/shims/node.cjs',
+      };
+    },
+    banner: {
+      js: 'var process={version:"",env:{},platform:"browser"};',
+    },
   },
   {
     entry: { 'browser-global': 'src/browser-global.ts' },
@@ -35,6 +58,29 @@ export default defineConfig([
     treeshake: true,
     minify: true,
     target: 'es2020',
-    noExternal: ['ai', '@ai-sdk/*'],
+    noExternal: [
+      'ai',
+      '@ai-sdk/anthropic',
+      '@ai-sdk/cerebras',
+      '@ai-sdk/deepseek',
+      '@ai-sdk/fireworks',
+      '@ai-sdk/google',
+      '@ai-sdk/moonshotai',
+      '@ai-sdk/openai',
+      '@ai-sdk/xai',
+    ],
+    esbuildOptions(options) {
+      options.alias = {
+        path: './src/shims/node.cjs',
+        fs: './src/shims/node.cjs',
+        os: './src/shims/node.cjs',
+        'node:path': './src/shims/node.cjs',
+        'node:fs': './src/shims/node.cjs',
+        'node:os': './src/shims/node.cjs',
+      };
+    },
+    banner: {
+      js: 'var process={version:"",env:{},platform:"browser"};',
+    },
   },
 ]);
