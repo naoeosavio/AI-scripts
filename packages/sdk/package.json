@@ -27,7 +27,10 @@
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
+  "browser": "./dist/browser.js",
   "types": "./dist/index.d.ts",
+  "unpkg": "./dist/browser-global.global.js",
+  "jsdelivr": "./dist/browser-global.global.js",
   "exports": {
     ".": {
       "import": {
@@ -38,10 +41,18 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./browser": {
+      "import": {
+        "default": "./dist/browser.js"
+      }
+    },
+    "./browser-global": {
+      "default": "./dist/browser-global.global.js"
     }
   },
   "files": ["dist"],
-  "sideEffects": false,
+  "sideEffects": ["./dist/browser-global.global.js"],
   "scripts": {
     "build": "tsup",
     "lint": "tsc -p tsconfig.json",
