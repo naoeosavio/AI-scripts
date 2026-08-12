@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0 — 2026-08-11
+
+### Features
+- Browser bundles are now truly self-contained and browser-loadable: `dist/browser.js` (ESM, `@tell-ai/sdk/browser`) and `dist/browser-global.global.js` (IIFE, `@tell-ai/sdk/browser-global`, assigns `globalThis.TellSDK`, listed in `sideEffects`, also the `unpkg`/`jsdelivr` targets).
+- `tsup.config.ts` now lists `ai` and every `@ai-sdk/*` provider in `noExternal` explicitly — a `'@ai-sdk/*'` glob does not match scoped packages and previously produced bundles with bare imports that browsers cannot resolve.
+- Node builtins (`path`, `fs`, `os`) pulled in by `@vercel/oidc` (transitive dependency of `ai`) are aliased at build time to `src/shims/node.cjs`, and a `var process = { version:'', env:{}, platform:'browser' }` banner covers its module-scope user-agent construction. The OIDC token helpers are never exercised in the browser, but they used to crash bundle initialization (`Dynamic require of "path"`).
+- Added `examples/web/` demo (served by the Bun `proxy.ts`): a no-build page using the IIFE `TellSDK` build, Google auth via the `x-goog-api-key` header (replacing `Authorization: Bearer`), server-side key injection with a `proxy` placeholder, and a `demo.ts` end-to-end walkthrough.
+- License changed from GPL-3.0 to MIT.
+
+### Documentation
+- New `docs/sdk/imports.md` comparing the three build variants (Node ESM/CJS, browser ESM, browser global IIFE) with loading and tree-shaking guidance.
+
+---
+
 ## 0.1.1 — 2026-08-07
 
 ### Features
