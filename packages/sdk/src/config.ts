@@ -8,6 +8,7 @@ export type SDKKeys = {
   cerebras?: string | undefined;
   moonshotai?: string | undefined;
   openrouter?: string | undefined;
+  alibaba?: string | undefined;
 };
 
 export type SDKUrls = {
@@ -22,6 +23,7 @@ export type SDKUrls = {
   openrouter?: string | undefined;
   vast?: string | undefined;
   local?: string | undefined;
+  alibaba?: string | undefined;
 };
 
 export interface SDKConfig {

@@ -95,6 +95,13 @@ export const MODELS: Record<string, string> = {
 
   v: 'vast:/root/model:none',
 
+  'a--': 'alibaba:qwen3.8-max:none',
+  'a-': 'alibaba:qwen3.8-max:low',
+  a: 'alibaba:qwen3.8-max:medium',
+  'a+': 'alibaba:qwen3.8-max:high',
+  'a++': 'alibaba:qwen3.8-max:xhigh',
+  A: 'alibaba:qwen3.8-max:high',
+
   'd-': 'deepseek:deepseek-v4-flash:none',
   d: 'deepseek:deepseek-v4-flash:high',
   'd+': 'deepseek:deepseek-v4-flash:max',
@@ -137,6 +144,7 @@ const SUPPORTED_VENDORS = new Set([
   'local',
   'fireworks',
   'deepseek',
+  'alibaba',
 ]);
 
 const VENDOR_KEY: Record<string, keyof SDKKeys> = {
@@ -149,6 +157,7 @@ const VENDOR_KEY: Record<string, keyof SDKKeys> = {
   cerebras: 'cerebras',
   moonshotai: 'moonshotai',
   openrouter: 'openrouter',
+  alibaba: 'alibaba',
 };
 
 const CEREBRAS_MODELS = new Set([
@@ -169,6 +178,7 @@ function get_api_key(vendor: string, config: SDKConfig): string | undefined {
 
 function infer_vendor(model: string): string {
   const normalized = model.toLowerCase();
+  if (normalized.startsWith('alibaba/')) return 'alibaba';
   if (normalized.startsWith('gpt') || normalized.startsWith('o')) return 'openai';
   if (normalized.startsWith('claude')) return 'anthropic';
   if (normalized.startsWith('gemini')) return 'google';
@@ -187,6 +197,7 @@ let FIREWORKS: any = null;
 let CEREBRAS: any = null;
 let MOONSHOTAI: any = null;
 let OPENROUTER: any = null;
+let ALIBABA: any = null;
 const VAST_PROVIDERS: Record<string, any> = {};
 const LOCAL_PROVIDERS: Record<string, any> = {};
 
@@ -452,10 +463,27 @@ async function handle_openrouter(
   const provider = await get_openrouter_provider(config);
   return { model: provider(model), reasoning, fast };
 }
+async function handle_alibaba(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
+  if (!ALIBABA) {
+    const api_key = get_api_key('alibaba', config);
+    const base_url = config.urls.alibaba;
+    ALIBABA = createOpenAI({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+      name: 'alibaba',
+    });
+  }
+  return { model: ALIBABA(model.replace(/^alibaba\//i, '')), reasoning, fast };
+}
 
 async function handle_vast(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
   const provider = await get_vast_provider(config.urls.vast ?? '');
-  return { model: provider.chat(model), reasoning, fast };
+  return { model: provider(model), reasoning, fast };
 }
 
 async function handle_local(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
@@ -472,6 +500,7 @@ const VENDOR_HANDLERS: Record<string, (m: string, r: string, f: boolean, config:
   fireworks: handle_fireworks,
   moonshotai: handle_moonshot_ai,
   openrouter: handle_openrouter,
+  alibaba: handle_alibaba,
   vast: handle_vast,
   local: handle_local,
 };
