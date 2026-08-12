@@ -6,7 +6,7 @@ Prerequisites:
 
 ```bash
 npm install -g tell-ai
-# API key configured (see ../README.md#api-keys)
+# API key configured (see ../../packages/cli/README.md#api-keys)
 command -v jq   # required for ai-pr.sh and ai-release.sh
 command -v gh   # required for ai-pr.sh and ai-release.sh (GitHub CLI)
 ```

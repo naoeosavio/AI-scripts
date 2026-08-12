@@ -20,7 +20,7 @@
     "url": "git+https://github.com/naoeosavio/Tell-ai.git"
   },
   "author": "it is not savio",
-  "license": "GPL-3.0",
+  "license": "MIT",
   "devDependencies": {
     "@biomejs/biome": "2.2.6",
     "@types/node": "26.1.0",

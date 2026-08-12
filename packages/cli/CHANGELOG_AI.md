@@ -3,14 +3,14 @@
 ## v0.5.0 — 2026-08-05
 
 ### Features
-- Split the codebase into a bun workspaces monorepo with two packages: `@tell-ai/sdk` (browser-safe AI library) and `tell-ai` (the `tell` CLI, now 0.5.0).
-- The SDK receives all environment concerns via an injected `SDKConfig` (`keys`/`urls`, both partial); it has zero `node:*` imports and zero `process.env` reads, so it runs in browsers, Node, and Bun without changes.
+- Split the codebase into a bun workspaces monorepo; `tell-ai` is now the CLI package (0.5.0), with model resolution, tag handling and summarization moved into the new `@tell-ai/sdk` library.
 - Environment resolution (env vars + `~/.config/<vendor>.token` fallback) now lives exclusively in the CLI (`packages/cli/src/env.ts`), which assembles the `SDKConfig` for `create_ask_ai(spec, config)`.
 
 ### Refactors
-- Moved `MODELS`, `resolve_model_spec`, provider dispatch, `<RUN>`/`<think>`/markdown tag functions, and `summarize_context` into the SDK, exported from `packages/sdk/src/index.ts`.
-- Extracted the strict TypeScript configuration into `tsconfig.base.json`, extended by both packages; the SDK type-checks without `@types/node` to enforce browser safety.
+- `tell_silently` now delegates to the SDK `tell()` (with `ask` + `raw`), making `tell()` the single implementation of "call the model with the tell system prompt" shared by CLI and web.
+- `packages/cli/src/systemPrompt.ts` is now a thin wrapper around the SDK prompt, passing `process.cwd()` and platform info; CLI behavior unchanged.
 - CLI package builds to a minified CJS bundle (`dist/Tell.js`, `#!/usr/bin/env node`) with `commander`; the SDK builds to ESM + CJS + declarations via tsup.
+- Extracted the strict TypeScript configuration into `tsconfig.base.json`, extended by both packages.
 - Root package is now a private workspace that orchestrates everything with `bun run --filter`.
 - Removed `gpt-tokenizer` usage and the stale root `src/` layout (`src/ai`, `src/config`, `src/summarize.ts`, `src/Tell.ts`).
 
@@ -25,8 +25,8 @@
 ## v0.4.2 — 2026-07-25
 
 ### Features
-- Include reasoning text in AI responses, wrapping reasoning steps in `<think>` tags when present.
-- Expand context buffer capacity to 256 MiB and filter internal reasoning blocks (`<think>` tags) from conversation history.
+- Include reasoning text in AI responses, wrapping reasoning steps in ` thinking` tags when present.
+- Expand context buffer capacity to 256 MiB and filter internal reasoning blocks (` thinking` tags) from conversation history.
 - Implement incremental context saving to persist state during long-running conversation loops, with periodic file writes.
 - Replace naive context truncation with AI-driven summarization when conversation history exceeds token limits, preserving critical information with fallback to truncation.
 
@@ -63,7 +63,7 @@
 
 - Added command confirmation timeout: prompts auto-reject after a configurable period (`EXEC_TIMEOUT`), preventing indefinite hangs.
 - Ensured the assistant's visible response is always printed when the chain limit is reached or auto-continue is disabled.
-- Model responses now strip `<think>` blocks before command extraction and output, preventing commands inside think tags from being executed.
+- Model responses now strip ` thinking` blocks before command extraction and output, preventing commands inside think tags from being executed.
 - Improved model selection for Vast and Local providers by consistently using `provider.chat(model)`; added response filtering for run command extraction.
 
 ### Fixes

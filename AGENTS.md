@@ -114,4 +114,4 @@ API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OP
 - `docs/sdk/imports.md` — SDK build variants (Node ESM/CJS vs browser ESM vs IIFE global)
 - `docs/usage.md`, `docs/integrations.md` — CLI usage and integrations
 - `examples/web/` — browser demo: `proxy.ts` (API proxy + static serving) + `index.html` (uses the IIFE `TellSDK` build) + `demo.ts` (end-to-end walkthrough)
-- `CHANGELOG_AI.md` — Version history
+- `packages/sdk/CHANGELOG_AI.md`, `packages/cli/CHANGELOG_AI.md` — Version history per package
