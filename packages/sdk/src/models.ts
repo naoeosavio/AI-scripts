@@ -1,6 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createCerebras } from '@ai-sdk/cerebras';
 import { createDeepSeek } from '@ai-sdk/deepseek';
@@ -9,7 +6,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createMoonshotAI } from '@ai-sdk/moonshotai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createXai } from '@ai-sdk/xai';
-import { API_KEYS, API_URLS, type ApiKeys } from '../config/env';
+import type { SDKConfig, SDKKeys } from './config';
 
 export type ThinkingLevel = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
@@ -98,7 +95,11 @@ export const MODELS: Record<string, string> = {
 
   v: 'vast:/root/model:none',
 
+  'a--': 'alibaba:qwen3.8-max:none',
+  'a-': 'alibaba:qwen3.8-max:low',
   a: 'alibaba:qwen3.8-max:medium',
+  'a+': 'alibaba:qwen3.8-max:high',
+  'a++': 'alibaba:qwen3.8-max:xhigh',
   A: 'alibaba:qwen3.8-max:high',
 
   'd-': 'deepseek:deepseek-v4-flash:none',
@@ -146,7 +147,7 @@ const SUPPORTED_VENDORS = new Set([
   'alibaba',
 ]);
 
-const VENDOR_KEY: Record<string, keyof ApiKeys> = {
+const VENDOR_KEY: Record<string, keyof SDKKeys> = {
   openai: 'openai',
   anthropic: 'anthropic',
   google: 'google',
@@ -169,13 +170,9 @@ const CEREBRAS_MODELS = new Set([
   'zai-glm-4.6',
 ]);
 
-async function get_api_key(vendor: string): Promise<string | undefined> {
+function get_api_key(vendor: string, config: SDKConfig): string | undefined {
   const key_name = VENDOR_KEY[vendor];
-  if (key_name && API_KEYS[key_name]) return API_KEYS[key_name];
-  try {
-    const token = (await readFile(join(homedir(), '.config', `${vendor}.token`), 'utf8')).trim();
-    if (token) return token;
-  } catch {}
+  if (key_name) return config.keys[key_name];
   return undefined;
 }
 
@@ -204,12 +201,12 @@ let ALIBABA: any = null;
 const VAST_PROVIDERS: Record<string, any> = {};
 const LOCAL_PROVIDERS: Record<string, any> = {};
 
-async function get_openrouter_provider(): Promise<any> {
+async function get_openrouter_provider(config: SDKConfig): Promise<any> {
   if (OPENROUTER) return OPENROUTER;
-  const api_key = await get_api_key('openrouter');
+  const api_key = get_api_key('openrouter', config);
   OPENROUTER = createOpenAI({
     ...(api_key ? { apiKey: api_key } : {}),
-    baseURL: API_URLS.openrouter,
+    baseURL: config.urls.openrouter ?? '',
     name: 'openrouter',
   });
   return OPENROUTER;
@@ -326,66 +323,127 @@ async function get_local_provider(baseUrl: string): Promise<any> {
   return LOCAL_PROVIDERS[baseUrl];
 }
 
-async function handle_cerebras(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_cerebras(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!CEREBRAS) {
-    const api_key = await get_api_key('cerebras');
-    CEREBRAS = createCerebras({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('cerebras', config);
+    const base_url = config.urls.cerebras;
+    CEREBRAS = createCerebras({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: CEREBRAS(model), reasoning, fast };
 }
 
-async function handle_open_ai(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_open_ai(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!OPENAI) {
-    const api_key = await get_api_key('openai');
-    OPENAI = createOpenAI({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('openai', config);
+    const base_url = config.urls.openai;
+    OPENAI = createOpenAI({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: OPENAI(model), reasoning, fast };
 }
 
-async function handle_anthropic(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_anthropic(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!ANTHROPIC) {
-    const api_key = await get_api_key('anthropic');
-    ANTHROPIC = createAnthropic({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('anthropic', config);
+    const base_url = config.urls.anthropic;
+    ANTHROPIC = createAnthropic({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: ANTHROPIC(model), reasoning, fast };
 }
 
-async function handle_google(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_google(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
   if (!GOOGLE) {
-    const api_key = await get_api_key('google');
-    GOOGLE = api_key ? createGoogleGenerativeAI({ apiKey: api_key }) : createGoogleGenerativeAI();
+    const api_key = get_api_key('google', config);
+    const base_url = config.urls.google;
+    GOOGLE = api_key
+      ? createGoogleGenerativeAI({ apiKey: api_key, ...(base_url ? { baseURL: base_url } : {}) })
+      : createGoogleGenerativeAI({ ...(base_url ? { baseURL: base_url } : {}) });
   }
   return { model: GOOGLE(model), reasoning, fast };
 }
 
-async function handle_xai(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_xai(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
   if (!XAI) {
-    const api_key = await get_api_key('xai');
-    XAI = createXai({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('xai', config);
+    const base_url = config.urls.xai;
+    XAI = createXai({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: XAI(model), reasoning, fast };
 }
 
-async function handle_deepseek(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_deepseek(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!DEEPSEEK) {
-    const api_key = await get_api_key('deepseek');
-    DEEPSEEK = createDeepSeek({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('deepseek', config);
+    const base_url = config.urls.deepseek;
+    DEEPSEEK = createDeepSeek({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: DEEPSEEK(model), reasoning, fast };
 }
 
-async function handle_fireworks(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_fireworks(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!FIREWORKS) {
-    const api_key = await get_api_key('fireworks');
-    FIREWORKS = createFireworks({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('fireworks', config);
+    const base_url = config.urls.fireworks;
+    FIREWORKS = createFireworks({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   return { model: FIREWORKS(model), reasoning, fast };
 }
 
-async function handle_moonshot_ai(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_moonshot_ai(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!MOONSHOTAI) {
-    const api_key = await get_api_key('moonshotai');
-    MOONSHOTAI = createMoonshotAI({ ...(api_key ? { apiKey: api_key } : {}) });
+    const api_key = get_api_key('moonshotai', config);
+    const base_url = config.urls.moonshotai;
+    MOONSHOTAI = createMoonshotAI({
+      ...(api_key ? { apiKey: api_key } : {}),
+      ...(base_url ? { baseURL: base_url } : {}),
+    });
   }
   const reasoning_effort = reasoning !== 'none' ? 'max' : undefined;
   return {
@@ -396,32 +454,44 @@ async function handle_moonshot_ai(model: string, reasoning: string, fast: boolea
   };
 }
 
-async function handle_openrouter(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
-  const provider = await get_openrouter_provider();
+async function handle_openrouter(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
+  const provider = await get_openrouter_provider(config);
   return { model: provider(model), reasoning, fast };
 }
-async function handle_alibaba(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
+async function handle_alibaba(
+  model: string,
+  reasoning: string,
+  fast: boolean,
+  config: SDKConfig,
+): Promise<ModelHandle> {
   if (!ALIBABA) {
-    const api_key = await get_api_key('alibaba');
+    const api_key = get_api_key('alibaba', config);
+    const base_url = config.urls.alibaba;
     ALIBABA = createOpenAI({
       ...(api_key ? { apiKey: api_key } : {}),
-      baseURL: API_URLS.alibaba,
+      ...(base_url ? { baseURL: base_url } : {}),
       name: 'alibaba',
     });
   }
   return { model: ALIBABA(model.replace(/^alibaba\//i, '')), reasoning, fast };
 }
-async function handle_vast(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
-  const provider = await get_vast_provider(API_URLS.vast);
+
+async function handle_vast(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
+  const provider = await get_vast_provider(config.urls.vast ?? '');
+  return { model: provider(model), reasoning, fast };
+}
+
+async function handle_local(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
+  const provider = await get_local_provider(config.urls.local ?? '');
   return { model: provider.chat(model), reasoning, fast };
 }
 
-async function handle_local(model: string, reasoning: string, fast: boolean): Promise<ModelHandle> {
-  const provider = await get_local_provider(API_URLS.local);
-  return { model: provider.chat(model), reasoning, fast };
-}
-
-const VENDOR_HANDLERS: Record<string, (m: string, r: string, f: boolean) => Promise<ModelHandle>> = {
+const VENDOR_HANDLERS: Record<string, (m: string, r: string, f: boolean, config: SDKConfig) => Promise<ModelHandle>> = {
   openai: handle_open_ai,
   anthropic: handle_anthropic,
   google: handle_google,
@@ -435,15 +505,15 @@ const VENDOR_HANDLERS: Record<string, (m: string, r: string, f: boolean) => Prom
   local: handle_local,
 };
 
-export async function get_model(spec: string): Promise<ModelHandle> {
+export async function get_model(spec: string, config: SDKConfig): Promise<ModelHandle> {
   const resolved = resolve_model_spec(spec);
   const reasoning = AI_SDK_THINKING[resolved.thinking] ?? 'medium';
 
   if (resolved.vendor === 'openai' && CEREBRAS_MODELS.has(resolved.model)) {
-    return handle_cerebras(resolved.model, reasoning, resolved.fast);
+    return handle_cerebras(resolved.model, reasoning, resolved.fast, config);
   }
 
   const handler = VENDOR_HANDLERS[resolved.vendor];
   if (!handler) throw new Error(`Unsupported vendor: ${resolved.vendor}`);
-  return handler(resolved.model, reasoning, resolved.fast);
+  return handler(resolved.model, reasoning, resolved.fast, config);
 }

@@ -1,0 +1,74 @@
+{
+  "name": "@tell-ai/sdk",
+  "version": "0.1.0",
+  "description": "Browser-safe AI provider layer for tell-ai: model resolution, vendor dispatch, RUN/think tag handling and context summarization",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naoeosavio/Tell-ai.git"
+  },
+  "keywords": [
+    "tell-ai",
+    "ai-sdk",
+    "browser-safe",
+    "llm",
+    "multi-vendor",
+    "model-aliases",
+    "openai",
+    "anthropic",
+    "gemini",
+    "deepseek"
+  ],
+  "author": "it is not savio",
+  "homepage": "https://github.com/naoeosavio/Tell-ai#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "browser": "./dist/browser.js",
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/browser-global.global.js",
+  "jsdelivr": "./dist/browser-global.global.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./browser": {
+      "import": {
+        "default": "./dist/browser.js"
+      }
+    },
+    "./browser-global": {
+      "default": "./dist/browser-global.global.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": ["./dist/browser-global.global.js"],
+  "scripts": {
+    "build": "tsup",
+    "lint": "tsc -p tsconfig.json",
+    "format": "biome check --write src",
+    "check": "biome check src",
+    "ci": "npm run lint && npm run check && npm run build"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.8",
+    "@ai-sdk/cerebras": "^3.0.5",
+    "@ai-sdk/deepseek": "^3.0.5",
+    "@ai-sdk/fireworks": "^3.0.6",
+    "@ai-sdk/google": "^4.0.8",
+    "@ai-sdk/moonshotai": "^3.0.14",
+    "@ai-sdk/openai": "^4.0.8",
+    "@ai-sdk/xai": "^4.0.7",
+    "ai": "^7.0.16"
+  }
+}

@@ -1,15 +1,13 @@
 import { generateText } from 'ai';
-import { get_model, MODELS, type ResolvedModelSpec, resolve_model_spec } from './models';
-
-export type { ResolvedModelSpec };
-export { MODELS, resolve_model_spec };
+import type { SDKConfig } from './config';
+import { get_model } from './models';
 
 export interface AskInstance {
   ask(message: string, options: { system: string; stream: false }): Promise<string>;
 }
 
-export async function create_ask_ai(modelSpec: string): Promise<AskInstance> {
-  const handle = await get_model(modelSpec);
+export async function create_ask_ai(modelSpec: string, config: SDKConfig): Promise<AskInstance> {
+  const handle = await get_model(modelSpec, config);
   const reasoning = handle.fast ? 'none' : handle.reasoning;
 
   return {

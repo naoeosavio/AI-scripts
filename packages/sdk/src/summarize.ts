@@ -1,4 +1,4 @@
-import type { AskInstance } from './ai';
+import type { AskInstance } from './ask';
 
 const SUMMARY_SYSTEM_PROMPT = `You are a conversation summarizer for a terminal assistant. Your job is to compress conversation history while preserving all critical context.
 
