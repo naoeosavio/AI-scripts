@@ -77,19 +77,25 @@ export const MODELS: Record<string, string> = {
   'i+': 'google:gemini-3.1-pro-preview:high',
   I: 'google:gemini-3.1-pro-preview:high',
 
+  'j--': 'google:gemini-3.5-flash-lite:none',
   'j-': 'google:gemini-3.5-flash-lite:low',
   j: 'google:gemini-3.5-flash-lite:medium',
   'j+': 'google:gemini-3.5-flash-lite:high',
   J: 'google:gemini-3.5-flash-lite:high',
 
-  'l-': 'google:gemini-3.6-flash:low',
-  l: 'google:gemini-3.6-flash:medium',
-  'l+': 'google:gemini-3.6-flash:high',
-  L: 'google:gemini-3.6-flash:high',
+  'l--': 'google:gemini-3.7-flash:none',
+  'l-': 'google:gemini-3.7-flash:low',
+  l: 'google:gemini-3.7-flash:medium',
+  'l+': 'google:gemini-3.7-flash:high',
+  'l++': 'google:gemini-3.7-flash:max',
+  L: 'google:gemini-3.7-flash:high',
 
-  'x-': 'xai:grok-4.5:low',
-  x: 'xai:grok-4.5:medium',
-  X: 'xai:grok-4.5:high',
+  'x--': 'xai:grok-4.6:none',
+  'x-': 'xai:grok-4.6:low',
+  x: 'xai:grok-4.6:medium',
+  'x+': 'xai:grok-4.6:high',
+  'x++': 'xai:grok-4.6:xhigh',
+  X: 'xai:grok-4.6:high',
 
   q: 'local:/root/model:none',
 
@@ -102,10 +108,13 @@ export const MODELS: Record<string, string> = {
   'a++': 'alibaba:qwen3.8-max:xhigh',
   A: 'alibaba:qwen3.8-max:high',
 
-  'd-': 'deepseek:deepseek-v4-flash:none',
+  'd--': 'deepseek:deepseek-v4-flash:none',
+  'd-': 'deepseek:deepseek-v4-flash:low',
   d: 'deepseek:deepseek-v4-flash:high',
   'd+': 'deepseek:deepseek-v4-flash:max',
-  'D-': 'deepseek:deepseek-v4-pro:none',
+
+  'D--': 'deepseek:deepseek-v4-pro:none',
+  'D-': 'deepseek:deepseek-v4-pro:low',
   D: 'deepseek:deepseek-v4-pro:high',
   'D+': 'deepseek:deepseek-v4-pro:max',
 
