@@ -11,8 +11,9 @@
     "lint": "bun run --filter @tell-ai/sdk lint && bun run --filter tell-ai lint",
     "format": "biome check --write packages",
     "check": "biome check packages",
-    "test": "bun run test:security",
     "test:security": "bun run --filter @tell-ai/sdk build && node test/test-tell-security.js",
+    "test:context": "bun run --filter @tell-ai/sdk build && node test/test-tell-context.js",
+    "test": "bun run test:security && bun run test:context",
     "ci": "bun run build && bun run lint && bun run check && bun run test"
   },
   "repository": {
@@ -25,6 +26,6 @@
     "@biomejs/biome": "2.2.6",
     "@types/node": "26.1.0",
     "tsup": "8.5.1",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   }
 }
