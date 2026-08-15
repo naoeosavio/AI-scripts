@@ -30,8 +30,10 @@ const MAX_CONTEXT_CHARS = 256 * 1024 * 1024;
 
 type CliOptions = {
   model?: string;
-  context?: boolean | string;
-  createContext?: boolean | string;
+  ctx?: boolean;
+  context?: string;
+  createContext?: boolean;
+  name?: string;
   list?: boolean;
   yes?: boolean;
   chain?: boolean;
@@ -46,7 +48,7 @@ type ContextEntry = { file: string; id: string; mtimeMs: number };
 
 // The resolved plan for how the current invocation should read/write context:
 // - 'none': no context flag was given (legacy one-shot behavior, default context is cleared).
-// - 'default': bare `-c` — the legacy per-directory + model context.
+// - 'default': `--ctx` — the per-directory + model context.
 // - 'existing': `-c <ref>` resolved to an already-saved context (by index, hash prefix, or name).
 // - 'create': `-C` — a brand-new context, empty regardless of any prior content at that path.
 type ContextPlan =
@@ -176,7 +178,7 @@ function named_context_file(name: string): string {
   return path.join(context_dir(), `${name}.txt`);
 }
 
-// Every saved context file, newest first (index 0 == `context@0`,
+// Every saved context file, newest first (index 0 == `@0`,
 // mirroring `git stash@{0}`).
 function list_context_entries(): ContextEntry[] {
   let names: string[] = [];
@@ -226,7 +228,7 @@ function print_context_list(entries: ContextEntry[]): void {
     return;
   }
   const rows = entries.map((entry, index) => ({
-    ref: `context@${index}`,
+    ref: `@${index}`,
     id: short_id(entry.id),
     age: format_age(entry.mtimeMs),
     preview: context_preview(entry.file),
@@ -241,26 +243,22 @@ function print_context_list(entries: ContextEntry[]): void {
 }
 
 // Validates a token as a human-readable context name: no whitespace, a safe
-// filename charset, and not the reserved `context@N` index syntax.
+// filename charset. Ref syntax (`@N`, `#hash`) is excluded by the charset.
 function sanitize_context_name(raw: string): string | null {
   const NAME_MAX_LENGTH = 100;
   const value = raw.trim();
   if (!value || /\s/.test(value)) return null;
-  if (/^context@\d+$/i.test(value)) return null;
   if (!new RegExp(`^[A-Za-z0-9._-]{1,${NAME_MAX_LENGTH}}$`).test(value)) return null;
   return value;
 }
 
-// Resolves a single-token `-c` value into a context plan. Only git-native
-// syntax is accepted here — `context@N` by recency index, or a hex string
-// by hash prefix (erroring if ambiguous or unmatched) — deliberately NOT
-// arbitrary names. That keeps `-c` unambiguous with the legacy one-argument
-// prompt usage (`tell -c "explain this directory"`); named contexts are
-// created/continued explicitly through `-C` instead (see reconcile_context_args).
-function try_resolve_context_ref(raw: string, entries: ContextEntry[]): ContextPlan {
+// Resolves a `-c <ref>` value into a context plan. Syntax is explicit, one
+// namespace per prefix: `@N` = recency index, `#hex` = hash prefix, anything
+// else = exact saved name. No guessing.
+function resolve_context_ref(raw: string, entries: ContextEntry[]): ContextPlan {
   const value = raw.trim();
 
-  const index_match = /^context@(\d+)$/i.exec(value);
+  const index_match = /^@(\d+)$/i.exec(value);
   if (index_match?.[1] !== undefined) {
     const index = Number(index_match[1]);
     const entry = entries[index];
@@ -269,11 +267,15 @@ function try_resolve_context_ref(raw: string, entries: ContextEntry[]): ContextP
         `No context at index ${index} (have ${entries.length} saved context${entries.length === 1 ? '' : 's'})`,
       );
     }
-    return { $: 'existing', file: entry.file, label: `context@${index} (${short_id(entry.id)})` };
+    return { $: 'existing', file: entry.file, label: `@${index} (${short_id(entry.id)})` };
   }
 
-  if (/^[0-9a-f]+$/i.test(value)) {
-    const matches = entries.filter((entry) => entry.id.toLowerCase().startsWith(value.toLowerCase()));
+  if (value.startsWith('#')) {
+    const hash_prefix = value.slice(1);
+    if (!/^[0-9a-f]+$/i.test(hash_prefix)) {
+      throw new Error(`Invalid hash reference "${value}" — use # followed by hex digits`);
+    }
+    const matches = entries.filter((entry) => entry.id.toLowerCase().startsWith(hash_prefix.toLowerCase()));
     if (matches.length === 1 && matches[0]) {
       return { $: 'existing', file: matches[0].file, label: short_id(matches[0].id) };
     }
@@ -284,63 +286,32 @@ function try_resolve_context_ref(raw: string, entries: ContextEntry[]): ContextP
     throw new Error(`No context matches hash "${value}"`);
   }
 
-  // reconcile_context_args should have already routed anything else back
-  // into the prompt, but guard here too in case this is called directly.
-  throw new Error(`Invalid context reference "${value}" — use context@N, a saved hash prefix, or -C for names`);
-}
-
-// `-c` only recognizes git-native ref syntax (index or hash prefix); a name
-// here would be indistinguishable from a legacy one-word prompt.
-function looks_like_index_or_hash_ref(value: string): boolean {
-  if (/\s/.test(value)) return false;
-  if (/^context@\d+$/i.test(value)) return true;
-  return /^[0-9a-f]+$/i.test(value);
-}
-
-// Preserves backward compatibility: if the text after `-c`/`-C` doesn't look
-// like something that flag actually accepts, it was really meant as (part of)
-// the prompt — push it back onto the positional arguments and fall back
-// to the flag's bare behavior, exactly like `tell -c "some prompt"` used to work.
-function reconcile_context_args(opts: CliOptions, positionalArgs: string[]): string[] {
-  let args = positionalArgs;
-  if (typeof opts.createContext === 'string' && !sanitize_context_name(opts.createContext)) {
-    args = push_back_as_prompt(opts.createContext, args);
-    opts.createContext = true;
+  const name = sanitize_context_name(value);
+  if (!name) {
+    throw new Error(`Invalid context reference "${value}" — use @N (recency), #hash-prefix, or a saved name`);
   }
-  if (typeof opts.context === 'string' && !looks_like_index_or_hash_ref(opts.context)) {
-    args = push_back_as_prompt(opts.context, args);
-    opts.context = true;
+  const match = entries.find((entry) => entry.id === name);
+  if (!match) {
+    throw new Error(`No saved context named "${name}" — create it with -C -n ${name}`);
   }
-  return args;
-}
-
-// Re-inserts a `-c`/`-C` value that was really prompt text. If the first
-// positional is a model spec, it must stay first so the model detection in
-// parse_args still picks it up; otherwise the value goes to the front.
-function push_back_as_prompt(value: string, args: string[]): string[] {
-  if (args.length > 0 && is_model_spec(args[0] as string)) {
-    return [args[0] as string, value, ...args.slice(1)];
-  }
-  return [value, ...args];
+  return { $: 'existing', file: match.file, label: name };
 }
 
 // Builds the effective context plan for this invocation from the parsed
-// `-c`/`-C` options, resolving hash/index references against the contexts
-// currently saved on disk. `-C <name>` continues that named context if it
-// already exists, or starts a fresh one if it doesn't.
+// `--ctx`/`-c`/`-C`/`-n` options. `-C` always starts empty, even when the
+// (optional) name already exists — an explicit reset. Resuming is `-c`.
 function build_context_plan(opts: CliOptions, model: string, entries: ContextEntry[]): ContextPlan {
   if (opts.createContext) {
-    if (opts.createContext === true) {
-      const id = randomBytes(16).toString('hex');
-      return { $: 'create', file: named_context_file(id), label: id };
+    let id = randomBytes(16).toString('hex');
+    if (opts.name !== undefined) {
+      const name = sanitize_context_name(opts.name);
+      if (!name) throw new Error(`Invalid context name "${opts.name}"`);
+      id = name;
     }
-    const name = sanitize_context_name(opts.createContext);
-    if (!name) throw new Error(`Invalid context name "${opts.createContext}"`);
-    const file = named_context_file(name);
-    return { $: fs.existsSync(file) ? 'existing' : 'create', file, label: name };
+    return { $: 'create', file: named_context_file(id), label: id };
   }
-  if (opts.context === true) return { $: 'default', file: context_file(model) };
-  if (typeof opts.context === 'string') return try_resolve_context_ref(opts.context, entries);
+  if (opts.ctx) return { $: 'default', file: context_file(model) };
+  if (opts.context !== undefined) return resolve_context_ref(opts.context, entries);
   return { $: 'none' };
 }
 
@@ -538,12 +509,11 @@ function build_program(argv: string[]): Command {
     .description('One-shot terminal assistant')
     .argument('[input...]', 'optional model followed by the prompt, or just the prompt')
     .option('-m, --model <model>', 'model shortcode or full model spec (use -m --help to list)')
-    .option(
-      '-c, --context [ref]',
-      'load a context: bare = this cwd/model, context@N/hash-prefix/name = addressable context',
-    )
-    .option('-C, --create-context [name]', 'create a brand-new context, optionally with a human-readable name')
-    .option('-l, --list', 'list saved contexts (context@N, id, age, preview)')
+    .option('--ctx', 'use the default context for this directory and model')
+    .option('-c, --context <ref>', 'resume a saved context: @N (recency), #hash-prefix, or name')
+    .option('-C, --create-context', 'create a fresh context (starts empty)')
+    .option('-n, --name <name>', 'name for the context created with -C')
+    .option('-l, --list', 'list saved contexts (@N, id, age, preview)')
     .option('-y, --yes', 'execute requested commands without confirmation')
     .option('--chain', 'continue after command output until the assistant gives a final answer')
     .option('-i, --input', 'read stdin and include it with the prompt')
@@ -669,7 +639,7 @@ async function run_tell(model: string, prompt: string, opts: CliOptions): Promis
 
   let plan: ContextPlan;
   try {
-    const entries = opts.context || opts.createContext ? list_context_entries() : [];
+    const entries = opts.context !== undefined ? list_context_entries() : [];
     plan = build_context_plan(opts, model, entries);
   } catch (error) {
     console.error('\x1b[31m%s\x1b[0m', error instanceof Error ? error.message : String(error));
@@ -735,9 +705,19 @@ async function main() {
     return;
   }
 
-  const positional_args = reconcile_context_args(opts, program.args);
-  if (opts.context && opts.createContext) {
+  const positional_args = program.args;
+  if (opts.context !== undefined && opts.createContext) {
     console.error('\x1b[31merror: cannot combine -c and -C in the same invocation\x1b[0m');
+    process.exitCode = 1;
+    return;
+  }
+  if (opts.name !== undefined && !opts.createContext) {
+    console.error('\x1b[31merror: -n/--name requires -C/--create-context\x1b[0m');
+    process.exitCode = 1;
+    return;
+  }
+  if (opts.ctx && (opts.context !== undefined || opts.createContext)) {
+    console.error('\x1b[31merror: --ctx cannot be combined with -c or -C\x1b[0m');
     process.exitCode = 1;
     return;
   }

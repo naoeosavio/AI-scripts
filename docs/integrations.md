@@ -391,7 +391,7 @@ alias t='tell'
 alias td='tell d'
 alias ts='tell s'
 alias to='tell o'
-alias tf='tell -c'
+alias tf='tell --ctx'
 alias tbuild='npm run build 2>&1 | tell -i --chain "fix the build"'
 
 # git AI

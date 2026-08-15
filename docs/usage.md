@@ -127,32 +127,40 @@ tell --chain "find out why the build is failing and fix it"
 npm run build 2>&1 | tell --chain -i "fix the build errors"
 ```
 
-## Persistent context (`-c`)
+## Persistent context (`--ctx`, `-c`, `-C`, `-n`)
 
-Keep conversation history across invocations per directory and model. Stored at `~/.ai/tell_context/`.
+Context flags are explicit — no value guessing:
 
 ```bash
-tell -c "remember that this project uses PostgreSQL"
-tell -c "now add a users table migration"   # remembers the previous message
+tell --ctx "remember that this project uses PostgreSQL"   # default context for this dir+model
+tell --ctx "now add a users table migration"              # remembers the previous message
+
+tell -C -n myproj "seed the project"                      # create fresh named context
+tell -c myproj "continue the project"                     # resume by name
+tell -C -n myproj "start over"                            # same name = explicit reset (starts empty)
+
+tell -l                                                   # list saved contexts
+tell -c @0 "resume the most recent one"                   # recency index
+tell -c #a1b2c3 "resume by hash prefix"                   # explicit # = hash, not name
 ```
 
-Without `-c`, each invocation starts fresh. Context is automatically truncated at 200,000 characters.
+Context files live at `~/.ai/tell_context/`. Without any context flag, each invocation starts fresh and the default context is cleared. Context is automatically truncated at 200,000 characters.
 
 ## Flag interactions
 
-How `-c` (persistent context) and `--chain` (multi-step loop) combine:
+How `--ctx` (default context) and `--chain` (multi-step loop) combine:
 
 | Flags | Reads context? | Deletes? | Writes? | Loop? |
 |-------|--------|---------|--------|------|
 | *(none)* | no | yes | no | no |
-| `-c` | yes | no | yes (final) | no |
+| `--ctx` | yes | no | yes (final) | no |
 | `--chain` | no | yes | no | yes (8 rounds) |
-| `-c --chain` | yes | no | yes (incremental) | yes (8 rounds) |
+| `--ctx --chain` | yes | no | yes (incremental) | yes (8 rounds) |
 
 Without any flag, context is deleted on start (one-shot execution, no history kept).  
-`-c` loads previous conversation and appends the result at the end.  
+`--ctx` loads the previous conversation and appends the result at the end.  
 `--chain` loops up to 8 rounds feeding command outputs to the model, but does not persist context across invocations.  
-`-c --chain` reads previous context, loops up to 8 rounds, and writes incrementally — each round's output is appended to the context file.
+`--ctx --chain` reads previous context, loops up to 8 rounds, and writes incrementally — each round's output is appended to the context file.
 
 ## Logging
 

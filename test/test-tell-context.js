@@ -1,19 +1,15 @@
 // test-tell-context.js
 //
-// Extra coverage for the context addressing/lifecycle system (`-c`, `-C`,
-// `-l`) on top of the existing prompt-injection / command-execution suite
-// in test-tell-security.js. Uses the same approach: transpile Tell.ts with
+// Extra coverage for the context addressing/lifecycle system (`--ctx`, `-c`,
+// `-C`, `-n`, `-l`) on top of the existing prompt-injection / command-execution
+// suite in test-tell-security.js. Uses the same approach: transpile Tell.ts with
 // the real TypeScript compiler, run it inside a sandboxed vm context with
 // a mocked "@tell-ai/sdk", "child_process" and "os", and assert on the
 // resulting stdout/stderr/exec calls/context files on disk.
 //
-// Two tests below (clearly marked) document behavior that currently does
-// NOT match the documented design / CLI help text. They are written as
-// regression tests against the CURRENT implementation, not as a statement
-// that the behavior is desired — see the comments on each for details:
-//
-//   - test_named_context_not_resumable_via_dash_c_bug
-//   - test_reconciliation_numeric_prompt_misresolved_as_hash_bug
+// Context flags are fully explicit: `--ctx` = default per-dir/model context,
+// `-c <ref>` = resume (`@N` recency, `#hash` prefix, or saved name), `-C` =
+// create fresh (random id, or `-C -n <name>`), `-l` = list.
 
 const assert = require('node:assert');
 const { EventEmitter } = require('node:events');
@@ -176,19 +172,19 @@ async function run_tell(args, response, opts = {}) {
 }
 
 // ---------------------------------------------------------------------
-// Core `-c` round trip and isolation
+// Core `--ctx` round trip and isolation
 // ---------------------------------------------------------------------
 
 async function test_bare_context_round_trip_within_same_dir_and_model() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const first = await run_tell(['d', '-c', 'remember X'], 'ack X', { dir });
+    const first = await run_tell(['d', '--ctx', 'remember X'], 'ack X', { dir });
     assert.strictEqual(first.stdout, 'ack X\n');
     const files_after_first = list_context_files(first.home);
     assert.strictEqual(files_after_first.length, 1);
     assert.match(files_after_first[0], /^[a-f0-9]{64}\.txt$/);
 
-    const second = await run_tell(['d', '-c', 'what did I say?'], 'you said X', { dir });
+    const second = await run_tell(['d', '--ctx', 'what did I say?'], 'you said X', { dir });
     assert_includes(second.tellMessages[0], 'Previous context:');
     assert_includes(second.tellMessages[0], 'ack X');
     assert_includes(second.tellMessages[0], 'what did I say?');
@@ -203,8 +199,8 @@ async function test_bare_context_round_trip_within_same_dir_and_model() {
 async function test_bare_context_isolated_across_models_same_dir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-c', 'remember X'], 'ack X (deepseek)', { dir });
-    const other_model = await run_tell(['s', '-c', 'remember Y'], 'ack Y (sonnet)', { dir });
+    await run_tell(['d', '--ctx', 'remember X'], 'ack X (deepseek)', { dir });
+    const other_model = await run_tell(['s', '--ctx', 'remember Y'], 'ack Y (sonnet)', { dir });
     assert_not_includes(other_model.tellMessages[0], 'ack X');
     assert.strictEqual(list_context_files(other_model.home).length, 2);
   } finally {
@@ -215,7 +211,7 @@ async function test_bare_context_isolated_across_models_same_dir() {
 async function test_no_flag_invocation_clears_default_context() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-c', 'seed'], 'seed answer', { dir });
+    await run_tell(['d', '--ctx', 'seed'], 'seed answer', { dir });
     assert.strictEqual(list_context_files(path.join(dir, 'home')).length, 1);
 
     await run_tell(['d', 'plain call, no context flag'], 'plain answer', { dir });
@@ -225,7 +221,7 @@ async function test_no_flag_invocation_clears_default_context() {
       'default context file must be deleted on a flag-less invocation',
     );
 
-    const resumed = await run_tell(['d', '-c', 'still there?'], 'nothing before', { dir });
+    const resumed = await run_tell(['d', '--ctx', 'still there?'], 'nothing before', { dir });
     assert_not_includes(resumed.tellMessages[0], 'seed answer');
     assert_not_includes(resumed.tellMessages[0], 'Previous context:');
   } finally {
@@ -234,14 +230,13 @@ async function test_no_flag_invocation_clears_default_context() {
 }
 
 // ---------------------------------------------------------------------
-// `-C` creation: bare, named, and validation of the name
+// `-C` creation: bare, named (via `-n`), and validation of the name
 // ---------------------------------------------------------------------
 
 async function test_create_context_bare_generates_random_id() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    // `-C` placed last so nothing after it can be swallowed as its optional value.
-    const result = await run_tell(['d', 'start a new context', '-C'], 'ok', { dir });
+    const result = await run_tell(['d', '-C', 'start a new context'], 'ok', { dir });
     assert_includes(result.stderr, 'Created context: ');
     const files = list_context_files(result.home);
     assert.strictEqual(files.length, 1);
@@ -251,50 +246,40 @@ async function test_create_context_bare_generates_random_id() {
   }
 }
 
-async function test_create_context_named_creates_then_resumes() {
+async function test_create_context_named_starts_fresh_even_if_name_exists() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const created = await run_tell(['d', '-C', 'myproj', 'seed the project'], 'seeded', { dir });
+    const created = await run_tell(['d', '-C', '-n', 'myproj', 'seed the project'], 'seeded', { dir });
     assert_includes(created.stderr, 'Created context: myproj');
     assert.strictEqual(list_context_files(created.home).length, 1);
 
-    const resumed = await run_tell(['d', '-C', 'myproj', 'continue the project'], 'continued', { dir });
-    assert_includes(resumed.stderr, 'Using context: myproj');
-    assert_includes(resumed.tellMessages[0], 'Previous context:');
-    assert_includes(resumed.tellMessages[0], 'seeded');
-    assert_includes(resumed.tellMessages[0], 'continue the project');
-    assert.strictEqual(list_context_files(resumed.home).length, 1);
+    // `-C -n <name>` is an explicit reset: same name, but the fresh context
+    // must NOT feed the previous content back to the model.
+    const recreated = await run_tell(['d', '-C', '-n', 'myproj', 'start over'], 'fresh', { dir });
+    assert_includes(recreated.stderr, 'Created context: myproj');
+    assert_not_includes(recreated.tellMessages[0], 'seeded');
+    assert_not_includes(recreated.tellMessages[0], 'Previous context:');
+    assert.strictEqual(list_context_files(recreated.home).length, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-async function test_create_context_invalid_name_falls_back_to_bare_and_prompt() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
-  try {
-    const result = await run_tell(['d', '-C', 'bad name with spaces', 'and more prompt text'], 'ok', { dir });
-    assert_includes(result.tellMessages[0], 'bad name with spaces');
-    assert_includes(result.tellMessages[0], 'and more prompt text');
-    const files = list_context_files(result.home);
-    assert.strictEqual(files.length, 1);
-    assert.match(files[0], /^[a-f0-9]{32}\.txt$/);
-    assert.ok(!files.some((file) => file.includes('bad name')));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+async function test_create_context_invalid_name_is_hard_error() {
+  const result = await run_tell(['d', '-C', '-n', 'bad name with spaces', 'prompt text'], 'ok');
+  assert.strictEqual(result.exitCode, 1);
+  assert_includes(result.stderr, 'Invalid context name "bad name with spaces"');
+  assert.deepStrictEqual(result.tellCalls, []);
 }
 
 async function test_create_context_path_traversal_name_rejected() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const result = await run_tell(['d', '-C', '../../evil', 'attempt escape'], 'ok', { dir });
-    // Rejected as a name (contains "/", outside the allowed charset), so it
-    // falls back to being literal, inert prompt text instead of a path.
-    assert_includes(result.tellMessages[0], '../../evil');
-    assert_includes(result.tellMessages[0], 'attempt escape');
-    const files = list_context_files(result.home);
-    assert.strictEqual(files.length, 1);
-    assert.match(files[0], /^[a-f0-9]{32}\.txt$/);
+    const result = await run_tell(['d', '-C', '-n', '../../evil', 'attempt escape'], 'ok', { dir });
+    assert.strictEqual(result.exitCode, 1);
+    assert_includes(result.stderr, 'Invalid context name "../../evil"');
+    assert.deepStrictEqual(result.tellCalls, []);
+    assert.strictEqual(list_context_files(result.home).length, 0);
     assert.ok(!fs.existsSync(path.join(result.home, '.ai', 'evil.txt')));
     assert.ok(!fs.existsSync(path.join(result.home, '..', 'evil.txt')));
   } finally {
@@ -307,9 +292,23 @@ async function test_create_context_path_traversal_name_rejected() {
 // ---------------------------------------------------------------------
 
 async function test_context_and_create_context_together_errors() {
-  const result = await run_tell(['d', '-c', '-C', 'hello world'], 'unused');
+  const result = await run_tell(['d', '-c', 'myproj', '-C', 'hello world'], 'unused');
   assert.strictEqual(result.exitCode, 1);
   assert_includes(result.stderr, 'cannot combine -c and -C');
+  assert.deepStrictEqual(result.tellCalls, []);
+}
+
+async function test_name_requires_create_context_flag() {
+  const result = await run_tell(['d', '-n', 'myproj', 'hello world'], 'unused');
+  assert.strictEqual(result.exitCode, 1);
+  assert_includes(result.stderr, '-n/--name requires -C/--create-context');
+  assert.deepStrictEqual(result.tellCalls, []);
+}
+
+async function test_ctx_flag_does_not_combine_with_others() {
+  const result = await run_tell(['d', '--ctx', '-C', 'hello world'], 'unused');
+  assert.strictEqual(result.exitCode, 1);
+  assert_includes(result.stderr, '--ctx cannot be combined with -c or -C');
   assert.deepStrictEqual(result.tellCalls, []);
 }
 
@@ -320,11 +319,11 @@ async function test_context_and_create_context_together_errors() {
 async function test_context_hash_prefix_resolves_unique_match() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', 'abc123', 'seed one'], 'seed one answer', { dir });
-    await run_tell(['d', '-C', 'abc999', 'seed two'], 'seed two answer', { dir });
+    await run_tell(['d', '-C', '-n', 'abc123', 'seed one'], 'seed one answer', { dir });
+    await run_tell(['d', '-C', '-n', 'abc999', 'seed two'], 'seed two answer', { dir });
 
-    const resumed = await run_tell(['d', '-c', 'abc12', 'continue'], 'continued answer', { dir });
-    assert_includes(resumed.stderr, 'Using context: abc123');
+    const resumed = await run_tell(['d', '-c', '#abc12', 'continue'], 'continued answer', { dir });
+    assert_includes(resumed.stderr, 'Using context: ');
     assert_includes(resumed.tellMessages[0], 'seed one answer');
     assert_not_includes(resumed.tellMessages[0], 'seed two answer');
   } finally {
@@ -335,12 +334,12 @@ async function test_context_hash_prefix_resolves_unique_match() {
 async function test_context_hash_prefix_ambiguous_errors() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', 'abc123', 'seed one'], 'seed one answer', { dir });
-    await run_tell(['d', '-C', 'abc124', 'seed two'], 'seed two answer', { dir });
+    await run_tell(['d', '-C', '-n', 'abc123', 'seed one'], 'seed one answer', { dir });
+    await run_tell(['d', '-C', '-n', 'abc124', 'seed two'], 'seed two answer', { dir });
 
-    const ambiguous = await run_tell(['d', '-c', 'abc12', 'continue'], 'unused', { dir });
+    const ambiguous = await run_tell(['d', '-c', '#abc12', 'continue'], 'unused', { dir });
     assert.strictEqual(ambiguous.exitCode, 1);
-    assert_includes(ambiguous.stderr, 'Ambiguous context hash "abc12"');
+    assert_includes(ambiguous.stderr, 'Ambiguous context hash "#abc12"');
     assert.deepStrictEqual(ambiguous.tellCalls, []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -350,16 +349,16 @@ async function test_context_hash_prefix_ambiguous_errors() {
 async function test_context_index_recency_resolution() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', 'older', 'first'], 'first answer', { dir });
+    await run_tell(['d', '-C', '-n', 'older', 'first'], 'first answer', { dir });
     await sleep(20);
-    await run_tell(['d', '-C', 'newer', 'second'], 'second answer', { dir });
+    await run_tell(['d', '-C', '-n', 'newer', 'second'], 'second answer', { dir });
 
-    const zero = await run_tell(['d', '-c', 'context@0', 'check'], 'zero answer', { dir });
-    assert_includes(zero.stderr, 'Using context: context@0 (newer)');
+    const zero = await run_tell(['d', '-c', '@0', 'check'], 'zero answer', { dir });
+    assert_includes(zero.stderr, 'Using context: @0 (newer)');
     assert_includes(zero.tellMessages[0], 'second answer');
 
-    const one = await run_tell(['d', '-c', 'context@1', 'check'], 'one answer', { dir });
-    assert_includes(one.stderr, 'Using context: context@1 (older)');
+    const one = await run_tell(['d', '-c', '@1', 'check'], 'one answer', { dir });
+    assert_includes(one.stderr, 'Using context: @1 (older)');
     assert_includes(one.tellMessages[0], 'first answer');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -369,9 +368,9 @@ async function test_context_index_recency_resolution() {
 async function test_context_index_out_of_range_is_hard_error() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', 'only', 'seed'], 'seed answer', { dir });
+    await run_tell(['d', '-C', '-n', 'only', 'seed'], 'seed answer', { dir });
 
-    const out_of_range = await run_tell(['d', '-c', 'context@5', 'check'], 'unused', { dir });
+    const out_of_range = await run_tell(['d', '-c', '@5', 'check'], 'unused', { dir });
     assert.strictEqual(out_of_range.exitCode, 1);
     assert_includes(out_of_range.stderr, 'No context at index 5 (have 1 saved context)');
     assert.deepStrictEqual(out_of_range.tellCalls, []);
@@ -380,31 +379,30 @@ async function test_context_index_out_of_range_is_hard_error() {
   }
 }
 
-// KEY FINDING: the CLI help text for `-c` reads "context@N/hash-prefix/name
-// = addressable context", and the design notes describe `-c <name>` as
-// working whenever that named context already exists. The actual
-// implementation of try_resolve_context_ref() only recognizes `context@N`
-// and hex hash prefixes — there is no branch that looks a value up against
-// saved context names. Because of that, `-c myproj` never resumes a named
-// context at all (unless the name happens to consist only of hex
-// characters, in which case it's resolved by accident as a hash prefix —
-// see test_context_hash_prefix_resolves_unique_match). Instead it silently
-// falls back to the default per-cwd/model context, and the name string
-// leaks into the prompt as literal text. This test documents that current
-// behavior so it doesn't regress unnoticed, but the mismatch with the
-// documented `-c` semantics is worth a fix or a help-text correction.
-async function test_named_context_not_resumable_via_dash_c_bug() {
+async function test_named_context_resumable_via_dash_c() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', 'myproject', 'remember this'], 'remembered', { dir });
+    await run_tell(['d', '-C', '-n', 'myproject', 'remember this'], 'remembered', { dir });
 
-    const attempt = await run_tell(['d', '-c', 'myproject', 'continue'], 'fresh answer', { dir });
-    assert_not_includes(attempt.tellMessages[0], 'remembered');
-    assert_not_includes(attempt.tellMessages[0], 'Previous context:');
-    assert_includes(attempt.tellMessages[0], 'myproject');
-    // the named context is left untouched; a brand-new default context is
-    // created alongside it for this cwd/model.
-    assert.strictEqual(list_context_files(attempt.home).length, 2);
+    const resumed = await run_tell(['d', '-c', 'myproject', 'continue'], 'continued answer', { dir });
+    assert_includes(resumed.stderr, 'Using context: myproject');
+    assert_includes(resumed.tellMessages[0], 'Previous context:');
+    assert_includes(resumed.tellMessages[0], 'remembered');
+    assert_includes(resumed.tellMessages[0], 'continue');
+    assert.strictEqual(list_context_files(resumed.home).length, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function test_context_unknown_name_is_hard_error_with_hint() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
+  try {
+    const missing = await run_tell(['d', '-c', 'nope', 'continue'], 'unused', { dir });
+    assert.strictEqual(missing.exitCode, 1);
+    assert_includes(missing.stderr, 'No saved context named "nope"');
+    assert_includes(missing.stderr, '-C -n nope');
+    assert.deepStrictEqual(missing.tellCalls, []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -413,14 +411,14 @@ async function test_named_context_not_resumable_via_dash_c_bug() {
 async function test_context_list_shows_saved_entries() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', 'alpha', 'a'], 'alpha answer', { dir });
+    await run_tell(['d', '-C', '-n', 'alpha', 'a'], 'alpha answer', { dir });
     await sleep(15);
-    await run_tell(['d', '-C', 'beta', 'b'], 'beta answer', { dir });
+    await run_tell(['d', '-C', '-n', 'beta', 'b'], 'beta answer', { dir });
 
     const listed = await run_tell(['-l'], 'unused', { dir });
     assert.strictEqual(listed.tellCalls.length, 0);
-    assert_includes(listed.stdout, 'context@0');
-    assert_includes(listed.stdout, 'context@1');
+    assert_includes(listed.stdout, '@0');
+    assert_includes(listed.stdout, '@1');
     assert_includes(listed.stdout, 'beta');
     assert_includes(listed.stdout, 'alpha');
   } finally {
@@ -429,32 +427,22 @@ async function test_context_list_shows_saved_entries() {
 }
 
 // ---------------------------------------------------------------------
-// Reconciliation heuristic (Commander optional-value swallow workaround)
+// Prompt handling without context flags (no reconciliation, no guessing)
 // ---------------------------------------------------------------------
 
-async function test_reconciliation_preserves_multiword_prompt_after_model() {
-  const result = await run_tell(['d', '-c', 'explain this error carefully'], 'explained');
+async function test_multiword_prompt_with_default_context_flag() {
+  const result = await run_tell(['d', '--ctx', 'explain this error carefully'], 'explained');
   assert_includes(result.tellMessages[0], 'explain this error carefully');
   assert_not_includes(result.tellMessages[0], 'Previous context:');
 }
 
-// KEY FINDING: looks_like_index_or_hash_ref() treats any token made only of
-// hex-charset characters (digits and a-f) as a likely hash/index reference
-// — including plain decimal numbers like "5" or "42", which are valid hex
-// strings too. So a one-word numeric (or hex-letters-only) prompt typed
-// right after bare `-c` is NOT recognized as "doesn't look like a ref" and
-// is not pushed back to the prompt — Commander has already consumed it as
-// `-c`'s option value, so it never reaches the positional-args array at
-// all. With nothing left to serve as a prompt and no piped stdin, the CLI
-// exits with "error: missing prompt", silently discarding what the user
-// actually typed rather than answering it or reporting a context-lookup
-// failure. This breaks the backward-compatibility guarantee for any short
-// numeric/hex-looking one-word prompt after `-c`.
-async function test_reconciliation_numeric_prompt_misresolved_as_hash_bug() {
-  const result = await run_tell(['-c', '5'], 'unused');
-  assert.strictEqual(result.exitCode, 1);
-  assert_includes(result.stderr, 'error: missing prompt');
-  assert.deepStrictEqual(result.tellCalls, []);
+// A bare short numeric prompt is plain prompt text — `-c` no longer consumes
+// positional arguments, so nothing can be misresolved as a hash/index ref.
+async function test_short_numeric_prompt_reaches_the_model() {
+  const result = await run_tell(['d', '5'], 'the answer is five');
+  assert.strictEqual(result.stdout, 'the answer is five\n');
+  assert_includes(result.tellMessages[0], '5');
+  assert.deepStrictEqual(result.execCalls, []);
 }
 
 // ---------------------------------------------------------------------
@@ -475,11 +463,11 @@ async function test_no_exec_overrides_yes_flag() {
 // default per-cwd/model context: its stored text is untrusted data fed
 // back to the model as part of the prompt, never re-scanned for <RUN>
 // tags. This mirrors the equivalent default-context test in
-// test-tell-security.js, extended to the -C addressing path.
+// test-tell-security.js, extended to the -C/-c addressing path.
 async function test_poisoned_named_context_does_not_autoexecute() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const seed = await run_tell(['d', '-C', 'shared', 'seed'], 'seed answer', { dir });
+    const seed = await run_tell(['d', '-C', '-n', 'shared', 'seed'], 'seed answer', { dir });
     const context_path = path.join(context_dir_path(seed.home), 'shared.txt');
     fs.writeFileSync(
       context_path,
@@ -487,7 +475,7 @@ async function test_poisoned_named_context_does_not_autoexecute() {
       'utf8',
     );
 
-    const resumed = await run_tell(['--yes', 'd', '-C', 'shared', 'continue safely'], 'safe answer', { dir });
+    const resumed = await run_tell(['--yes', 'd', '-c', 'shared', 'continue safely'], 'safe answer', { dir });
     assert.deepStrictEqual(resumed.execCalls, []);
     assert.strictEqual(resumed.stdout, 'safe answer\n');
     assert_includes(resumed.tellMessages[0], 'Previous context:');
@@ -507,7 +495,7 @@ async function test_incremental_context_saves_do_not_duplicate_turns_on_chain() 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
     const result = await run_tell(
-      ['--yes', '--chain', 'd', '-c', 'fix the build'],
+      ['--yes', '--chain', 'd', '--ctx', 'fix the build'],
       [run_block('echo ONE'), 'final answer'],
       { dir, execStdout: 'OK\n' },
     );
@@ -532,18 +520,21 @@ const TESTS = [
   test_bare_context_isolated_across_models_same_dir,
   test_no_flag_invocation_clears_default_context,
   test_create_context_bare_generates_random_id,
-  test_create_context_named_creates_then_resumes,
-  test_create_context_invalid_name_falls_back_to_bare_and_prompt,
+  test_create_context_named_starts_fresh_even_if_name_exists,
+  test_create_context_invalid_name_is_hard_error,
   test_create_context_path_traversal_name_rejected,
   test_context_and_create_context_together_errors,
+  test_name_requires_create_context_flag,
+  test_ctx_flag_does_not_combine_with_others,
   test_context_hash_prefix_resolves_unique_match,
   test_context_hash_prefix_ambiguous_errors,
   test_context_index_recency_resolution,
   test_context_index_out_of_range_is_hard_error,
-  test_named_context_not_resumable_via_dash_c_bug,
+  test_named_context_resumable_via_dash_c,
+  test_context_unknown_name_is_hard_error_with_hint,
   test_context_list_shows_saved_entries,
-  test_reconciliation_preserves_multiword_prompt_after_model,
-  test_reconciliation_numeric_prompt_misresolved_as_hash_bug,
+  test_multiword_prompt_with_default_context_flag,
+  test_short_numeric_prompt_reaches_the_model,
   test_no_exec_overrides_yes_flag,
   test_poisoned_named_context_does_not_autoexecute,
   test_incremental_context_saves_do_not_duplicate_turns_on_chain,

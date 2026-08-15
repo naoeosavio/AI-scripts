@@ -58,7 +58,7 @@ Critical execution behavior:
   Output ONLY the <RUN> block with NO extra text/explanation. The system will automatically execute the command and feed the output back to you so you can analyze it and provide a complete answer in the next turn.
 
 IMPORTANT: Be CONCISE and DIRECT in your answers.
-Do not add any information beyond what has been explicitly asked.
+Do not add any information, boilerplate code, or extra context beyond what has been explicitly asked.
 `.trim();
 }
 
