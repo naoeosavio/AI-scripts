@@ -1,15 +1,16 @@
 // test-tell-context.js
 //
-// Extra coverage for the context addressing/lifecycle system (`--ctx`, `-c`,
+// Extra coverage for the context addressing/lifecycle system (`-c`, `--ctx`,
 // `-C`, `-n`, `-l`) on top of the existing prompt-injection / command-execution
 // suite in test-tell-security.js. Uses the same approach: transpile Tell.ts with
 // the real TypeScript compiler, run it inside a sandboxed vm context with
 // a mocked "@tell-ai/sdk", "child_process" and "os", and assert on the
 // resulting stdout/stderr/exec calls/context files on disk.
 //
-// Context flags are fully explicit: `--ctx` = default per-dir/model context,
-// `-c <ref>` = resume (`@N` recency, `#hash` prefix, or saved name), `-C` =
-// create fresh (random id, or `-C -n <name>`), `-l` = list.
+// Context flags are fully explicit: `-c` = default per-dir/model context,
+// `--ctx <ref>` = use-or-create (`@N` recency, `#hash` prefix, or name —
+// created when missing), `-C` = create fresh (random id, or `-C -n <name>`),
+// `-l` = list.
 
 const assert = require('node:assert');
 const { EventEmitter } = require('node:events');
@@ -178,13 +179,13 @@ async function run_tell(args, response, opts = {}) {
 async function test_bare_context_round_trip_within_same_dir_and_model() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const first = await run_tell(['d', '--ctx', 'remember X'], 'ack X', { dir });
+    const first = await run_tell(['d', '-c', 'remember X'], 'ack X', { dir });
     assert.strictEqual(first.stdout, 'ack X\n');
     const files_after_first = list_context_files(first.home);
     assert.strictEqual(files_after_first.length, 1);
     assert.match(files_after_first[0], /^[a-f0-9]{64}\.txt$/);
 
-    const second = await run_tell(['d', '--ctx', 'what did I say?'], 'you said X', { dir });
+    const second = await run_tell(['d', '-c', 'what did I say?'], 'you said X', { dir });
     assert_includes(second.tellMessages[0], 'Previous context:');
     assert_includes(second.tellMessages[0], 'ack X');
     assert_includes(second.tellMessages[0], 'what did I say?');
@@ -199,8 +200,8 @@ async function test_bare_context_round_trip_within_same_dir_and_model() {
 async function test_bare_context_isolated_across_models_same_dir() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '--ctx', 'remember X'], 'ack X (deepseek)', { dir });
-    const other_model = await run_tell(['s', '--ctx', 'remember Y'], 'ack Y (sonnet)', { dir });
+    await run_tell(['d', '-c', 'remember X'], 'ack X (deepseek)', { dir });
+    const other_model = await run_tell(['s', '-c', 'remember Y'], 'ack Y (sonnet)', { dir });
     assert_not_includes(other_model.tellMessages[0], 'ack X');
     assert.strictEqual(list_context_files(other_model.home).length, 2);
   } finally {
@@ -211,7 +212,7 @@ async function test_bare_context_isolated_across_models_same_dir() {
 async function test_no_flag_invocation_clears_default_context() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '--ctx', 'seed'], 'seed answer', { dir });
+    await run_tell(['d', '-c', 'seed'], 'seed answer', { dir });
     assert.strictEqual(list_context_files(path.join(dir, 'home')).length, 1);
 
     await run_tell(['d', 'plain call, no context flag'], 'plain answer', { dir });
@@ -221,7 +222,7 @@ async function test_no_flag_invocation_clears_default_context() {
       'default context file must be deleted on a flag-less invocation',
     );
 
-    const resumed = await run_tell(['d', '--ctx', 'still there?'], 'nothing before', { dir });
+    const resumed = await run_tell(['d', '-c', 'still there?'], 'nothing before', { dir });
     assert_not_includes(resumed.tellMessages[0], 'seed answer');
     assert_not_includes(resumed.tellMessages[0], 'Previous context:');
   } finally {
@@ -306,14 +307,14 @@ async function test_name_requires_create_context_flag() {
 }
 
 async function test_ctx_flag_does_not_combine_with_others() {
-  const result = await run_tell(['d', '--ctx', '-C', 'hello world'], 'unused');
+  const result = await run_tell(['d', '--ctx', 'myproj', '-c', 'hello world'], 'unused');
   assert.strictEqual(result.exitCode, 1);
   assert_includes(result.stderr, '--ctx cannot be combined with -c or -C');
   assert.deepStrictEqual(result.tellCalls, []);
 }
 
 // ---------------------------------------------------------------------
-// Addressing existing contexts with `-c <ref>`
+// Addressing existing contexts with `--ctx <ref>`
 // ---------------------------------------------------------------------
 
 async function test_context_hash_prefix_resolves_unique_match() {
@@ -322,7 +323,7 @@ async function test_context_hash_prefix_resolves_unique_match() {
     await run_tell(['d', '-C', '-n', 'abc123', 'seed one'], 'seed one answer', { dir });
     await run_tell(['d', '-C', '-n', 'abc999', 'seed two'], 'seed two answer', { dir });
 
-    const resumed = await run_tell(['d', '-c', '#abc12', 'continue'], 'continued answer', { dir });
+    const resumed = await run_tell(['d', '--ctx', '#abc12', 'continue'], 'continued answer', { dir });
     assert_includes(resumed.stderr, 'Using context: ');
     assert_includes(resumed.tellMessages[0], 'seed one answer');
     assert_not_includes(resumed.tellMessages[0], 'seed two answer');
@@ -337,7 +338,7 @@ async function test_context_hash_prefix_ambiguous_errors() {
     await run_tell(['d', '-C', '-n', 'abc123', 'seed one'], 'seed one answer', { dir });
     await run_tell(['d', '-C', '-n', 'abc124', 'seed two'], 'seed two answer', { dir });
 
-    const ambiguous = await run_tell(['d', '-c', '#abc12', 'continue'], 'unused', { dir });
+    const ambiguous = await run_tell(['d', '--ctx', '#abc12', 'continue'], 'unused', { dir });
     assert.strictEqual(ambiguous.exitCode, 1);
     assert_includes(ambiguous.stderr, 'Ambiguous context hash "#abc12"');
     assert.deepStrictEqual(ambiguous.tellCalls, []);
@@ -353,11 +354,11 @@ async function test_context_index_recency_resolution() {
     await sleep(20);
     await run_tell(['d', '-C', '-n', 'newer', 'second'], 'second answer', { dir });
 
-    const zero = await run_tell(['d', '-c', '@0', 'check'], 'zero answer', { dir });
+    const zero = await run_tell(['d', '--ctx', '@0', 'check'], 'zero answer', { dir });
     assert_includes(zero.stderr, 'Using context: @0 (newer)');
     assert_includes(zero.tellMessages[0], 'second answer');
 
-    const one = await run_tell(['d', '-c', '@1', 'check'], 'one answer', { dir });
+    const one = await run_tell(['d', '--ctx', '@1', 'check'], 'one answer', { dir });
     assert_includes(one.stderr, 'Using context: @1 (older)');
     assert_includes(one.tellMessages[0], 'first answer');
   } finally {
@@ -370,7 +371,7 @@ async function test_context_index_out_of_range_is_hard_error() {
   try {
     await run_tell(['d', '-C', '-n', 'only', 'seed'], 'seed answer', { dir });
 
-    const out_of_range = await run_tell(['d', '-c', '@5', 'check'], 'unused', { dir });
+    const out_of_range = await run_tell(['d', '--ctx', '@5', 'check'], 'unused', { dir });
     assert.strictEqual(out_of_range.exitCode, 1);
     assert_includes(out_of_range.stderr, 'No context at index 5 (have 1 saved context)');
     assert.deepStrictEqual(out_of_range.tellCalls, []);
@@ -379,12 +380,12 @@ async function test_context_index_out_of_range_is_hard_error() {
   }
 }
 
-async function test_named_context_resumable_via_dash_c() {
+async function test_named_context_resumable_via_ctx() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
     await run_tell(['d', '-C', '-n', 'myproject', 'remember this'], 'remembered', { dir });
 
-    const resumed = await run_tell(['d', '-c', 'myproject', 'continue'], 'continued answer', { dir });
+    const resumed = await run_tell(['d', '--ctx', 'myproject', 'continue'], 'continued answer', { dir });
     assert_includes(resumed.stderr, 'Using context: myproject');
     assert_includes(resumed.tellMessages[0], 'Previous context:');
     assert_includes(resumed.tellMessages[0], 'remembered');
@@ -395,17 +396,31 @@ async function test_named_context_resumable_via_dash_c() {
   }
 }
 
-async function test_context_unknown_name_is_hard_error_with_hint() {
+// `--ctx <name>` is use-or-create: an unknown name creates the context on
+// first touch and resumes it (with full previous context) on the next.
+async function test_ctx_name_creates_when_missing_then_resumes() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const missing = await run_tell(['d', '-c', 'nope', 'continue'], 'unused', { dir });
-    assert.strictEqual(missing.exitCode, 1);
-    assert_includes(missing.stderr, 'No saved context named "nope"');
-    assert_includes(missing.stderr, '-C -n nope');
-    assert.deepStrictEqual(missing.tellCalls, []);
+    const created = await run_tell(['d', '--ctx', 'newproj', 'seed it'], 'seeded answer', { dir });
+    assert_includes(created.stderr, 'Created context: newproj');
+    assert_not_includes(created.tellMessages[0], 'Previous context:');
+    assert.strictEqual(list_context_files(created.home).length, 1);
+
+    const resumed = await run_tell(['d', '--ctx', 'newproj', 'continue it'], 'continued answer', { dir });
+    assert_includes(resumed.stderr, 'Using context: newproj');
+    assert_includes(resumed.tellMessages[0], 'Previous context:');
+    assert_includes(resumed.tellMessages[0], 'seeded answer');
+    assert.strictEqual(list_context_files(resumed.home).length, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+async function test_ctx_invalid_name_is_hard_error() {
+  const result = await run_tell(['d', '--ctx', 'bad name with spaces', 'prompt'], 'unused');
+  assert.strictEqual(result.exitCode, 1);
+  assert_includes(result.stderr, 'Invalid context reference "bad name with spaces"');
+  assert.deepStrictEqual(result.tellCalls, []);
 }
 
 async function test_context_list_shows_saved_entries() {
@@ -431,7 +446,7 @@ async function test_context_list_shows_saved_entries() {
 // ---------------------------------------------------------------------
 
 async function test_multiword_prompt_with_default_context_flag() {
-  const result = await run_tell(['d', '--ctx', 'explain this error carefully'], 'explained');
+  const result = await run_tell(['d', '-c', 'explain this error carefully'], 'explained');
   assert_includes(result.tellMessages[0], 'explain this error carefully');
   assert_not_includes(result.tellMessages[0], 'Previous context:');
 }
@@ -475,7 +490,7 @@ async function test_poisoned_named_context_does_not_autoexecute() {
       'utf8',
     );
 
-    const resumed = await run_tell(['--yes', 'd', '-c', 'shared', 'continue safely'], 'safe answer', { dir });
+    const resumed = await run_tell(['--yes', 'd', '--ctx', 'shared', 'continue safely'], 'safe answer', { dir });
     assert.deepStrictEqual(resumed.execCalls, []);
     assert.strictEqual(resumed.stdout, 'safe answer\n');
     assert_includes(resumed.tellMessages[0], 'Previous context:');
@@ -495,7 +510,7 @@ async function test_incremental_context_saves_do_not_duplicate_turns_on_chain() 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
     const result = await run_tell(
-      ['--yes', '--chain', 'd', '--ctx', 'fix the build'],
+      ['--yes', '--chain', 'd', '-c', 'fix the build'],
       [run_block('echo ONE'), 'final answer'],
       { dir, execStdout: 'OK\n' },
     );
@@ -530,8 +545,9 @@ const TESTS = [
   test_context_hash_prefix_ambiguous_errors,
   test_context_index_recency_resolution,
   test_context_index_out_of_range_is_hard_error,
-  test_named_context_resumable_via_dash_c,
-  test_context_unknown_name_is_hard_error_with_hint,
+  test_named_context_resumable_via_ctx,
+  test_ctx_name_creates_when_missing_then_resumes,
+  test_ctx_invalid_name_is_hard_error,
   test_context_list_shows_saved_entries,
   test_multiword_prompt_with_default_context_flag,
   test_short_numeric_prompt_reaches_the_model,

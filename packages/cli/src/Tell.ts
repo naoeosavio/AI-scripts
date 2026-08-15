@@ -30,8 +30,8 @@ const MAX_CONTEXT_CHARS = 256 * 1024 * 1024;
 
 type CliOptions = {
   model?: string;
-  ctx?: boolean;
-  context?: string;
+  context?: boolean;
+  ctx?: string;
   createContext?: boolean;
   name?: string;
   list?: boolean;
@@ -48,8 +48,8 @@ type ContextEntry = { file: string; id: string; mtimeMs: number };
 
 // The resolved plan for how the current invocation should read/write context:
 // - 'none': no context flag was given (legacy one-shot behavior, default context is cleared).
-// - 'default': `--ctx` — the per-directory + model context.
-// - 'existing': `-c <ref>` resolved to an already-saved context (by index, hash prefix, or name).
+// - 'default': `-c` — the per-directory + model context.
+// - 'existing': `--ctx <ref>` resolved to an already-saved context (by index, hash prefix, or name).
 // - 'create': `-C` — a brand-new context, empty regardless of any prior content at that path.
 type ContextPlan =
   | { $: 'none' }
@@ -252,10 +252,11 @@ function sanitize_context_name(raw: string): string | null {
   return value;
 }
 
-// Resolves a `-c <ref>` value into a context plan. Syntax is explicit, one
-// namespace per prefix: `@N` = recency index, `#hex` = hash prefix, anything
-// else = exact saved name. No guessing.
-function resolve_context_ref(raw: string, entries: ContextEntry[]): ContextPlan {
+// Resolves a `--ctx <ref>` value into a context plan. Syntax is explicit, one
+// namespace per prefix: `@N` = recency index, `#hex` = hash prefix — both must
+// match an existing context. Anything else is a name: resumed when it exists,
+// created when it doesn't (use-or-create).
+function resolve_or_create_context_ref(raw: string, entries: ContextEntry[]): ContextPlan {
   const value = raw.trim();
 
   const index_match = /^@(\d+)$/i.exec(value);
@@ -288,18 +289,16 @@ function resolve_context_ref(raw: string, entries: ContextEntry[]): ContextPlan 
 
   const name = sanitize_context_name(value);
   if (!name) {
-    throw new Error(`Invalid context reference "${value}" — use @N (recency), #hash-prefix, or a saved name`);
+    throw new Error(`Invalid context reference "${value}" — use @N (recency), #hash-prefix, or a name`);
   }
   const match = entries.find((entry) => entry.id === name);
-  if (!match) {
-    throw new Error(`No saved context named "${name}" — create it with -C -n ${name}`);
-  }
-  return { $: 'existing', file: match.file, label: name };
+  if (match) return { $: 'existing', file: match.file, label: name };
+  return { $: 'create', file: named_context_file(name), label: name };
 }
 
 // Builds the effective context plan for this invocation from the parsed
-// `--ctx`/`-c`/`-C`/`-n` options. `-C` always starts empty, even when the
-// (optional) name already exists — an explicit reset. Resuming is `-c`.
+// `-c`/`--ctx`/`-C`/`-n` options. `-C` always starts empty, even when the
+// (optional) name already exists — an explicit reset.
 function build_context_plan(opts: CliOptions, model: string, entries: ContextEntry[]): ContextPlan {
   if (opts.createContext) {
     let id = randomBytes(16).toString('hex');
@@ -310,8 +309,8 @@ function build_context_plan(opts: CliOptions, model: string, entries: ContextEnt
     }
     return { $: 'create', file: named_context_file(id), label: id };
   }
-  if (opts.ctx) return { $: 'default', file: context_file(model) };
-  if (opts.context !== undefined) return resolve_context_ref(opts.context, entries);
+  if (opts.context) return { $: 'default', file: context_file(model) };
+  if (opts.ctx !== undefined) return resolve_or_create_context_ref(opts.ctx, entries);
   return { $: 'none' };
 }
 
@@ -509,8 +508,8 @@ function build_program(argv: string[]): Command {
     .description('One-shot terminal assistant')
     .argument('[input...]', 'optional model followed by the prompt, or just the prompt')
     .option('-m, --model <model>', 'model shortcode or full model spec (use -m --help to list)')
-    .option('--ctx', 'use the default context for this directory and model')
-    .option('-c, --context <ref>', 'resume a saved context: @N (recency), #hash-prefix, or name')
+    .option('-c, --context', 'use the default context for this directory and model')
+    .option('--ctx <ref>', 'use-or-create a context: @N (recency), #hash-prefix, or name (created if missing)')
     .option('-C, --create-context', 'create a fresh context (starts empty)')
     .option('-n, --name <name>', 'name for the context created with -C')
     .option('-l, --list', 'list saved contexts (@N, id, age, preview)')
@@ -639,7 +638,7 @@ async function run_tell(model: string, prompt: string, opts: CliOptions): Promis
 
   let plan: ContextPlan;
   try {
-    const entries = opts.context !== undefined ? list_context_entries() : [];
+    const entries = opts.ctx !== undefined ? list_context_entries() : [];
     plan = build_context_plan(opts, model, entries);
   } catch (error) {
     console.error('\x1b[31m%s\x1b[0m', error instanceof Error ? error.message : String(error));
@@ -706,18 +705,18 @@ async function main() {
   }
 
   const positional_args = program.args;
-  if (opts.context !== undefined && opts.createContext) {
+  if (opts.context && opts.createContext) {
     console.error('\x1b[31merror: cannot combine -c and -C in the same invocation\x1b[0m');
+    process.exitCode = 1;
+    return;
+  }
+  if (opts.ctx !== undefined && (opts.context || opts.createContext)) {
+    console.error('\x1b[31merror: --ctx cannot be combined with -c or -C\x1b[0m');
     process.exitCode = 1;
     return;
   }
   if (opts.name !== undefined && !opts.createContext) {
     console.error('\x1b[31merror: -n/--name requires -C/--create-context\x1b[0m');
-    process.exitCode = 1;
-    return;
-  }
-  if (opts.ctx && (opts.context !== undefined || opts.createContext)) {
-    console.error('\x1b[31merror: --ctx cannot be combined with -c or -C\x1b[0m');
     process.exitCode = 1;
     return;
   }
