@@ -5,6 +5,7 @@ import { createFireworks } from '@ai-sdk/fireworks';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createMoonshotAI } from '@ai-sdk/moonshotai';
 import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createXai } from '@ai-sdk/xai';
 import type { SDKConfig, SDKKeys } from './config';
 
@@ -118,12 +119,12 @@ export const MODELS: Record<string, string> = {
   D: 'deepseek:deepseek-v4-pro:high',
   'D+': 'deepseek:deepseek-v4-pro:max',
 
-  'z--': 'fireworks:glm-5p2:none',
-  'z-': 'fireworks:glm-5p2:low',
-  z: 'fireworks:glm-5p2:medium',
-  'z+': 'fireworks:glm-5p2:high',
-  'z++': 'fireworks:glm-5p2:max',
-  Z: 'fireworks:glm-5p2:high',
+  'z--': 'zai:glm-5.3:none',
+  'z-': 'zai:glm-5.3:low',
+  z: 'zai:glm-5.3:medium',
+  'z+': 'zai:glm-5.3:high',
+  'z++': 'zai:glm-5.3:max',
+  Z: 'zai:glm-5.3:high',
 
   k: 'moonshotai:kimi-k2.7-code:none',
 
@@ -154,6 +155,7 @@ const SUPPORTED_VENDORS = new Set([
   'fireworks',
   'deepseek',
   'alibaba',
+  'zai',
 ]);
 
 const VENDOR_KEY: Record<string, keyof SDKKeys> = {
@@ -167,6 +169,7 @@ const VENDOR_KEY: Record<string, keyof SDKKeys> = {
   moonshotai: 'moonshotai',
   openrouter: 'openrouter',
   alibaba: 'alibaba',
+  zai: 'zhipu',
 };
 
 const CEREBRAS_MODELS = new Set([
@@ -188,6 +191,7 @@ function get_api_key(vendor: string, config: SDKConfig): string | undefined {
 function infer_vendor(model: string): string {
   const normalized = model.toLowerCase();
   if (normalized.startsWith('alibaba/')) return 'alibaba';
+  if (normalized.startsWith('glm')) return 'zai';
   if (normalized.startsWith('gpt') || normalized.startsWith('o')) return 'openai';
   if (normalized.startsWith('claude')) return 'anthropic';
   if (normalized.startsWith('gemini')) return 'google';
@@ -207,6 +211,7 @@ let CEREBRAS: any = null;
 let MOONSHOTAI: any = null;
 let OPENROUTER: any = null;
 let ALIBABA: any = null;
+let ZHIPU: any = null;
 const VAST_PROVIDERS: Record<string, any> = {};
 const LOCAL_PROVIDERS: Record<string, any> = {};
 
@@ -490,6 +495,19 @@ async function handle_alibaba(
   return { model: ALIBABA(model.replace(/^alibaba\//i, '')), reasoning, fast };
 }
 
+async function handle_zhipu(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
+  if (!ZHIPU) {
+    const api_key = get_api_key('zai', config);
+    const base_url = config.urls.zhipu;
+    ZHIPU = createOpenAICompatible({
+      name: 'zhipu',
+      ...(api_key ? { apiKey: api_key } : {}),
+      baseURL: base_url ?? 'https://api.z.ai/api/paas/v4',
+    });
+  }
+  return { model: ZHIPU(model), reasoning, fast };
+}
+
 async function handle_vast(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
   const provider = await get_vast_provider(config.urls.vast ?? '');
   return { model: provider(model), reasoning, fast };
@@ -510,6 +528,7 @@ const VENDOR_HANDLERS: Record<string, (m: string, r: string, f: boolean, config:
   moonshotai: handle_moonshot_ai,
   openrouter: handle_openrouter,
   alibaba: handle_alibaba,
+  zai: handle_zhipu,
   vast: handle_vast,
   local: handle_local,
 };

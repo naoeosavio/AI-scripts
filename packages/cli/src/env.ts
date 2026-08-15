@@ -27,11 +27,13 @@ export async function load_sdk_config(): Promise<SDKConfig> {
     cerebras: ENV('CEREBRAS_API_KEY') || (await read_token_file('cerebras')),
     moonshotai: ENV('MOONSHOTAI_API_KEY') || (await read_token_file('moonshotai')),
     openrouter: ENV('OPENROUTER_API_KEY') || (await read_token_file('openrouter')),
+    zhipu: ENV('ZHIPU_API_KEY') || (await read_token_file('zhipu')),
   };
   const urls: SDKUrls = {
     openai: 'https://api.openai.com/v1',
     deepseek: 'https://api.deepseek.com',
     openrouter: 'https://openrouter.ai/api/v1',
+    zhipu: ENV('ZHIPU_BASE_URL') || 'https://api.z.ai/api/paas/v4',
     vast: ENV('VAST_BASE_URL'),
     local: ENV('LOCAL_OPENAI_BASE_URL'),
   };

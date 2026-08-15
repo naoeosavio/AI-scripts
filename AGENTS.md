@@ -84,7 +84,7 @@ Files:
 
 ### Model alias conventions
 
-- **First character(s)** = vendor+model: `g` = GPT-5.6 Sol, `o` = Claude Opus 5, `s` = Claude Sonnet 5, `f` = Claude Fable 5, `l` = Gemini 3.6 Flash, `j` = Gemini 3.5 Flash Lite, `d` = DeepSeek V4 Flash
+- **First character(s)** = vendor+model: `g` = GPT-5.6 Sol, `o` = Claude Opus 5, `s` = Claude Sonnet 5, `f` = Claude Fable 5, `l` = Gemini 3.6 Flash, `j` = Gemini 3.5 Flash Lite, `d` = DeepSeek V4 Flash, `z` = GLM-5.3 (Z.ai)
 - **Suffix** = thinking budget: `--` none, `-` low, (none) medium, `+` high, `++` xhigh/max
 - **Dot prefix** (`.g`) = fast mode
 - **Self-hosted**: `q` = local `/root/model`, `v` = vast `/root/model`
@@ -101,6 +101,7 @@ Canonical format: `vendor:official_model_name:thinking_budget` (e.g., `openai:gp
 - **[@ai-sdk/deepseek](https://www.npmjs.com/package/@ai-sdk/deepseek)** — DeepSeek provider
 - **[@ai-sdk/fireworks](https://www.npmjs.com/package/@ai-sdk/fireworks)** — Fireworks provider
 - **[@ai-sdk/cerebras](https://www.npmjs.com/package/@ai-sdk/cerebras)** — Cerebras provider
+- **[@ai-sdk/openai-compatible](https://www.npmjs.com/package/@ai-sdk/openai-compatible)** — OpenAI-compatible provider (Z.ai GLM via `zai:` vendor)
 - **[commander](https://www.npmjs.com/package/commander)** — CLI argument parsing
 
 The provider packages above are dependencies of `@tell-ai/sdk`; `commander` lives in `tell-ai`.

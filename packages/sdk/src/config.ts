@@ -9,6 +9,7 @@ export type SDKKeys = {
   moonshotai?: string | undefined;
   openrouter?: string | undefined;
   alibaba?: string | undefined;
+  zhipu?: string | undefined;
 };
 
 export type SDKUrls = {
@@ -24,6 +25,7 @@ export type SDKUrls = {
   vast?: string | undefined;
   local?: string | undefined;
   alibaba?: string | undefined;
+  zhipu?: string | undefined;
 };
 
 export interface SDKConfig {

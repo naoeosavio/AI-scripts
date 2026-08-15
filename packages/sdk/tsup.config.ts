@@ -31,6 +31,7 @@ export default defineConfig([
       '@ai-sdk/google',
       '@ai-sdk/moonshotai',
       '@ai-sdk/openai',
+      '@ai-sdk/openai-compatible',
       '@ai-sdk/xai',
     ],
     esbuildOptions(options) {
@@ -67,6 +68,7 @@ export default defineConfig([
       '@ai-sdk/google',
       '@ai-sdk/moonshotai',
       '@ai-sdk/openai',
+      '@ai-sdk/openai-compatible',
       '@ai-sdk/xai',
     ],
     esbuildOptions(options) {
