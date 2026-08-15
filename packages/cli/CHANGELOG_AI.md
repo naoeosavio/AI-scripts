@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.5.1 — 2026-08-15
+
+To generate the changelog section without any markdown fences or extraneous explanations:
+
+### Features
+- Add Z.ai model provider and GLM-5.3 support with OpenAI-compatible adapter
+- Introduce browser-safe bundles and MIT license support in SDK
+- Add custom base URLs and `tell` function for one-shot assistant calls
+- Add addressable, named, and use-or-create context options in CLI
+- Initialize core tell-ai terminal assistant CLI package and persistence
+
+### Refactors
+- Streamline context flags, addressing syntax, and unify `--ctx` usage
+- Extract system prompt generation logic into SDK and dedicated modules
+- Improve model spec detection and context argument handling in CLI
+- Migrate CLI package to ESM modules and update workspace metadata
+
+### Documentation
+- Structure project README and add dedicated package readmes
+
+### Chores
+- Update project license, changelogs, and SDK versions across the monorepo
+
+---
+
 ## v0.5.0 — 2026-08-05
 
 ### Features

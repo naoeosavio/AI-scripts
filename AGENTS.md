@@ -72,7 +72,7 @@ Single-file Node entry point for the `tell` binary (CJS bundle, `#!/usr/bin/env 
 - Extracts `<RUN>...</RUN>` tags from AI responses and prompts before executing commands
 - `--chain` iterates up to 8 steps, feeding command outputs back to the model
 - `-c` persists the default per-directory+model context (SHA-256 hash, `~/.ai/tell_context/`)
-- `--ctx [ref]` use-or-create context: bare = default context (`-c` synonym); `@N` (recency) or `#hash` prefix (must exist); name (created if missing); multi-word value = prompt text for the default context (unnamed contexts are never saved)
+- `--ctx [ref]` use-or-create context: bare = default context (`-c` synonym); `@N` (recency) or `#hash` prefix (must exist); name (created if missing); multi-word value = prompt text for the default context (unnamed contexts are never saved). A lone single token is a NAME, never a prompt — one-word prompts go on `-c` or as multi-word `--ctx` values
 - `-n` reset modifier: `--ctx <name> -n` starts empty, even if the name exists
 - `-l` lists saved contexts (`@N`, id, age, preview)
 - `-y` auto-executes commands (high-risk commands still require confirmation)

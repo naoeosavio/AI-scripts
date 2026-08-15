@@ -146,6 +146,15 @@ tell --ctx '#a1b2c3' "resume by hash prefix"           # explicit # = hash, must
 
 Context files live at `~/.ai/tell_context/`. Without any context flag, each invocation starts fresh and the default context is cleared. Context is automatically truncated at 200,000 characters.
 
+**One token vs multi-word:** a single token after `--ctx` is always a name (or `@N`/`#hash` ref), never a prompt:
+
+```bash
+tell d --ctx ola                # "ola" = context NAME, no prompt → error: missing prompt
+tell d --ctx ola "say hello"    # resumes/creates named context "ola" with prompt "say hello"
+tell d -c ola                   # one-word prompt on the default context
+tell d --ctx "say hello"        # multi-word value = prompt on the default context
+```
+
 ## Flag interactions
 
 How `-c` (default context) and `--chain` (multi-step loop) combine:
