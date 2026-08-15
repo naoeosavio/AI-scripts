@@ -1,5 +1,5 @@
 import { exec } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -31,9 +31,8 @@ const MAX_CONTEXT_CHARS = 256 * 1024 * 1024;
 type CliOptions = {
   model?: string;
   context?: boolean;
-  ctx?: string;
-  createContext?: boolean;
-  name?: string;
+  ctx?: boolean | string;
+  name?: boolean;
   list?: boolean;
   yes?: boolean;
   chain?: boolean;
@@ -48,12 +47,12 @@ type ContextEntry = { file: string; id: string; mtimeMs: number };
 
 // The resolved plan for how the current invocation should read/write context:
 // - 'none': no context flag was given (legacy one-shot behavior, default context is cleared).
-// - 'default': `-c` — the per-directory + model context.
+// - 'default': `-c` or bare `--ctx` — the per-directory + model context.
 // - 'existing': `--ctx <ref>` resolved to an already-saved context (by index, hash prefix, or name).
-// - 'create': `-C` — a brand-new context, empty regardless of any prior content at that path.
+// - 'create': `--ctx <name> -n` (explicit reset) or `--ctx` on a missing name.
 type ContextPlan =
   | { $: 'none' }
-  | { $: 'default'; file: string }
+  | { $: 'default'; file: string; promptFromRef?: string }
   | { $: 'existing'; file: string; label: string }
   | { $: 'create'; file: string; label: string };
 
@@ -252,11 +251,18 @@ function sanitize_context_name(raw: string): string | null {
   return value;
 }
 
+// A multi-word `--ctx` value cannot be a name or ref (both are single
+// tokens), so it is prompt text for the default context (`-c` behavior).
+function ctx_value_is_prompt_text(value: string): boolean {
+  return /\s/.test(value.trim());
+}
+
 // Resolves a `--ctx <ref>` value into a context plan. Syntax is explicit, one
 // namespace per prefix: `@N` = recency index, `#hex` = hash prefix — both must
-// match an existing context. Anything else is a name: resumed when it exists,
-// created when it doesn't (use-or-create).
-function resolve_or_create_context_ref(raw: string, entries: ContextEntry[]): ContextPlan {
+// match an existing context. A single-token name is use-or-create (resumed
+// when it exists, created when it doesn't). A multi-word value is prompt text
+// for the default context — unnamed contexts are never saved.
+function resolve_or_create_context_ref(raw: string, entries: ContextEntry[], model: string): ContextPlan {
   const value = raw.trim();
 
   const index_match = /^@(\d+)$/i.exec(value);
@@ -288,29 +294,30 @@ function resolve_or_create_context_ref(raw: string, entries: ContextEntry[]): Co
   }
 
   const name = sanitize_context_name(value);
-  if (!name) {
-    throw new Error(`Invalid context reference "${value}" — use @N (recency), #hash-prefix, or a name`);
+  if (name) {
+    const match = entries.find((entry) => entry.id === name);
+    if (match) return { $: 'existing', file: match.file, label: name };
+    return { $: 'create', file: named_context_file(name), label: name };
   }
-  const match = entries.find((entry) => entry.id === name);
-  if (match) return { $: 'existing', file: match.file, label: name };
-  return { $: 'create', file: named_context_file(name), label: name };
+
+  if (ctx_value_is_prompt_text(value)) {
+    return { $: 'default', file: context_file(model), promptFromRef: value };
+  }
+
+  throw new Error(`Invalid context reference "${value}" — use @N (recency), #hash-prefix, or a name`);
 }
 
 // Builds the effective context plan for this invocation from the parsed
-// `-c`/`--ctx`/`-C`/`-n` options. `-C` always starts empty, even when the
-// (optional) name already exists — an explicit reset.
+// `-c`/`--ctx`/`-n` options. `--ctx <name> -n` is an explicit reset: always
+// starts empty, even when the name already exists.
 function build_context_plan(opts: CliOptions, model: string, entries: ContextEntry[]): ContextPlan {
-  if (opts.createContext) {
-    let id = randomBytes(16).toString('hex');
-    if (opts.name !== undefined) {
-      const name = sanitize_context_name(opts.name);
-      if (!name) throw new Error(`Invalid context name "${opts.name}"`);
-      id = name;
-    }
-    return { $: 'create', file: named_context_file(id), label: id };
+  if (opts.name) {
+    const name = typeof opts.ctx === 'string' ? sanitize_context_name(opts.ctx) : null;
+    if (!name) throw new Error('-n/--name requires a context name: --ctx <name> -n');
+    return { $: 'create', file: named_context_file(name), label: name };
   }
-  if (opts.context) return { $: 'default', file: context_file(model) };
-  if (opts.ctx !== undefined) return resolve_or_create_context_ref(opts.ctx, entries);
+  if (opts.ctx === true || opts.context) return { $: 'default', file: context_file(model) };
+  if (typeof opts.ctx === 'string') return resolve_or_create_context_ref(opts.ctx, entries, model);
   return { $: 'none' };
 }
 
@@ -509,9 +516,8 @@ function build_program(argv: string[]): Command {
     .argument('[input...]', 'optional model followed by the prompt, or just the prompt')
     .option('-m, --model <model>', 'model shortcode or full model spec (use -m --help to list)')
     .option('-c, --context', 'use the default context for this directory and model')
-    .option('--ctx <ref>', 'use-or-create a context: @N (recency), #hash-prefix, or name (created if missing)')
-    .option('-C, --create-context', 'create a fresh context (starts empty)')
-    .option('-n, --name <name>', 'name for the context created with -C')
+    .option('--ctx [ref]', 'use-or-create: @N, #hash-prefix, name, or prompt text for the default context')
+    .option('-n, --name', 'reset a named context (--ctx <name> -n; starts empty, even if it exists)')
     .option('-l, --list', 'list saved contexts (@N, id, age, preview)')
     .option('-y, --yes', 'execute requested commands without confirmation')
     .option('--chain', 'continue after command output until the assistant gives a final answer')
@@ -638,7 +644,7 @@ async function run_tell(model: string, prompt: string, opts: CliOptions): Promis
 
   let plan: ContextPlan;
   try {
-    const entries = opts.ctx !== undefined ? list_context_entries() : [];
+    const entries = typeof opts.ctx === 'string' ? list_context_entries() : [];
     plan = build_context_plan(opts, model, entries);
   } catch (error) {
     console.error('\x1b[31m%s\x1b[0m', error instanceof Error ? error.message : String(error));
@@ -654,14 +660,18 @@ async function run_tell(model: string, prompt: string, opts: CliOptions): Promis
     // 'none' and 'default' reuse the legacy per-directory/model context silently — nothing to announce.
   }
 
+  // A multi-word `--ctx` value is prompt text for the fresh context it created.
+  const full_prompt = [plan.$ === 'default' ? (plan.promptFromRef ?? '') : '', prompt].filter(Boolean).join(' ');
   const save_context = plan.$ !== 'none';
   // 'create' always starts empty, even if it reuses an existing name (an explicit reset).
   const context_path = plan.$ === 'none' ? context_file(model) : plan.file;
   const previous_context = plan.$ === 'default' || plan.$ === 'existing' ? read_text(plan.file) : '';
-  const first_prompt = previous_context ? `Previous context:\n${previous_context}\n\nUser:\n${prompt}` : prompt;
+  const first_prompt = previous_context
+    ? `Previous context:\n${previous_context}\n\nUser:\n${full_prompt}`
+    : full_prompt;
   const state: ConversationState = {
     firstPrompt: first_prompt,
-    timeline: [`User:\n${prompt}`],
+    timeline: [`User:\n${full_prompt}`],
     commandRounds: 0,
     chainLimitReached: false,
     autoContinue: Boolean(opts.chain),
@@ -671,7 +681,7 @@ async function run_tell(model: string, prompt: string, opts: CliOptions): Promis
   };
   if (plan.$ === 'none') fs.rmSync(context_path, { force: true });
   const log = log_file();
-  append_log(log, `Model: ${label}\nUser:\n${prompt}`);
+  append_log(log, `Model: ${label}\nUser:\n${full_prompt}`);
 
   let ai: AskInstance | null = null;
   try {
@@ -705,18 +715,8 @@ async function main() {
   }
 
   const positional_args = program.args;
-  if (opts.context && opts.createContext) {
-    console.error('\x1b[31merror: cannot combine -c and -C in the same invocation\x1b[0m');
-    process.exitCode = 1;
-    return;
-  }
-  if (opts.ctx !== undefined && (opts.context || opts.createContext)) {
-    console.error('\x1b[31merror: --ctx cannot be combined with -c or -C\x1b[0m');
-    process.exitCode = 1;
-    return;
-  }
-  if (opts.name !== undefined && !opts.createContext) {
-    console.error('\x1b[31merror: -n/--name requires -C/--create-context\x1b[0m');
+  if (opts.ctx !== undefined && opts.context) {
+    console.error('\x1b[31merror: --ctx cannot be combined with -c\x1b[0m');
     process.exitCode = 1;
     return;
   }
@@ -724,7 +724,8 @@ async function main() {
   const input = parse_args(positional_args, opts.model, Boolean(opts.input));
   const stdin_text = input.readStdin ? await read_stdin().catch(() => '') : '';
   const prompt = format_prompt(input.parts.join(' '), stdin_text, opts);
-  if (!prompt) {
+  const ctx_is_prompt = typeof opts.ctx === 'string' && ctx_value_is_prompt_text(opts.ctx);
+  if (!prompt && !ctx_is_prompt) {
     console.error(format_missing_prompt_error(program));
     process.exitCode = 1;
     return;

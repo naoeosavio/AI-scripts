@@ -127,18 +127,17 @@ tell --chain "find out why the build is failing and fix it"
 npm run build 2>&1 | tell --chain -i "fix the build errors"
 ```
 
-## Persistent context (`-c`, `--ctx`, `-C`, `-n`)
+## Persistent context (`-c`, `--ctx`, `-n`)
 
-Context flags are explicit — no value guessing:
+Context flags are explicit — no value guessing. Only named contexts are saved:
 
 ```bash
 tell -c "remember that this project uses PostgreSQL"   # default context for this dir+model
-tell -c "now add a users table migration"              # remembers the previous message
+tell --ctx "remember this too"                         # bare/multi-word --ctx = same as -c
 
-tell --ctx myproj "seed the project"                   # use-or-create: resumes if it exists
+tell --ctx myproj "seed the project"                   # use-or-create named: resumes if it exists
 tell --ctx myproj "continue the project"               # ...otherwise creates it fresh
-tell -C -n myproj "start over"                         # explicit reset (always starts empty)
-tell -C "one-off conversation"                         # fresh random-id context
+tell --ctx myproj -n "start over"                      # explicit reset (always starts empty)
 
 tell -l                                                # list saved contexts
 tell --ctx @0 "resume the most recent one"             # recency index (must exist)

@@ -1,16 +1,17 @@
 // test-tell-context.js
 //
 // Extra coverage for the context addressing/lifecycle system (`-c`, `--ctx`,
-// `-C`, `-n`, `-l`) on top of the existing prompt-injection / command-execution
+// `-n`, `-l`) on top of the existing prompt-injection / command-execution
 // suite in test-tell-security.js. Uses the same approach: transpile Tell.ts with
 // the real TypeScript compiler, run it inside a sandboxed vm context with
 // a mocked "@tell-ai/sdk", "child_process" and "os", and assert on the
 // resulting stdout/stderr/exec calls/context files on disk.
 //
 // Context flags are fully explicit: `-c` = default per-dir/model context,
-// `--ctx <ref>` = use-or-create (`@N` recency, `#hash` prefix, or name —
-// created when missing), `-C` = create fresh (random id, or `-C -n <name>`),
-// `-l` = list.
+// `--ctx [ref]` = bare = default context; `@N` recency / `#hash` prefix
+// resume (must exist); a name is use-or-create; multi-word value = prompt
+// text for the default context. `-n` = reset modifier (`--ctx <name> -n`).
+// Unnamed contexts are never saved.
 
 const assert = require('node:assert');
 const { EventEmitter } = require('node:events');
@@ -231,32 +232,54 @@ async function test_no_flag_invocation_clears_default_context() {
 }
 
 // ---------------------------------------------------------------------
-// `-C` creation: bare, named (via `-n`), and validation of the name
+// `--ctx [ref]` shapes: bare, reset (-n), multi-word, invalid single token
 // ---------------------------------------------------------------------
 
-async function test_create_context_bare_generates_random_id() {
+// Bare `--ctx` is a synonym of `-c`: default context, no saved name.
+async function test_ctx_bare_is_default_context() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const result = await run_tell(['d', '-C', 'start a new context'], 'ok', { dir });
-    assert_includes(result.stderr, 'Created context: ');
-    const files = list_context_files(result.home);
-    assert.strictEqual(files.length, 1);
-    assert.match(files[0], /^[a-f0-9]{32}\.txt$/);
+    await run_tell(['d', '-c', 'remember X'], 'ack X', { dir });
+
+    const resumed = await run_tell(['d', '--ctx'], 'you said X', { dir, stdin: 'what did I say?' });
+    assert_includes(resumed.tellMessages[0], 'Previous context:');
+    assert_includes(resumed.tellMessages[0], 'ack X');
+    assert_includes(resumed.tellMessages[0], 'what did I say?');
+    assert.strictEqual(list_context_files(resumed.home).length, 1);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-async function test_create_context_named_starts_fresh_even_if_name_exists() {
+// A multi-word `--ctx` value is prompt text for the DEFAULT context —
+// nothing is saved under a random id, it behaves exactly like `-c`.
+async function test_ctx_multivord_value_is_default_context_with_prompt() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const created = await run_tell(['d', '-C', '-n', 'myproj', 'seed the project'], 'seeded', { dir });
+    await run_tell(['d', '-c', 'remember X'], 'ack X', { dir });
+
+    const result = await run_tell(['d', '--ctx', 'what did I say?'], 'you said X', { dir });
+    assert_includes(result.tellMessages[0], 'Previous context:');
+    assert_includes(result.tellMessages[0], 'ack X');
+    assert_includes(result.tellMessages[0], 'what did I say?');
+    // only the default per-cwd/model context exists — no random-id file.
+    assert.strictEqual(list_context_files(result.home).length, 1);
+    assert.match(list_context_files(result.home)[0], /^[a-f0-9]{64}\.txt$/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function test_name_reset_starts_fresh_even_if_name_exists() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
+  try {
+    const created = await run_tell(['d', '--ctx', 'myproj', '-n', 'seed the project'], 'seeded', { dir });
     assert_includes(created.stderr, 'Created context: myproj');
     assert.strictEqual(list_context_files(created.home).length, 1);
 
-    // `-C -n <name>` is an explicit reset: same name, but the fresh context
-    // must NOT feed the previous content back to the model.
-    const recreated = await run_tell(['d', '-C', '-n', 'myproj', 'start over'], 'fresh', { dir });
+    // `--ctx <name> -n` is an explicit reset: same name, but the fresh
+    // context must NOT feed the previous content back to the model.
+    const recreated = await run_tell(['d', '--ctx', 'myproj', '-n', 'start over'], 'fresh', { dir });
     assert_includes(recreated.stderr, 'Created context: myproj');
     assert_not_includes(recreated.tellMessages[0], 'seeded');
     assert_not_includes(recreated.tellMessages[0], 'Previous context:');
@@ -266,19 +289,19 @@ async function test_create_context_named_starts_fresh_even_if_name_exists() {
   }
 }
 
-async function test_create_context_invalid_name_is_hard_error() {
-  const result = await run_tell(['d', '-C', '-n', 'bad name with spaces', 'prompt text'], 'ok');
+async function test_name_reset_invalid_name_is_hard_error() {
+  const result = await run_tell(['d', '--ctx', 'bad/name', '-n', 'prompt text'], 'ok');
   assert.strictEqual(result.exitCode, 1);
-  assert_includes(result.stderr, 'Invalid context name "bad name with spaces"');
+  assert_includes(result.stderr, '-n/--name requires a context name: --ctx <name> -n');
   assert.deepStrictEqual(result.tellCalls, []);
 }
 
-async function test_create_context_path_traversal_name_rejected() {
+async function test_name_reset_path_traversal_name_rejected() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const result = await run_tell(['d', '-C', '-n', '../../evil', 'attempt escape'], 'ok', { dir });
+    const result = await run_tell(['d', '--ctx', '../../evil', '-n', 'attempt escape'], 'ok', { dir });
     assert.strictEqual(result.exitCode, 1);
-    assert_includes(result.stderr, 'Invalid context name "../../evil"');
+    assert_includes(result.stderr, '-n/--name requires a context name: --ctx <name> -n');
     assert.deepStrictEqual(result.tellCalls, []);
     assert.strictEqual(list_context_files(result.home).length, 0);
     assert.ok(!fs.existsSync(path.join(result.home, '.ai', 'evil.txt')));
@@ -292,24 +315,10 @@ async function test_create_context_path_traversal_name_rejected() {
 // Flag validation
 // ---------------------------------------------------------------------
 
-async function test_context_and_create_context_together_errors() {
-  const result = await run_tell(['d', '-c', 'myproj', '-C', 'hello world'], 'unused');
-  assert.strictEqual(result.exitCode, 1);
-  assert_includes(result.stderr, 'cannot combine -c and -C');
-  assert.deepStrictEqual(result.tellCalls, []);
-}
-
-async function test_name_requires_create_context_flag() {
-  const result = await run_tell(['d', '-n', 'myproj', 'hello world'], 'unused');
-  assert.strictEqual(result.exitCode, 1);
-  assert_includes(result.stderr, '-n/--name requires -C/--create-context');
-  assert.deepStrictEqual(result.tellCalls, []);
-}
-
 async function test_ctx_flag_does_not_combine_with_others() {
   const result = await run_tell(['d', '--ctx', 'myproj', '-c', 'hello world'], 'unused');
   assert.strictEqual(result.exitCode, 1);
-  assert_includes(result.stderr, '--ctx cannot be combined with -c or -C');
+  assert_includes(result.stderr, '--ctx cannot be combined with -c');
   assert.deepStrictEqual(result.tellCalls, []);
 }
 
@@ -320,8 +329,8 @@ async function test_ctx_flag_does_not_combine_with_others() {
 async function test_context_hash_prefix_resolves_unique_match() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', '-n', 'abc123', 'seed one'], 'seed one answer', { dir });
-    await run_tell(['d', '-C', '-n', 'abc999', 'seed two'], 'seed two answer', { dir });
+    await run_tell(['d', '--ctx', 'abc123', '-n', 'seed one'], 'seed one answer', { dir });
+    await run_tell(['d', '--ctx', 'abc999', '-n', 'seed two'], 'seed two answer', { dir });
 
     const resumed = await run_tell(['d', '--ctx', '#abc12', 'continue'], 'continued answer', { dir });
     assert_includes(resumed.stderr, 'Using context: ');
@@ -335,8 +344,8 @@ async function test_context_hash_prefix_resolves_unique_match() {
 async function test_context_hash_prefix_ambiguous_errors() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', '-n', 'abc123', 'seed one'], 'seed one answer', { dir });
-    await run_tell(['d', '-C', '-n', 'abc124', 'seed two'], 'seed two answer', { dir });
+    await run_tell(['d', '--ctx', 'abc123', '-n', 'seed one'], 'seed one answer', { dir });
+    await run_tell(['d', '--ctx', 'abc124', '-n', 'seed two'], 'seed two answer', { dir });
 
     const ambiguous = await run_tell(['d', '--ctx', '#abc12', 'continue'], 'unused', { dir });
     assert.strictEqual(ambiguous.exitCode, 1);
@@ -350,9 +359,9 @@ async function test_context_hash_prefix_ambiguous_errors() {
 async function test_context_index_recency_resolution() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', '-n', 'older', 'first'], 'first answer', { dir });
+    await run_tell(['d', '--ctx', 'older', '-n', 'first'], 'first answer', { dir });
     await sleep(20);
-    await run_tell(['d', '-C', '-n', 'newer', 'second'], 'second answer', { dir });
+    await run_tell(['d', '--ctx', 'newer', '-n', 'second'], 'second answer', { dir });
 
     const zero = await run_tell(['d', '--ctx', '@0', 'check'], 'zero answer', { dir });
     assert_includes(zero.stderr, 'Using context: @0 (newer)');
@@ -369,7 +378,7 @@ async function test_context_index_recency_resolution() {
 async function test_context_index_out_of_range_is_hard_error() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', '-n', 'only', 'seed'], 'seed answer', { dir });
+    await run_tell(['d', '--ctx', 'only', '-n', 'seed'], 'seed answer', { dir });
 
     const out_of_range = await run_tell(['d', '--ctx', '@5', 'check'], 'unused', { dir });
     assert.strictEqual(out_of_range.exitCode, 1);
@@ -383,7 +392,7 @@ async function test_context_index_out_of_range_is_hard_error() {
 async function test_named_context_resumable_via_ctx() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', '-n', 'myproject', 'remember this'], 'remembered', { dir });
+    await run_tell(['d', '--ctx', 'myproject', '-n', 'remember this'], 'remembered', { dir });
 
     const resumed = await run_tell(['d', '--ctx', 'myproject', 'continue'], 'continued answer', { dir });
     assert_includes(resumed.stderr, 'Using context: myproject');
@@ -416,19 +425,21 @@ async function test_ctx_name_creates_when_missing_then_resumes() {
   }
 }
 
-async function test_ctx_invalid_name_is_hard_error() {
-  const result = await run_tell(['d', '--ctx', 'bad name with spaces', 'prompt'], 'unused');
+// A single token that is neither @N, #hash, nor a valid name is a hard
+// error — it is NOT silently reinterpreted as prompt text.
+async function test_ctx_invalid_single_token_is_hard_error() {
+  const result = await run_tell(['d', '--ctx', 'bad/name', 'prompt'], 'unused');
   assert.strictEqual(result.exitCode, 1);
-  assert_includes(result.stderr, 'Invalid context reference "bad name with spaces"');
+  assert_includes(result.stderr, 'Invalid context reference "bad/name"');
   assert.deepStrictEqual(result.tellCalls, []);
 }
 
 async function test_context_list_shows_saved_entries() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    await run_tell(['d', '-C', '-n', 'alpha', 'a'], 'alpha answer', { dir });
+    await run_tell(['d', '--ctx', 'alpha', '-n', 'a'], 'alpha answer', { dir });
     await sleep(15);
-    await run_tell(['d', '-C', '-n', 'beta', 'b'], 'beta answer', { dir });
+    await run_tell(['d', '--ctx', 'beta', '-n', 'b'], 'beta answer', { dir });
 
     const listed = await run_tell(['-l'], 'unused', { dir });
     assert.strictEqual(listed.tellCalls.length, 0);
@@ -478,11 +489,11 @@ async function test_no_exec_overrides_yes_flag() {
 // default per-cwd/model context: its stored text is untrusted data fed
 // back to the model as part of the prompt, never re-scanned for <RUN>
 // tags. This mirrors the equivalent default-context test in
-// test-tell-security.js, extended to the -C/-c addressing path.
+// test-tell-security.js, extended to the -n/--ctx addressing path.
 async function test_poisoned_named_context_does_not_autoexecute() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-context-'));
   try {
-    const seed = await run_tell(['d', '-C', '-n', 'shared', 'seed'], 'seed answer', { dir });
+    const seed = await run_tell(['d', '--ctx', 'shared', '-n', 'seed'], 'seed answer', { dir });
     const context_path = path.join(context_dir_path(seed.home), 'shared.txt');
     fs.writeFileSync(
       context_path,
@@ -534,12 +545,11 @@ const TESTS = [
   test_bare_context_round_trip_within_same_dir_and_model,
   test_bare_context_isolated_across_models_same_dir,
   test_no_flag_invocation_clears_default_context,
-  test_create_context_bare_generates_random_id,
-  test_create_context_named_starts_fresh_even_if_name_exists,
-  test_create_context_invalid_name_is_hard_error,
-  test_create_context_path_traversal_name_rejected,
-  test_context_and_create_context_together_errors,
-  test_name_requires_create_context_flag,
+  test_ctx_bare_is_default_context,
+  test_ctx_multivord_value_is_default_context_with_prompt,
+  test_name_reset_starts_fresh_even_if_name_exists,
+  test_name_reset_invalid_name_is_hard_error,
+  test_name_reset_path_traversal_name_rejected,
   test_ctx_flag_does_not_combine_with_others,
   test_context_hash_prefix_resolves_unique_match,
   test_context_hash_prefix_ambiguous_errors,
@@ -547,7 +557,7 @@ const TESTS = [
   test_context_index_out_of_range_is_hard_error,
   test_named_context_resumable_via_ctx,
   test_ctx_name_creates_when_missing_then_resumes,
-  test_ctx_invalid_name_is_hard_error,
+  test_ctx_invalid_single_token_is_hard_error,
   test_context_list_shows_saved_entries,
   test_multiword_prompt_with_default_context_flag,
   test_short_numeric_prompt_reaches_the_model,
