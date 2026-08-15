@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.2.1 — 2026-08-15
+
+### Features
+- Overhaul CLI context management to use explicit flags and namespaces with strict validation
+- Add Z.ai model provider and GLM-5.3 support
+- Update model mappings and version tiers across Gemini, Google, X.ai, and DeepSeek
+- Introduce browser-safe bundles, Node module shims, and global IIFE build support
+- Add custom base URLs per model vendor and introduce the `tell` programmatic assistant function
+
+### Refactors
+- Extract system prompt generation to SDK and support alternative execution variants
+- Migrate CLI package output from CommonJS to ESM modules and enhance package metadata
+- Modularize ask functionality and update package exports
+
+### Documentation
+- Structure project README and add dedicated package README files for the CLI and SDK
+
+### Chores
+- Update project license to MIT and synchronize workspace package versions and documentation references
+
+---
+
 ## 0.2.0 — 2026-08-11
 
 ### Features
