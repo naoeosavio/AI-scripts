@@ -154,6 +154,7 @@ const SUPPORTED_VENDORS = new Set([
   'local',
   'fireworks',
   'deepseek',
+  'cerebras',
   'alibaba',
   'zai',
 ]);
@@ -172,15 +173,7 @@ const VENDOR_KEY: Record<string, keyof SDKKeys> = {
   zai: 'zhipu',
 };
 
-const CEREBRAS_MODELS = new Set([
-  'gpt-oss-120b',
-  'gpt-oss-20b',
-  'llama3.1-8b',
-  'llama-3.3-70b',
-  'qwen-3-32b',
-  'qwen-3-235b-a22b-instruct-2507',
-  'zai-glm-4.6',
-]);
+const CEREBRAS_MODELS = new Set(['gpt-oss-120b', 'gemma-4-31b']);
 
 function get_api_key(vendor: string, config: SDKConfig): string | undefined {
   const key_name = VENDOR_KEY[vendor];
@@ -525,6 +518,7 @@ const VENDOR_HANDLERS: Record<string, (m: string, r: string, f: boolean, config:
   xai: handle_xai,
   deepseek: handle_deepseek,
   fireworks: handle_fireworks,
+  cerebras: handle_cerebras,
   moonshotai: handle_moonshot_ai,
   openrouter: handle_openrouter,
   alibaba: handle_alibaba,
