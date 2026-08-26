@@ -21,7 +21,6 @@ export interface ResolvedModelSpec {
 export interface ModelHandle {
   model: any;
   reasoning: string;
-  reasoningEffort?: string;
   fast: boolean;
 }
 
@@ -295,10 +294,13 @@ function parse_model_spec_raw(spec: string): ResolvedModelSpec {
     parts.pop();
   }
 
-  if (parts.length === 1) return resolve_single_part(trimmed, fast);
+  // `:fast` was already popped from parts — pass the popped spec, not the raw
+  // trimmed input (otherwise `<alias>:fast` keeps the suffix and fails vendor lookup).
+  const base_spec = parts.join(':');
+  if (parts.length === 1) return resolve_single_part(base_spec, fast);
 
   const first_part = parts[0]?.trim().toLowerCase() ?? '';
-  if (!SUPPORTED_VENDORS.has(first_part)) return resolve_single_part(trimmed, fast);
+  if (!SUPPORTED_VENDORS.has(first_part)) return resolve_single_part(base_spec, fast);
 
   if (parts.length < 2 || parts.length > 3) {
     throw new Error(`Expected "vendor:model" or "vendor:model:thinking", got "${spec}"`);
@@ -452,13 +454,7 @@ async function handle_moonshot_ai(
       ...(base_url ? { baseURL: base_url } : {}),
     });
   }
-  const reasoning_effort = reasoning !== 'none' ? 'max' : undefined;
-  return {
-    model: MOONSHOTAI(model),
-    reasoning,
-    ...(reasoning_effort ? { reasoningEffort: reasoning_effort } : {}),
-    fast,
-  };
+  return { model: MOONSHOTAI(model), reasoning, fast };
 }
 
 async function handle_openrouter(

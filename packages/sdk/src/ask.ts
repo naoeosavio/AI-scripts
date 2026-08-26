@@ -16,12 +16,8 @@ export async function create_ask_ai(modelSpec: string, config: SDKConfig): Promi
         model: handle.model,
         instructions: options.system,
         prompt: message,
+        reasoning,
       };
-      if (handle.reasoningEffort) {
-        gen_options.reasoning_effort = handle.reasoningEffort;
-      } else {
-        gen_options.reasoning = reasoning;
-      }
       const result = await generateText(gen_options);
       const model_reasoning = result.finalStep.reasoningText;
       return model_reasoning ? `<think>${model_reasoning}</think>\n${result.text}` : result.text;
