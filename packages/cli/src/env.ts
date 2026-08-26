@@ -27,6 +27,7 @@ export async function load_sdk_config(): Promise<SDKConfig> {
     cerebras: ENV('CEREBRAS_API_KEY') || (await read_token_file('cerebras')),
     moonshotai: ENV('MOONSHOTAI_API_KEY') || (await read_token_file('moonshotai')),
     openrouter: ENV('OPENROUTER_API_KEY') || (await read_token_file('openrouter')),
+    alibaba: ENV('ALIBABA_API_KEY') || (await read_token_file('alibaba')),
     zhipu: ENV('ZHIPU_API_KEY') || (await read_token_file('zhipu')),
   };
   const urls: SDKUrls = {

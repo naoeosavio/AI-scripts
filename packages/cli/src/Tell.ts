@@ -26,7 +26,9 @@ const MAX_BUFFER = 32 * 1024 * 1024;
 const MAX_CHAIN_STEPS = 8;
 const EXEC_TIMEOUT = 120_000;
 const STDIN_TIMEOUT = 30_000;
-const MAX_CONTEXT_CHARS = 256 * 1024 * 1024;
+// Chars of accumulated conversation context; beyond this the oldest part is
+// summarized away (LLM windows are far below 64K chars of raw history).
+const MAX_CONTEXT_CHARS = 64 * 1024;
 
 type CliOptions = {
   model?: string;
@@ -369,7 +371,18 @@ function is_high_risk_script(script: string): boolean {
     /\b(git\s+clean\s+-[^\s]*[xfd]|mkfs|shutdown|reboot)\b/,
     /\bdd\b.*\bof=/,
     /\b(chmod|chown)\s+-R\b.*\s\/(?:\s|$)/,
-    /(?:curl|wget)\b[^|;&]*\|\s*(?:ba)?sh\b/,
+    // Download piped straight into an interpreter (curl|sh, wget|bash,
+    // curl|python3, base64 -d|sh, …).
+    /(?:curl|wget|base64)\b[^|;&]*\|\s*(?:(?:ba|z|da|k)?sh|python3?|perl|ruby|php|node)\b/,
+    // Process substitution feeding a download into anything: x <(curl …),
+    // or feeding anything into a shell: bash <(…).
+    /<\(\s*(?:curl|wget|base64)\b/,
+    /(?:^|[\s;&|])(?:ba|z|da|k)?sh\b[^;&|]*<\(/,
+    // Interpreters with inline code strings ONLY when they touch the network
+    // or decode payloads (local one-liners stay allowed by design): remote
+    // code fetch via node/python/php -e/-c/-r, semicolon-chained downloads.
+    /(?:^|[\s;&|])(?:node|deno|bun|python3?|perl|ruby|php|lua)\b[^;&|]*\s-{1,2}(?:e|c|r|eval|exec|command)\b[^;&|]*(?:https?:\/\/|require\(\s*['"]https?|import\(\s*['"]https?|urllib|requests\.|ftplib|socket|base64|eval\(|exec\(|system\(|popen\()/,
+    /(?:curl|wget|base64)\b[^;&|]*[;&|]\s*(?:node|python3?|perl|ruby|php)\b/,
     /(?:^|[\s;&|])(?:crontab|systemctl\s+--user\s+enable)\b/,
     new RegExp(String.raw`(?:^|[\s;&|])(?:cp|mv|ln)\b[^;&|]*\s["']?${privileged_path}`),
     new RegExp(String.raw`(?:^|[\s;&|])sed\b[^;&|]*\s-i[^\s;&|]*[^;&|]*\s["']?${privileged_path}`),
@@ -640,10 +653,10 @@ async function maybe_summarize_context(
 }
 
 async function run_tell(model: string, prompt: string, opts: CliOptions): Promise<void> {
-  const label = model_label(model);
-
+  let label = '';
   let plan: ContextPlan;
   try {
+    label = model_label(model);
     const entries = typeof opts.ctx === 'string' ? list_context_entries() : [];
     plan = build_context_plan(opts, model, entries);
   } catch (error) {
@@ -733,4 +746,7 @@ async function main() {
   await run_tell(input.model, prompt, opts);
 }
 
-void main();
+main().catch((error: unknown) => {
+  console.error('\x1b[31m%s\x1b[0m', format_model_error(error));
+  process.exitCode = 1;
+});
