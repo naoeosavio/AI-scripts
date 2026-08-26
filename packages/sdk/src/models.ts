@@ -184,7 +184,7 @@ function infer_vendor(model: string): string {
   const normalized = model.toLowerCase();
   if (normalized.startsWith('alibaba/')) return 'alibaba';
   if (normalized.startsWith('glm')) return 'zai';
-  if (normalized.startsWith('gpt') || normalized.startsWith('o')) return 'openai';
+  if (normalized.startsWith('gpt') || /^o\d/.test(normalized)) return 'openai';
   if (normalized.startsWith('claude')) return 'anthropic';
   if (normalized.startsWith('gemini')) return 'google';
   if (normalized.startsWith('grok')) return 'xai';
@@ -212,7 +212,7 @@ async function get_openrouter_provider(config: SDKConfig): Promise<any> {
   const api_key = get_api_key('openrouter', config);
   OPENROUTER = createOpenAI({
     ...(api_key ? { apiKey: api_key } : {}),
-    baseURL: config.urls.openrouter ?? '',
+    baseURL: config.urls.openrouter ?? 'https://openrouter.ai/api/v1',
     name: 'openrouter',
   });
   return OPENROUTER;
@@ -498,12 +498,17 @@ async function handle_zhipu(model: string, reasoning: string, fast: boolean, con
 }
 
 async function handle_vast(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
-  const provider = await get_vast_provider(config.urls.vast ?? '');
+  // Self-hosted endpoints have no meaningful default — fail with a clear message.
+  const base_url = config.urls.vast;
+  if (!base_url) throw new Error('vendor "vast" requires urls.vast (CLI env: VAST_BASE_URL)');
+  const provider = await get_vast_provider(base_url);
   return { model: provider(model), reasoning, fast };
 }
 
 async function handle_local(model: string, reasoning: string, fast: boolean, config: SDKConfig): Promise<ModelHandle> {
-  const provider = await get_local_provider(config.urls.local ?? '');
+  const base_url = config.urls.local;
+  if (!base_url) throw new Error('vendor "local" requires urls.local (CLI env: LOCAL_OPENAI_BASE_URL)');
+  const provider = await get_local_provider(base_url);
   return { model: provider.chat(model), reasoning, fast };
 }
 
