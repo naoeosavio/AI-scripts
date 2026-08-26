@@ -78,7 +78,7 @@ Single-file Node entry point for the `tell` binary (CJS bundle, `#!/usr/bin/env 
 - `-y` auto-executes commands (high-risk commands still require confirmation)
 - `--no-exec` disables all command execution
 
-**Security**: `isHighRiskScript()` blocks patterns like `sudo`, `rm -rf`, `dd of=`, `curl|sh`, `mkfs`, writes to system paths (`/etc`, `/boot`, `/usr`, systemd units), crontab manipulation, etc. Execution timeout is 120s.
+**Security**: `isHighRiskScript()` blocks patterns like `sudo`, `rm -rf`, `dd of=`, `curl|sh` (and pipes into any interpreter: `python3`, `node`, …), process substitution (`bash <(curl …)`, `x <(wget …)`), network-coupled interpreter one-liners (`node -e "require('https')…"`, `python3 -c "…urllib…"`), `mkfs`, writes to system paths (`/etc`, `/boot`, `/usr`, systemd units), crontab manipulation, etc. Local-only interpreter one-liners (e.g. `node -e "console.log(1)"`) are allowed by design. Execution timeout is 120s.
 
 Files:
 - `src/Tell.ts` — CLI: commander, stdin, exec, confirm/high-risk, context/logs, loop chain, main
@@ -111,7 +111,7 @@ The provider packages above are dependencies of `@tell-ai/sdk`; `commander` live
 
 ## API key configuration
 
-API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, etc.) with fallback to `~/.config/<vendor>.token` files, then injected into the SDK as `SDKConfig`. The SDK never touches the environment itself.
+API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `ALIBABA_API_KEY`, etc.) with fallback to `~/.config/<vendor>.token` files, then injected into the SDK as `SDKConfig`. The SDK never touches the environment itself.
 
 ## Related docs
 
