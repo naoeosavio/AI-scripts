@@ -24,6 +24,8 @@ type CliOptions = {
   chain?: boolean;
   exec?: boolean;
   input?: boolean;
+  web?: boolean;
+  sandboxWeb?: boolean;
 };
 
 type ParsedInput = { model: string; parts: string[]; readStdin: boolean };
@@ -381,6 +383,8 @@ function buildProgram(argv: string[]): Command {
     .option('-y, --yes', 'execute requested commands without confirmation')
     .option('--chain', 'continue after command output until the assistant gives a final answer')
     .option('-i, --input', 'read stdin and include it with the prompt')
+    .option('--web', 'launch the interactive Tell Web sandbox')
+    .option('--sandbox-web', 'launch the interactive Tell Web sandbox with project context')
     .option('--no-exec', 'do not execute requested commands')
     .parse(argv);
 }
@@ -538,7 +542,7 @@ async function main() {
   const program = buildProgram(process.argv);
   const opts = program.opts<CliOptions>();
   const input = parseArgs(program.args, opts.model, Boolean(opts.input));
-  if (input.parts.length === 1 && input.parts[0] === 'web') {
+  if (opts.web || opts.sandboxWeb || (input.parts.length === 1 && input.parts[0] === 'web')) {
     await launchWeb(input.model);
     return;
   }
