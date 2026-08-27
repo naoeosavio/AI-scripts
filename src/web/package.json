@@ -1,6 +1,6 @@
 {
   "name": "@tell-ai/web",
-  "version": "0.1.1",
+  "version": "0.2",
   "type": "module",
   "description": "Tell AI web interface — installs the tell CLI alongside it",
   "bin": {
@@ -19,16 +19,18 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.12",
-    "@ai-sdk/moonshotai": "^3.0.14",
     "@ai-sdk/cerebras": "^3.0.7",
     "@ai-sdk/deepseek": "^3.0.7",
     "@ai-sdk/fireworks": "^3.0.8",
     "@ai-sdk/google": "^4.0.12",
+    "@ai-sdk/moonshotai": "^3.0.14",
     "@ai-sdk/openai": "^4.0.11",
     "@ai-sdk/xai": "^4.0.10",
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "ai": "^7.0.22",
     "commander": "^15.0.0",
     "dotenv": "^17.2.3",
@@ -36,17 +38,20 @@
     "gpt-tokenizer": "^3.4.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "node-pty": "1.1.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/ws": "8.18.1",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
     "tsup": "8.5.1",
+    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
   }

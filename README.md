@@ -59,6 +59,24 @@ git diff --staged | tell --input "review this change"
 
 Tell logs conversations under `~/.ai/tell_history`.
 
+Web Sandbox
+-----------
+
+Launch a browser-based terminal + AI console from any working directory:
+
+```bash
+tell --sandbox-web      # open http://localhost:3000
+tell --web              # same, minimal prompt
+```
+
+The sandbox mirrors your real shell through PTY panes (tmux/codex/opencode/claude-code
+work), generates a system prompt from the project tree + README/AGENTS, and persists
+sessions in `.tell/`. Run it locally, on a repo/server you manage remotely, or expose
+it via a tunnel/reverse proxy.
+
+Full guide (quick start, where to use it, real-world examples, security):
+[docs/web-sandbox.md](docs/web-sandbox.md)
+
 ### Flag interactions
 
 | Flags | Reads context? | Deletes? | Writes? | Loop? |
