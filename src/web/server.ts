@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { exec } from 'node:child_process';
@@ -7,14 +8,36 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 import { generateText } from 'ai';
 import { getModel, MODELS, resolveModelSpec } from '../ai/models';
+import { buildSystemPrompt } from './context-builder';
+import { attachTerminalServer, getScrollback } from './pty';
+import {
+  emptySession,
+  loadSession,
+  saveSession,
+  createSnapshot,
+  listHistory,
+  listGitChanges,
+  type TellSession,
+} from './session';
 
 const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const DEFAULT_MODEL = (process.env.TELL_MODEL || 'l').trim();
+const CWD = process.cwd();
 
 app.use(express.json());
+
+// ---------------------------------------------------------------------------
+// Server-side session facts (tracked here, never stored in the client)
+// ---------------------------------------------------------------------------
+const serverState = {
+  keysUsed: new Set<string>(),
+  filesChanged: new Set<string>(),
+  commandsRun: 0,
+  aiTurns: 0,
+};
 
 // Helper: security check for high-risk scripts (copied from Tell-ai's engine)
 function isHighRiskScript(script: string): boolean {
@@ -59,8 +82,9 @@ function getFileTree(dir: string, baseDir = dir): FileNode[] {
       item === 'temp_tell_ai' ||
       item === 'dist' ||
       item === '.env' ||
-      item === 'package-lock.json' ||
-      item === '.DS_Store'
+      item === '.tell' ||
+      item === '.DS_Store' ||
+      item === 'package-lock.json'
     ) {
       continue;
     }
@@ -97,10 +121,46 @@ function getFileTree(dir: string, baseDir = dir): FileNode[] {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Session merge helpers
+// ---------------------------------------------------------------------------
+function mergePaneScrollback(session: TellSession): TellSession {
+  const next = { ...session, terminal: { ...session.terminal } };
+  next.terminal.tabs = next.terminal.tabs.map((tab) => ({
+    ...tab,
+    panes: tab.panes.map((pane) => {
+      const live = getScrollback(pane.id);
+      return { ...pane, scrollback: live || pane.scrollback || '' };
+    }),
+  }));
+  return next;
+}
+
+function buildMergedSession(body: Partial<TellSession>): TellSession {
+  const persisted = loadSession(CWD) || emptySession(CWD);
+  const merged: TellSession = {
+    ...persisted,
+    ...body,
+    keysUsed: [...serverState.keysUsed],
+    filesChanged: [...serverState.filesChanged],
+    stats: {
+      ...persisted.stats,
+      commandsRun: serverState.commandsRun,
+      aiTurns: serverState.aiTurns,
+    },
+  };
+  merged.messages = Array.isArray(body.messages) ? body.messages : persisted.messages || [];
+  return mergePaneScrollback(merged);
+}
+
+// ---------------------------------------------------------------------------
+// API routes
+// ---------------------------------------------------------------------------
+
 // API: Get workspace file tree structure
 app.get('/api/status', (req, res) => {
   try {
-    const tree = getFileTree(process.cwd());
+    const tree = getFileTree(CWD);
     res.json({ files: tree });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -114,8 +174,8 @@ app.get('/api/file', (req, res) => {
     return res.status(400).json({ error: 'File path is required' });
   }
 
-  const resolvedPath = path.resolve(process.cwd(), filePath);
-  if (!resolvedPath.startsWith(process.cwd())) {
+  const resolvedPath = path.resolve(CWD, filePath);
+  if (!resolvedPath.startsWith(CWD)) {
     return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
   }
 
@@ -137,14 +197,15 @@ app.post('/api/save-file', (req, res) => {
     return res.status(400).json({ error: 'Path and content are required' });
   }
 
-  const resolvedPath = path.resolve(process.cwd(), filePath);
-  if (!resolvedPath.startsWith(process.cwd())) {
+  const resolvedPath = path.resolve(CWD, filePath);
+  if (!resolvedPath.startsWith(CWD)) {
     return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
   }
 
   try {
     fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
     fs.writeFileSync(resolvedPath, content, 'utf8');
+    serverState.filesChanged.add(filePath);
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -158,6 +219,8 @@ app.post('/api/execute', async (req, res) => {
     return res.status(400).json({ error: 'Command is required' });
   }
 
+  serverState.commandsRun += 1;
+
   if (isHighRiskScript(command)) {
     return res.status(400).json({
       output: `Blocked Command: "${command}"\n\nSecurity Guard: This command contains high-risk patterns (e.g. root deletion, modification of system directories, curl pipe execution, or sudo privileges) and has been blocked for safety.`
@@ -166,7 +229,7 @@ app.post('/api/execute', async (req, res) => {
 
   try {
     const { stdout, stderr } = await execAsync(command, {
-      cwd: process.cwd(),
+      cwd: CWD,
       maxBuffer: 32 * 1024 * 1024,
       shell: '/bin/bash',
       timeout: 120_000,
@@ -246,6 +309,16 @@ app.get('/api/config', (req, res) => {
   res.json({ defaultModel: DEFAULT_MODEL });
 });
 
+// API: Auto-generated project context (tree 4 levels + README + AGENTS + protocol)
+app.get('/api/context', (req, res) => {
+  try {
+    const systemPrompt = buildSystemPrompt(CWD);
+    res.json({ systemPrompt, cwd: CWD });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API: Model execution route (using Vercel AI SDK)
 app.post('/api/tell', async (req, res) => {
   const { messages, modelAlias, systemPrompt } = req.body;
@@ -255,10 +328,17 @@ app.post('/api/tell', async (req, res) => {
   }
 
   const modelSpec = modelAlias || DEFAULT_MODEL;
+  serverState.aiTurns += 1;
 
   try {
     // Resolve model spec and get Vercel AI SDK model instance
     const handle = await getModel(modelSpec);
+    try {
+      const resolved = resolveModelSpec(modelSpec);
+      serverState.keysUsed.add(resolved.vendor);
+    } catch {
+      /* vendor unknown; skip */
+    }
     const reasoning = handle.fast ? 'none' : handle.reasoning;
 
     // Convert messages to Vercel AI SDK format
@@ -267,11 +347,13 @@ app.post('/api/tell', async (req, res) => {
       content: m.content,
     }));
 
+    const effectiveSystem = systemPrompt?.trim() ? systemPrompt : buildSystemPrompt(CWD);
+
     // Call generateText
     const result = await generateText({
       model: handle.model,
-      system: systemPrompt,
-      instructions: systemPrompt, // safety fallback for older sdks
+      system: effectiveSystem,
+      instructions: effectiveSystem, // safety fallback for older sdks
       messages: formattedMessages,
       reasoning: reasoning as any,
     });
@@ -286,6 +368,50 @@ app.post('/api/tell', async (req, res) => {
     res.status(500).json({
       error: error.message || 'An error occurred during AI text generation.',
     });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Session persistence API (.tell/)
+// ---------------------------------------------------------------------------
+
+// API: Get current session (persisted + live server facts + live scrollbacks)
+app.get('/api/session', (req, res) => {
+  const session = mergePaneScrollback(loadSession(CWD) || emptySession(CWD));
+  session.keysUsed = [...serverState.keysUsed];
+  session.filesChanged = [...serverState.filesChanged];
+  session.stats = { ...session.stats, commandsRun: serverState.commandsRun, aiTurns: serverState.aiTurns };
+  res.json({ session });
+});
+
+// API: Save session state (client sends client-owned fields; server merges facts)
+app.put('/api/session', (req, res) => {
+  const body = req.body?.session as Partial<TellSession> | undefined;
+  if (!body || typeof body !== 'object') {
+    return res.status(400).json({ error: 'session object is required' });
+  }
+  const merged = buildMergedSession(body);
+  const ok = saveSession(CWD, merged);
+  res.json({ success: ok, session: merged });
+});
+
+// API: List session history snapshots
+app.get('/api/session/history', (req, res) => {
+  res.json({ history: listHistory(CWD) });
+});
+
+// API: Force a snapshot (and refresh git changes before persisting)
+app.post('/api/session/snapshot', async (req, res) => {
+  try {
+    const gitChanges = await listGitChanges(CWD);
+    for (const line of gitChanges) serverState.filesChanged.add(line);
+    const body = req.body?.session as Partial<TellSession> | undefined;
+    const merged = buildMergedSession(body || {});
+    saveSession(CWD, merged);
+    const name = createSnapshot(CWD, merged);
+    res.json({ success: !!name, name, gitChanges });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -305,7 +431,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = http.createServer(app);
+  attachTerminalServer(server, { cwd: CWD });
+
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`Tell AI custom backend running at http://0.0.0.0:${PORT}`);
   });
 }
