@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Terminal as Xterm } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import {
   Terminal as TerminalIcon,
   Play,
@@ -11,13 +14,11 @@ import {
   X,
   Maximize2,
   Minimize2,
-  Sparkles,
-  Code,
-  FileText,
-  RefreshCw,
   Square,
-  Cpu,
-  CornerDownLeft,
+  ChevronUp,
+  ChevronDown,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 
 export interface TerminalLine {
@@ -26,142 +27,238 @@ export interface TerminalLine {
   commandId?: string;
 }
 
-export interface TerminalPane {
+export interface TerminalPaneMeta {
   id: string;
   title: string;
-  lines: TerminalLine[];
-  executing: boolean;
-  customCommand: string;
-  isTailing?: boolean;
-  tailFile?: string;
 }
 
-export interface TerminalTab {
+export interface TerminalTabMeta {
   id: string;
   name: string;
-  panes: TerminalPane[];
+  panes: TerminalPaneMeta[];
   activePaneId: string;
 }
 
+export interface TerminalLayout {
+  tabs: TerminalTabMeta[];
+  activeTabId: string;
+}
+
+interface XtermPaneProps {
+  pane: TerminalPaneMeta;
+  preload: string;
+  replay: boolean;
+  onConnectionChange: (connected: boolean) => void;
+  registerClear: (paneId: string, fn: () => void) => void;
+}
+
+const BOOT_MESSAGE =
+  '\x1b[90mInteractive Core Shell initialized (PTY mode).\x1b[0m\r\n' +
+  '\x1b[90mCLI AI engines available: tell-ai, codex, opencode.\x1b[0m\r\n';
+
+function XtermPane({ pane, preload, replay, onConnectionChange, registerClear }: XtermPaneProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Xterm | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
+  const observerRef = useRef<ResizeObserver | null>(null);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const sendData = (data: string) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data }));
+      }
+    };
+
+    const term = new Xterm({
+      cursorBlink: true,
+      fontSize: 12,
+      fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
+      scrollback: 5000,
+      allowProposedApi: true,
+      theme: {
+        background: '#080808',
+        foreground: '#e5e5e5',
+        cursor: '#e11d48',
+        cursorAccent: '#000000',
+        selectionBackground: '#4c0519',
+        black: '#000000',
+        red: '#e11d48',
+        green: '#10b981',
+        yellow: '#fbbf24',
+        blue: '#3b82f6',
+        magenta: '#d946ef',
+        cyan: '#22d3ee',
+        white: '#e5e5e5',
+      },
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(el);
+    fit.fit();
+
+    termRef.current = term;
+    fitRef.current = fit;
+
+    if (preload) term.write(preload);
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${window.location.host}/api/terminal?paneId=${encodeURIComponent(
+      pane.id,
+    )}&cols=${term.cols}&rows=${term.rows}&scrollback=${replay ? '1' : '0'}`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    const sendResize = () => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }),
+        );
+      }
+    };
+
+    const inputDisposable = term.onData((data) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data }));
+      }
+    });
+    const resizeDisposable = term.onResize(() => sendResize());
+
+    registerClear(pane.id, () => {
+      sendData('\x0c');
+      term.clear();
+    });
+
+    ws.onopen = () => {
+      sendResize();
+      onConnectionChange(true);
+    };
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(String(event.data));
+        if (msg.type === 'data') term.write(msg.data);
+        else if (msg.type === 'exit') {
+          term.write(`\r\n\x1b[90m[process exited with code ${msg.code}]\x1b[0m\r\n`);
+        }
+      } catch {
+        /* ignore malformed frames */
+      }
+    };
+    ws.onclose = () => {
+      onConnectionChange(false);
+      inputDisposable.dispose();
+      resizeDisposable.dispose();
+    };
+
+    const observer = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {
+        /* ignore */
+      }
+    });
+    observer.observe(el);
+    observerRef.current = observer;
+
+    return () => {
+      observer.disconnect();
+      ws.close();
+      wsRef.current = null;
+      inputDisposable.dispose();
+      resizeDisposable.dispose();
+      term.dispose();
+      termRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pane.id]);
+
+  return <div ref={containerRef} className="absolute inset-0" />;
+}
+
 interface TerminalProps {
-  lines: TerminalLine[];
-  onExecuteCommand: (command: string, skipGlobalAppend?: boolean) => Promise<string>;
-  onClear: () => void;
   pendingCommand: string | null;
   onConfirmPending: (editedCommand: string) => void;
   onSkipPending: () => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  agentLines?: TerminalLine[];
+  onAgentLinesClear?: () => void;
+  initialLayout?: TerminalLayout;
+  initialScrollback?: Record<string, string>;
+  onLayoutChange?: (layout: TerminalLayout) => void;
+  cwd?: string;
 }
 
-const INITIAL_PANE: TerminalPane = {
-  id: 'pane-1',
-  title: 'bash #1',
-  lines: [
-    { type: 'system', text: 'Interactive Core Shell initialized (tmux mode).' },
-    { type: 'system', text: 'CLI AI engines available: tell-ai, codex, opencode.' },
-  ],
-  executing: false,
-  customCommand: '',
-};
-
-const INITIAL_TAB: TerminalTab = {
+const DEFAULT_TAB: TerminalTabMeta = {
   id: 'tab-1',
   name: '1: dev-shell',
-  panes: [INITIAL_PANE],
+  panes: [{ id: 'pane-1', title: 'bash #1' }],
   activePaneId: 'pane-1',
 };
 
 export default function Terminal({
-  lines,
-  onExecuteCommand,
-  onClear,
   pendingCommand,
   onConfirmPending,
   onSkipPending,
   isExpanded = false,
   onToggleExpand,
+  agentLines = [],
+  onAgentLinesClear,
+  initialLayout,
+  initialScrollback = {},
+  onLayoutChange,
+  cwd,
 }: TerminalProps) {
-  const [tabs, setTabs] = useState<TerminalTab[]>([INITIAL_TAB]);
+  const [tabs, setTabs] = useState<TerminalTabMeta[]>([DEFAULT_TAB]);
   const [activeTabId, setActiveTabId] = useState<string>('tab-1');
-  const [tailModalPaneId, setTailModalPaneId] = useState<string | null>(null);
-  const [tailFilePath, setTailFilePath] = useState<string>('server.ts');
-  const [tailLinesCount, setTailLinesCount] = useState<number>(30);
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renamingName, setRenamingName] = useState<string>('');
+  const [agentFeedOpen, setAgentFeedOpen] = useState(false);
+  const [connected, setConnected] = useState(false);
 
-  const previousLinesLengthRef = useRef<number>(lines.length);
-
-  // Sync global lines from props (e.g. system messages from agent) into active pane
-  useEffect(() => {
-    if (lines.length > previousLinesLengthRef.current) {
-      const newLines = lines.slice(previousLinesLengthRef.current);
-      previousLinesLengthRef.current = lines.length;
-
-      setTabs((prevTabs) =>
-        prevTabs.map((tab) => {
-          if (tab.id === activeTabId) {
-            return {
-              ...tab,
-              panes: tab.panes.map((pane) => {
-                if (pane.id === tab.activePaneId) {
-                  return { ...pane, lines: [...pane.lines, ...newLines] };
-                }
-                return pane;
-              }),
-            };
-          }
-          return tab;
-        })
-      );
-    }
-  }, [lines, activeTabId]);
+  const adoptedInitialRef = useRef(false);
+  const clearFnsRef = useRef(new Map<string, () => void>());
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
-  // Helper to update a pane inside active tab
-  const updatePane = (paneId: string, updater: (pane: TerminalPane) => TerminalPane) => {
+  // Adopt a restored session layout once (when it arrives after mount)
+  useEffect(() => {
+    if (initialLayout && !adoptedInitialRef.current && tabs.length === 1 && tabs[0].id === 'tab-1') {
+      adoptedInitialRef.current = true;
+      setTabs(initialLayout.tabs.length ? initialLayout.tabs : [DEFAULT_TAB]);
+      setActiveTabId(initialLayout.activeTabId || initialLayout.tabs[0]?.id || 'tab-1');
+    }
+  }, [initialLayout]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Notify parent about layout changes (for session persistence)
+  useEffect(() => {
+    onLayoutChange?.({ tabs, activeTabId });
+  }, [tabs, activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateTab = (updater: (tab: TerminalTabMeta) => TerminalTabMeta) => {
     setTabs((prev) =>
-      prev.map((tab) => {
-        if (tab.id === activeTabId) {
-          return {
-            ...tab,
-            panes: tab.panes.map((p) => (p.id === paneId ? updater(p) : p)),
-          };
-        }
-        return tab;
-      })
+      prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab)),
     );
   };
 
-  // Add new tab (max 4 tabs)
   const handleAddTab = () => {
     if (tabs.length >= 4) return;
     const newTabNum = tabs.length + 1;
     const newPaneId = `pane-${Date.now()}`;
     const newTabId = `tab-${Date.now()}`;
-    const newTab: TerminalTab = {
+    const newTab: TerminalTabMeta = {
       id: newTabId,
       name: `${newTabNum}: session-${newTabNum}`,
-      panes: [
-        {
-          id: newPaneId,
-          title: `bash #${newTabNum}`,
-          lines: [
-            { type: 'system', text: `Session #${newTabNum} ready.` },
-            { type: 'system', text: 'Max 4 parallel panes supported per tab.' },
-          ],
-          executing: false,
-          customCommand: '',
-        },
-      ],
+      panes: [{ id: newPaneId, title: `bash #${newTabNum}` }],
       activePaneId: newPaneId,
     };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTabId);
   };
 
-  // Close tab
   const handleCloseTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (tabs.length <= 1) return;
@@ -172,177 +269,38 @@ export default function Terminal({
     }
   };
 
-  // Split Pane Vertically or Horizontally (max 4 panes)
   const handleSplitPane = (splitType: 'vertical' | 'horizontal') => {
     if (activeTab.panes.length >= 4) return;
-
     const newPaneId = `pane-${Date.now()}`;
     const paneCount = activeTab.panes.length + 1;
-    const newPane: TerminalPane = {
-      id: newPaneId,
-      title: `bash #${paneCount}`,
-      lines: [
-        {
-          type: 'system',
-          text: `Split ${splitType} pane initialized. Ready for bash / CLI-AI commands.`,
-        },
-      ],
-      executing: false,
-      customCommand: '',
-    };
-
-    setTabs((prev) =>
-      prev.map((tab) => {
-        if (tab.id === activeTabId) {
-          return {
-            ...tab,
-            panes: [...tab.panes, newPane],
-            activePaneId: newPaneId,
-          };
-        }
-        return tab;
-      })
-    );
+    updateTab((tab) => ({
+      ...tab,
+      panes: [...tab.panes, { id: newPaneId, title: `bash #${paneCount}` }],
+      activePaneId: newPaneId,
+    }));
   };
 
-  // Close specific pane
   const handleClosePane = (paneId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (activeTab.panes.length <= 1) return; // Keep at least 1 pane
-
-    const remainingPanes = activeTab.panes.filter((p) => p.id !== paneId);
-    const newActivePaneId =
-      activeTab.activePaneId === paneId ? remainingPanes[0].id : activeTab.activePaneId;
-
-    setTabs((prev) =>
-      prev.map((tab) => {
-        if (tab.id === activeTabId) {
-          return {
-            ...tab,
-            panes: remainingPanes,
-            activePaneId: newActivePaneId,
-          };
-        }
-        return tab;
-      })
-    );
+    if (activeTab.panes.length <= 1) return;
+    const remaining = activeTab.panes.filter((p) => p.id !== paneId);
+    const newActive = activeTab.activePaneId === paneId ? remaining[0].id : activeTab.activePaneId;
+    updateTab((tab) => ({ ...tab, panes: remaining, activePaneId: newActive }));
   };
 
-  // Set active pane inside active tab
   const handleSelectPane = (paneId: string) => {
-    setTabs((prev) =>
-      prev.map((tab) => {
-        if (tab.id === activeTabId) {
-          return { ...tab, activePaneId: paneId };
-        }
-        return tab;
-      })
-    );
+    updateTab((tab) => ({ ...tab, activePaneId: paneId }));
   };
 
-  // Execute command in a specific pane
-  const handleExecuteInPane = async (paneId: string, commandToRun?: string) => {
-    const pane = activeTab.panes.find((p) => p.id === paneId);
-    if (!pane) return;
-
-    const cmd = (commandToRun ?? pane.customCommand).trim();
-    if (!cmd || pane.executing) return;
-
-    // Append input line
-    updatePane(paneId, (p) => ({
-      ...p,
-      customCommand: '',
-      executing: true,
-      lines: [...p.lines, { type: 'input', text: cmd }],
-    }));
-
-    try {
-      const output = await onExecuteCommand(cmd, true);
-      updatePane(paneId, (p) => ({
-        ...p,
-        executing: false,
-        lines: [...p.lines, { type: 'output', text: output }],
-      }));
-    } catch (err: any) {
-      updatePane(paneId, (p) => ({
-        ...p,
-        executing: false,
-        lines: [...p.lines, { type: 'error', text: err.message || 'Execution error' }],
-      }));
-    }
+  const registerClear = (paneId: string, fn: () => void) => {
+    clearFnsRef.current.set(paneId, fn);
   };
 
-  // Clear lines in active or specific pane
   const handleClearPane = (paneId: string) => {
-    updatePane(paneId, (p) => ({
-      ...p,
-      lines: [{ type: 'system', text: 'Pane output cleared.' }],
-    }));
-    if (activeTab.panes.length === 1) {
-      onClear();
-    }
+    clearFnsRef.current.get(paneId)?.();
   };
 
-  // Tail File Execution
-  const handleExecuteTail = async (paneId: string) => {
-    if (!tailFilePath.trim()) return;
-    const cmd = `tail -n ${tailLinesCount} ${tailFilePath.trim()}`;
-    setTailModalPaneId(null);
-    await handleExecuteInPane(paneId, cmd);
-  };
-
-  // Continuous tail interval handling
-  const toggleContinuousTail = (paneId: string) => {
-    const pane = activeTab.panes.find((p) => p.id === paneId);
-    if (!pane) return;
-
-    if (pane.isTailing) {
-      updatePane(paneId, (p) => ({ ...p, isTailing: false }));
-    } else {
-      updatePane(paneId, (p) => ({
-        ...p,
-        isTailing: true,
-        lines: [
-          ...p.lines,
-          { type: 'system', text: `Live tail enabled for ${pane.tailFile || 'server.ts'} (polling every 3s)` },
-        ],
-      }));
-    }
-  };
-
-  // Effect for active continuous tailing panes
-  useEffect(() => {
-    const activeTails = activeTab.panes.filter((p) => p.isTailing && p.tailFile);
-    if (activeTails.length === 0) return;
-
-    const interval = setInterval(() => {
-      activeTails.forEach(async (pane) => {
-        try {
-          const output = await onExecuteCommand(`tail -n 20 ${pane.tailFile}`);
-          updatePane(pane.id, (p) => {
-            // keep max 200 lines to avoid memory leak
-            const currentLines = p.lines;
-            const updated: TerminalLine[] = [
-              ...currentLines,
-              { type: 'system', text: `--- tail update (${new Date().toLocaleTimeString()}) ---` },
-              { type: 'output', text: output },
-            ];
-            return {
-              ...p,
-              lines: updated.slice(-200),
-            };
-          });
-        } catch {
-          // ignore tail errors in background
-        }
-      });
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [activeTab.panes, activeTabId]);
-
-  // Tab Rename logic
-  const handleStartRenameTab = (tab: TerminalTab, e: React.MouseEvent) => {
+  const handleStartRenameTab = (tab: TerminalTabMeta, e: React.MouseEvent) => {
     e.stopPropagation();
     setRenamingTabId(tab.id);
     setRenamingName(tab.name);
@@ -350,14 +308,11 @@ export default function Terminal({
 
   const handleSaveTabName = (tabId: string) => {
     if (renamingName.trim()) {
-      setTabs((prev) =>
-        prev.map((t) => (t.id === tabId ? { ...t, name: renamingName.trim() } : t))
-      );
+      setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, name: renamingName.trim() } : t)));
     }
     setRenamingTabId(null);
   };
 
-  // Calculate grid CSS for panes count (1, 2, 3, 4)
   const getGridClasses = (count: number) => {
     switch (count) {
       case 1:
@@ -366,7 +321,6 @@ export default function Terminal({
         return 'grid-cols-1 md:grid-cols-2 grid-rows-1';
       case 3:
         return 'grid-cols-1 md:grid-cols-2 grid-rows-2';
-      case 4:
       default:
         return 'grid-cols-2 grid-rows-2';
     }
@@ -374,9 +328,58 @@ export default function Terminal({
 
   return (
     <div className="flex flex-col h-full bg-[#0A0A0A] text-white/90 font-mono text-[11px] leading-relaxed select-text overflow-hidden relative">
+      {/* Agent Feed (AI activity) */}
+      {agentLines.length > 0 && (
+        <div className="shrink-0 border-b border-rose-600/20 bg-[#0C0A0A]">
+          <div className="flex items-center justify-between px-3 py-1 select-none">
+            <button
+              onClick={() => setAgentFeedOpen(!agentFeedOpen)}
+              className="flex items-center gap-1.5 text-[9px] font-display font-black uppercase tracking-widest text-rose-500 cursor-pointer"
+            >
+              {agentFeedOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
+              <SparkleIcon />
+              <span>Agent Feed ({agentLines.length})</span>
+            </button>
+            {onAgentLinesClear && (
+              <button
+                onClick={onAgentLinesClear}
+                className="text-white/40 hover:text-rose-400 text-[9px] uppercase tracking-widest cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {agentFeedOpen && (
+            <div className="px-3 pb-2 space-y-1 max-h-28 overflow-y-auto custom-scrollbar">
+              {agentLines.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap break-all text-[9.5px]">
+                  {line.type === 'input' && (
+                    <div className="text-white font-semibold">
+                      <span className="text-rose-600 font-black">$ </span>
+                      {line.text}
+                    </div>
+                  )}
+                  {line.type === 'output' && <div className="text-white/60">{line.text}</div>}
+                  {line.type === 'error' && (
+                    <div className="text-rose-500 font-bold uppercase tracking-wide">{line.text}</div>
+                  )}
+                  {line.type === 'system' && (
+                    <div className="text-white/35 italic font-sans">[ {line.text} ]</div>
+                  )}
+                  {line.type === 'request' && (
+                    <div className="text-rose-300 border border-rose-600/20 bg-rose-600/5 p-1 font-sans text-[9.5px]">
+                      {line.text}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Top Header & Tabs Bar */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#080808] border-b border-white/10 shrink-0 select-none">
-        {/* Left: Shell Title + Tab list */}
         <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pr-2">
           <div className="flex items-center gap-1.5 font-display font-black text-[10px] tracking-widest uppercase text-white/50 shrink-0 pr-1 select-none">
             <TerminalIcon className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
@@ -391,12 +394,10 @@ export default function Terminal({
             </span>
           </div>
 
-          {/* Tab Buttons */}
           <div className="flex items-center gap-1">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
               const isRenaming = renamingTabId === tab.id;
-
               return (
                 <div
                   key={tab.id}
@@ -408,9 +409,7 @@ export default function Terminal({
                       : 'bg-white/5 border-white/10 text-white/50 hover:text-white/80 hover:bg-white/10'
                   }`}
                 >
-                  <Square
-                    className={`w-2.5 h-2.5 ${isActive ? 'fill-rose-600 text-rose-600' : 'text-white/30'}`}
-                  />
+                  <Square className={`w-2.5 h-2.5 ${isActive ? 'fill-rose-600 text-rose-600' : 'text-white/30'}`} />
                   {isRenaming ? (
                     <input
                       type="text"
@@ -424,11 +423,7 @@ export default function Terminal({
                   ) : (
                     <span className="truncate max-w-[100px]">{tab.name}</span>
                   )}
-
-                  <span className="text-[9px] text-white/30 font-sans ml-0.5">
-                    ({tab.panes.length}P)
-                  </span>
-
+                  <span className="text-[9px] text-white/30 font-sans ml-0.5">({tab.panes.length}P)</span>
                   {tabs.length > 1 && (
                     <button
                       onClick={(e) => handleCloseTab(tab.id, e)}
@@ -442,7 +437,6 @@ export default function Terminal({
               );
             })}
 
-            {/* New Tab Button (Max 4) */}
             <button
               onClick={handleAddTab}
               disabled={tabs.length >= 4}
@@ -460,9 +454,7 @@ export default function Terminal({
           </div>
         </div>
 
-        {/* Right Header Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Split Pane Actions */}
           <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-white/10 p-0.5">
             <button
               onClick={() => handleSplitPane('vertical')}
@@ -473,7 +465,6 @@ export default function Terminal({
               <Columns className="w-3 h-3 text-rose-500" />
               <span>Split V</span>
             </button>
-
             <button
               onClick={() => handleSplitPane('horizontal')}
               disabled={activeTab.panes.length >= 4}
@@ -511,8 +502,12 @@ export default function Terminal({
 
       {/* Main Panes Grid Container */}
       <div className={`flex-1 grid gap-1.5 p-1.5 bg-[#050505] overflow-hidden ${getGridClasses(activeTab.panes.length)}`}>
-        {activeTab.panes.map((pane, index) => {
+        {activeTab.panes.map((pane) => {
           const isFocused = pane.id === activeTab.activePaneId;
+          const preloadScrollback = initialScrollback[pane.id] || '';
+          const isRestored = adoptedInitialRef.current;
+          const preload = isRestored ? preloadScrollback : BOOT_MESSAGE;
+          const replay = isRestored ? !preloadScrollback : true;
 
           return (
             <div
@@ -524,63 +519,19 @@ export default function Terminal({
                   : 'border-white/10 bg-[#080808] opacity-80 hover:opacity-100 hover:border-white/20'
               }`}
             >
-              {/* Pane Bar */}
               <div className="flex items-center justify-between px-2.5 py-1 bg-[#101010] border-b border-white/10 shrink-0 select-none">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      pane.executing ? 'bg-amber-500 animate-ping' : isFocused ? 'bg-rose-600' : 'bg-white/30'
-                    }`}
-                  />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFocused ? 'bg-rose-600' : 'bg-white/30'}`} />
                   <span className="font-bold text-[10px] text-white/80 truncate">
-                    {pane.title || `Pane #${index + 1}`}
+                    {pane.title || 'bash'}
                   </span>
                   {isFocused && (
                     <span className="text-[8px] bg-rose-600 text-white font-black px-1 py-0.2 tracking-wider uppercase">
                       ACTIVE
                     </span>
                   )}
-                  {pane.isTailing && (
-                    <span className="flex items-center gap-1 text-[8px] bg-emerald-950 text-emerald-400 border border-emerald-600/40 px-1 py-0.2 animate-pulse">
-                      <RefreshCw className="w-2.5 h-2.5 animate-spin" /> TAILING
-                    </span>
-                  )}
                 </div>
-
-                {/* Pane Controls */}
                 <div className="flex items-center gap-1">
-                  {/* Tail Quick Modal Trigger */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setTailModalPaneId(pane.id);
-                    }}
-                    className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] bg-white/5 hover:bg-white/15 text-white/60 hover:text-white border border-white/10 transition-colors cursor-pointer"
-                    title="Tail Log or Code File"
-                  >
-                    <FileText className="w-2.5 h-2.5 text-amber-500" />
-                    <span className="hidden sm:inline">Tail File</span>
-                  </button>
-
-                  {/* Toggle continuous tail */}
-                  {pane.tailFile && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleContinuousTail(pane.id);
-                      }}
-                      className={`px-1.5 py-0.5 text-[9px] border transition-colors cursor-pointer ${
-                        pane.isTailing
-                          ? 'bg-emerald-600 text-white border-emerald-500'
-                          : 'bg-white/5 text-white/60 border-white/10 hover:text-white'
-                      }`}
-                      title={pane.isTailing ? 'Pause Live Tail' : 'Start Live Tail'}
-                    >
-                      {pane.isTailing ? 'Pause' : 'Live'}
-                    </button>
-                  )}
-
-                  {/* Close Pane Button */}
                   {activeTab.panes.length > 1 && (
                     <button
                       onClick={(e) => handleClosePane(pane.id, e)}
@@ -593,199 +544,54 @@ export default function Terminal({
                 </div>
               </div>
 
-              {/* Pane Output Area */}
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5 custom-scrollbar bg-[#080808] selection:bg-rose-950 text-[10.5px]">
-                {pane.lines.map((line, i) => (
-                  <div key={i} className="whitespace-pre-wrap break-all">
-                    {line.type === 'input' && (
-                      <div className="text-white font-semibold">
-                        <span className="text-rose-600 font-black">$ </span>
-                        {line.text}
-                      </div>
-                    )}
-                    {line.type === 'output' && <div className="text-white/70">{line.text}</div>}
-                    {line.type === 'error' && (
-                      <div className="text-rose-500 font-bold uppercase tracking-wide">{line.text}</div>
-                    )}
-                    {line.type === 'system' && (
-                      <div className="text-white/40 italic text-[9.5px] font-sans">[ {line.text} ]</div>
-                    )}
-                    {line.type === 'request' && (
-                      <div className="text-rose-400 border border-rose-600/20 bg-rose-600/5 p-2 rounded-none my-1 font-sans text-xs">
-                        {line.text}
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="relative flex-1 min-h-0 bg-[#080808]">
+                <XtermPane
+                  pane={pane}
+                  preload={preload}
+                  replay={!preload}
+                  onConnectionChange={(state) => {
+                    if (pane.id === activeTab.activePaneId) setConnected(state);
+                  }}
+                  registerClear={registerClear}
+                />
 
                 {/* Pending Command Authorization Prompt inside Pane */}
                 {pendingCommand && isFocused && (
-                  <div className="border border-rose-600/40 bg-rose-950/20 p-3 rounded-none my-2 space-y-2 text-white">
-                    <div className="flex items-center gap-1.5 text-rose-500 font-black text-xs uppercase tracking-wider select-none font-display">
-                      <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                      <span>Permission Requested: Shell Execution</span>
+                  <div className="absolute inset-0 z-20 flex items-center justify-center p-3">
+                    <div className="border border-rose-600/40 bg-[#0B0404]/95 p-3 w-full space-y-2 text-white shadow-2xl">
+                      <div className="flex items-center gap-1.5 text-rose-500 font-black text-xs uppercase tracking-wider select-none font-display">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <span>Permission Requested: Shell Execution</span>
+                      </div>
+                      <p className="text-[10px] text-white/60 font-sans select-none">
+                        The AI requested to execute this script in workspace:
+                      </p>
+                      <pre className="p-2 bg-black border border-white/10 text-rose-300 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
+                        {pendingCommand}
+                      </pre>
+                      <div className="flex items-center justify-end gap-2 pt-1 select-none">
+                        <button
+                          onClick={onSkipPending}
+                          className="px-3 py-1 border border-white/15 hover:bg-white/10 text-white/75 font-sans text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                        >
+                          Skip
+                        </button>
+                        <button
+                          onClick={() => onConfirmPending(pendingCommand)}
+                          className="flex items-center gap-1 px-4 py-1 bg-white hover:bg-rose-600 text-black hover:text-white font-sans text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          Authorize & Execute
+                        </button>
+                      </div>
                     </div>
-
-                    <p className="text-[10px] text-white/60 font-sans select-none">
-                      The AI requested to execute this script in workspace:
-                    </p>
-
-                    <pre className="p-2 bg-black border border-white/10 text-rose-300 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
-                      {pendingCommand}
-                    </pre>
-
-                    <div className="flex items-center justify-end gap-2 pt-1 select-none">
-                      <button
-                        onClick={onSkipPending}
-                        className="px-3 py-1 border border-white/15 hover:bg-white/10 text-white/75 font-sans text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-                      >
-                        Skip
-                      </button>
-                      <button
-                        onClick={() => onConfirmPending(pendingCommand)}
-                        className="flex items-center gap-1 px-4 py-1 bg-white hover:bg-rose-600 text-black hover:text-white font-sans text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
-                      >
-                        <Play className="w-3 h-3 fill-current" />
-                        Authorize & Execute
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {pane.executing && (
-                  <div className="flex items-center gap-2 text-white/40 select-none py-1">
-                    <span className="w-2 h-2 bg-rose-600 animate-ping inline-block rounded-full" />
-                    <span className="font-mono text-[9px] uppercase tracking-widest">Executing bash process...</span>
                   </div>
                 )}
               </div>
-
-              {/* Pane Input Line */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleExecuteInPane(pane.id);
-                }}
-                className="flex items-center gap-2 border-t border-white/10 bg-[#080808] px-2.5 py-1.5 shrink-0 select-none"
-              >
-                <span className="text-rose-600 font-black text-xs select-none">$</span>
-                <input
-                  type="text"
-                  value={pane.customCommand}
-                  onChange={(e) =>
-                    updatePane(pane.id, (p) => ({ ...p, customCommand: e.target.value }))
-                  }
-                  onFocus={() => handleSelectPane(pane.id)}
-                  disabled={pane.executing}
-                  placeholder={
-                    pane.executing
-                      ? 'Process running...'
-                      : 'Type bash or CLI AI command (e.g. tell-ai, codex, tail -f log)...'
-                  }
-                  className="flex-1 bg-transparent text-white placeholder-white/25 focus:outline-none text-[11px] font-mono select-text"
-                />
-                <button
-                  type="submit"
-                  disabled={!pane.customCommand.trim() || pane.executing}
-                  className="p-1 text-white/40 hover:text-rose-500 disabled:opacity-20 transition-colors cursor-pointer"
-                  title="Execute Command"
-                >
-                  <CornerDownLeft className="w-3 h-3" />
-                </button>
-              </form>
             </div>
           );
         })}
       </div>
-
-      {/* Tail File Config Modal */}
-      {tailModalPaneId && (
-        <div className="absolute inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-[#121212] border border-rose-600/40 p-4 max-w-md w-full space-y-3 font-mono shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <div className="flex items-center gap-2 text-rose-500 font-bold uppercase tracking-wider text-xs">
-                <FileText className="w-4 h-4 text-amber-500" />
-                <span>Tail File Inspector</span>
-              </div>
-              <button
-                onClick={() => setTailModalPaneId(null)}
-                className="text-white/40 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-[10px] text-white/60 font-sans">
-              Specify the path of the file you want to tail / view recent lines from in this pane:
-            </p>
-
-            <div className="space-y-2">
-              <div>
-                <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">
-                  File Path
-                </label>
-                <input
-                  type="text"
-                  value={tailFilePath}
-                  onChange={(e) => setTailFilePath(e.target.value)}
-                  placeholder="e.g. server.ts, package.json, src/App.tsx"
-                  className="w-full bg-[#080808] border border-white/15 text-white p-2 text-xs font-mono focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-[9px] text-white/40 uppercase tracking-widest block mb-1">
-                  Number of Lines (-n)
-                </label>
-                <input
-                  type="number"
-                  value={tailLinesCount}
-                  onChange={(e) => setTailLinesCount(Number(e.target.value))}
-                  min={5}
-                  max={500}
-                  className="w-full bg-[#080808] border border-white/15 text-white p-2 text-xs font-mono focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              {/* Quick file chips */}
-              <div className="flex items-center gap-1.5 pt-1">
-                <span className="text-[9px] text-white/40">Presets:</span>
-                {['server.ts', 'package.json', 'src/App.tsx', 'src/tell-ai/Tell.ts'].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setTailFilePath(f)}
-                    className="px-1.5 py-0.5 text-[9px] bg-white/5 border border-white/10 hover:bg-white/15 text-white/70"
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
-              <button
-                onClick={() => setTailModalPaneId(null)}
-                className="px-3 py-1.5 border border-white/15 text-white/60 hover:text-white text-xs font-sans"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={() => {
-                  const pane = activeTab.panes.find((p) => p.id === tailModalPaneId);
-                  if (pane) {
-                    updatePane(pane.id, (p) => ({ ...p, tailFile: tailFilePath }));
-                  }
-                  handleExecuteTail(tailModalPaneId);
-                }}
-                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
-              >
-                Run Tail
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Classic TMUX Bottom Status Bar */}
       <div className="flex items-center justify-between px-3 py-1 bg-[#050505] border-t border-white/10 text-[9.5px] text-white/40 font-mono shrink-0 select-none">
@@ -815,10 +621,24 @@ export default function Terminal({
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-white/30">CWD: /app</span>
-          <span className="text-emerald-500 font-bold">• Online</span>
+          <span className="text-white/30 max-w-[180px] truncate" title={cwd}>
+            {cwd || 'CWD: /'}
+          </span>
+          {connected ? (
+            <span className="flex items-center gap-1 text-emerald-500 font-bold">
+              <Wifi className="w-3 h-3" /> PTY Online
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-white/30">
+              <WifiOff className="w-3 h-3" /> Connecting
+            </span>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+function SparkleIcon() {
+  return <span className="text-rose-500">✦</span>;
 }

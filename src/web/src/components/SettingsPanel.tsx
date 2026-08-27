@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { Key, Settings, Info, CheckCircle, AlertCircle, HelpCircle, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Key, Settings, Info, CheckCircle, AlertCircle, HelpCircle, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw } from 'lucide-react';
+
+interface SessionInfo {
+  keysUsed: string[];
+  filesChanged: string[];
+  stats: { commandsRun: number; aiTurns: number; snapshots: number };
+}
+
+interface HistoryEntry {
+  name: string;
+  createdAt: string;
+  size: number;
+}
 
 interface SettingsPanelProps {
   keysStatus: {
@@ -22,6 +34,11 @@ interface SettingsPanelProps {
   systemPrompt: string;
   onSystemPromptChange: (newPrompt: string) => void;
   onResetSystemPrompt: () => void;
+  sessionInfo?: SessionInfo | null;
+  onSnapshot?: () => void;
+  snapshotBusy?: boolean;
+  history?: HistoryEntry[];
+  onRefreshHistory?: () => void;
 }
 
 export default function SettingsPanel({
@@ -30,9 +47,15 @@ export default function SettingsPanel({
   systemPrompt,
   onSystemPromptChange,
   onResetSystemPrompt,
+  sessionInfo,
+  onSnapshot,
+  snapshotBusy,
+  history = [],
+  onRefreshHistory,
 }: SettingsPanelProps) {
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [showModelsList, setShowModelsList] = useState(false);
+  const [showSession, setShowSession] = useState(false);
 
   return (
     <div className="flex flex-col h-full bg-[#0A0A0A] overflow-y-auto custom-scrollbar p-5 space-y-5 text-white/80 select-none">
@@ -154,6 +177,131 @@ export default function SettingsPanel({
                 Reset Default
               </button>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Session & History */}
+      <div className="bg-[#121212] rounded-none border border-white/10 overflow-hidden">
+        <button
+          onClick={() => setShowSession(!showSession)}
+          className="w-full flex items-center justify-between p-4 text-left font-display font-black text-[10px] tracking-widest text-white uppercase hover:bg-white/5 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <History className="w-3.5 h-3.5 text-rose-500" />
+            <span>Session & History (.tell)</span>
+          </div>
+          {showSession ? <ChevronUp className="w-4 h-4 text-white/40" /> : <ChevronDown className="w-4 h-4 text-white/40" />}
+        </button>
+
+        {showSession && (
+          <div className="p-4 border-t border-white/10 space-y-3">
+            <p className="text-[10px] text-white/40 leading-relaxed font-sans">
+              Session is auto-saved to <span className="text-white/70 font-mono">.tell/session.json</span>.
+              Snapshots go to <span className="text-white/70 font-mono">.tell/history/</span> with a
+              <span className="text-white/70 font-mono"> latest</span> symlink.
+            </p>
+
+            {/* Stats */}
+            {sessionInfo?.stats && (
+              <div className="grid grid-cols-3 gap-2 text-[9px] font-mono">
+                <div className="p-2 bg-[#0A0A0A] border border-white/5">
+                  <span className="block text-white/30 uppercase tracking-wider">Cmds</span>
+                  <strong className="text-white/90">{sessionInfo.stats.commandsRun ?? 0}</strong>
+                </div>
+                <div className="p-2 bg-[#0A0A0A] border border-white/5">
+                  <span className="block text-white/30 uppercase tracking-wider">AI Turns</span>
+                  <strong className="text-white/90">{sessionInfo.stats.aiTurns ?? 0}</strong>
+                </div>
+                <div className="p-2 bg-[#0A0A0A] border border-white/5">
+                  <span className="block text-white/30 uppercase tracking-wider">Snapshots</span>
+                  <strong className="text-white/90">{sessionInfo.stats.snapshots ?? 0}</strong>
+                </div>
+              </div>
+            )}
+
+            {/* Keys used (provider names only, never the secrets) */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5 text-[9px] text-white/40 uppercase tracking-widest">
+                <Key className="w-2.5 h-2.5 text-rose-500" />
+                Keys used (providers)
+              </div>
+              {sessionInfo?.keysUsed?.length ? (
+                <div className="flex flex-wrap gap-1">
+                  {sessionInfo.keysUsed.map((k) => (
+                    <span key={k} className="px-1.5 py-0.5 bg-rose-950/50 border border-rose-600/30 text-rose-400 text-[9px] font-mono uppercase">
+                      {k}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[9px] text-white/25 font-sans">No AI calls yet this session.</p>
+              )}
+            </div>
+
+            {/* Files changed */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1.5 text-[9px] text-white/40 uppercase tracking-widest">
+                <Wrench className="w-2.5 h-2.5 text-rose-500" />
+                Files changed ({sessionInfo?.filesChanged?.length ?? 0})
+              </div>
+              {sessionInfo?.filesChanged?.length ? (
+                <div className="max-h-20 overflow-y-auto custom-scrollbar space-y-0.5">
+                  {sessionInfo.filesChanged.slice(0, 12).map((f, i) => (
+                    <div key={i} className="text-[9px] text-white/50 font-mono truncate" title={f}>
+                      {f}
+                    </div>
+                  ))}
+                  {sessionInfo.filesChanged.length > 12 && (
+                    <div className="text-[9px] text-white/25 font-mono">
+                      ... +{sessionInfo.filesChanged.length - 12} more
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-[9px] text-white/25 font-sans">No files modified.</p>
+              )}
+            </div>
+
+            {/* Snapshot + refresh history */}
+            <div className="flex items-center gap-2 pt-1">
+              {onSnapshot && (
+                <button
+                  onClick={onSnapshot}
+                  disabled={snapshotBusy}
+                  className="flex items-center gap-1 px-3 py-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white text-[9px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                >
+                  <Camera className="w-3 h-3" />
+                  {snapshotBusy ? 'Saving...' : 'Snapshot Now'}
+                </button>
+              )}
+              {onRefreshHistory && (
+                <button
+                  onClick={onRefreshHistory}
+                  className="flex items-center gap-1 px-2 py-1 border border-white/15 text-white/60 hover:text-white text-[9px] uppercase tracking-wider transition-colors cursor-pointer"
+                  title="Refresh history"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Refresh
+                </button>
+              )}
+            </div>
+
+            {/* History list */}
+            {history.length > 0 && (
+              <div className="max-h-24 overflow-y-auto custom-scrollbar divide-y divide-white/5 border border-white/10">
+                {history.map((h) => (
+                  <div key={h.name} className="flex items-center justify-between px-2 py-1 text-[9px] font-mono">
+                    <span className="text-white/60 truncate max-w-[120px]" title={h.name}>
+                      {h.name}
+                    </span>
+                    <span className="text-white/30 shrink-0">
+                      {new Date(h.createdAt).toLocaleString()} · {(h.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
