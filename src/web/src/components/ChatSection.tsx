@@ -62,12 +62,12 @@ export default function ChatSection({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0A0A0A]">
+    <div className="flex flex-col h-full bg-(--color-bg-primary)">
       {/* Top Navbar */}
-      <div className="flex flex-wrap items-center justify-between p-4 border-b border-white/10 bg-[#0A0A0A] text-[#F5F5F5] gap-3 shrink-0 select-none">
+      <div className="flex flex-wrap items-center justify-between p-4 border-b border-(--color-border-subtle) bg-(--color-bg-primary) text-(--color-text-primary) gap-3 shrink-0 select-none">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-rose-600 animate-pulse" />
-          <span className="font-display font-black text-xs tracking-[0.2em] uppercase text-[#F5F5F5]">
+          <Sparkles className="w-4 h-4 text-(--color-accent) animate-pulse" />
+          <span className="font-display font-black text-xs tracking-[0.2em] uppercase text-(--color-text-primary)">
             Console Interface
           </span>
         </div>
@@ -75,14 +75,14 @@ export default function ChatSection({
         <div className="flex flex-wrap items-center gap-4 text-xs">
           {/* Model Selector */}
           <div className="flex items-center gap-2">
-            <span className="text-white/40 uppercase tracking-widest text-[9px] font-bold">Model:</span>
+            <span className="text-(--color-text-muted) uppercase tracking-widest text-[9px] font-bold">Model:</span>
             <select
               value={modelAlias}
               onChange={(e) => onModelAliasChange(e.target.value)}
-              className="bg-[#121212] border border-white/20 rounded-none px-2.5 py-1 text-[#F5F5F5] font-mono text-[10px] focus:outline-none focus:border-white transition-colors cursor-pointer uppercase"
+              className="bg-(--color-bg-secondary) border border-(--color-border-medium) rounded-none px-2.5 py-1 text-(--color-text-primary) font-mono text-[10px] focus:outline-none focus:border-(--color-text-primary) transition-colors cursor-pointer uppercase"
             >
               {models.map((m) => (
-                <option key={m.alias} value={m.alias} className="bg-[#0A0A0A]">
+                <option key={m.alias} value={m.alias} className="bg-(--color-bg-primary)">
                   {m.alias} : {m.vendor.toUpperCase()}
                 </option>
               ))}
@@ -90,23 +90,23 @@ export default function ChatSection({
           </div>
 
           {/* Chain Mode Toggle */}
-          <label className="flex items-center gap-2 cursor-pointer text-white/50 hover:text-white transition-colors">
+          <label className="flex items-center gap-2 cursor-pointer text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors">
             <input
               type="checkbox"
               checked={chainMode}
               onChange={(e) => onChainModeChange(e.target.checked)}
-              className="accent-rose-600 rounded-none bg-[#121212] border-white/20 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+              className="accent-(--color-accent) rounded-none bg-(--color-bg-secondary) border-(--color-border-medium) focus:ring-0 cursor-pointer w-3.5 h-3.5"
             />
             <span className="font-bold tracking-wider text-[9px] uppercase">Chain Loop</span>
           </label>
 
           {/* Yes Auto Execute Toggle */}
-          <label className="flex items-center gap-2 cursor-pointer text-white/50 hover:text-white transition-colors">
+          <label className="flex items-center gap-2 cursor-pointer text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors">
             <input
               type="checkbox"
               checked={autoExecute}
               onChange={(e) => onAutoExecuteChange(e.target.checked)}
-              className="accent-rose-600 rounded-none bg-[#121212] border-white/20 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+              className="accent-(--color-accent) rounded-none bg-(--color-bg-secondary) border-(--color-border-medium) focus:ring-0 cursor-pointer w-3.5 h-3.5"
             />
             <span className="font-bold tracking-wider text-[9px] uppercase">Auto-Run (-y)</span>
           </label>
@@ -114,31 +114,31 @@ export default function ChatSection({
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar select-text bg-[#0A0A0A] relative">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar select-text bg-(--color-bg-primary) relative">
         {/* Subtle grid line backdrop for premium brutalist look */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none grid grid-cols-6 h-full w-full">
-          <div className="border-r border-white h-full"></div>
-          <div className="border-r border-white h-full"></div>
-          <div className="border-r border-white h-full"></div>
-          <div className="border-r border-white h-full"></div>
-          <div className="border-r border-white h-full"></div>
+          <div className="border-r border-(--color-text-primary) h-full"></div>
+          <div className="border-r border-(--color-text-primary) h-full"></div>
+          <div className="border-r border-(--color-text-primary) h-full"></div>
+          <div className="border-r border-(--color-text-primary) h-full"></div>
+          <div className="border-r border-(--color-text-primary) h-full"></div>
         </div>
 
         {messages.length === 0 ? (
           <div className="h-full flex flex-col justify-center max-w-xl mx-auto space-y-8 pt-8 relative z-10">
             {/* Elegant Top Annotation */}
-            <div className="text-[10px] font-bold tracking-[0.5em] text-white/40 uppercase">
+            <div className="text-[10px] font-bold tracking-[0.5em] text-(--color-text-muted) uppercase">
               [ Sandbox Assistant v1.2 ]
             </div>
 
             {/* Massive Displays Slogan from Design HTML */}
             <div className="space-y-2 select-none">
-              <h1 className="text-7xl sm:text-8xl font-black leading-[0.85] uppercase tracking-tighter -ml-1 text-white">
+              <h1 className="text-7xl sm:text-8xl font-black leading-[0.85] uppercase tracking-tighter -ml-1 text-(--color-text-primary)">
                 Speak<br/>Deeply.
               </h1>
               <div className="mt-4 flex gap-4 items-center">
-                <div className="h-[1px] w-12 bg-white/20"></div>
-                <p className="text-sm font-light leading-relaxed tracking-tight text-white/70 italic">
+                <div className="h-[1px] w-12 bg-(--color-border-medium)"></div>
+                <p className="text-sm font-light leading-relaxed tracking-tight text-(--color-text-secondary) italic">
                   Tell your story. The engine is mapping your terminal directives to a synthetic reality in real-time.
                 </p>
               </div>
@@ -146,7 +146,7 @@ export default function ChatSection({
 
             {/* Quick Actions / Sample Accelerator styled exactly like the synthesis badges in the design */}
             <div className="space-y-2">
-              <div className="text-[9px] uppercase font-bold tracking-[0.2em] text-white/30">
+              <div className="text-[9px] uppercase font-bold tracking-[0.2em] text-(--color-text-muted)">
                 Synthesis Anchors
               </div>
               <div className="grid grid-cols-2 gap-3 pt-1 select-none">
@@ -154,7 +154,7 @@ export default function ChatSection({
                   <button
                     key={idx}
                     onClick={() => onSelectSample(sample.prompt)}
-                    className="px-4 py-2.5 border border-white/10 text-left text-[10px] font-bold uppercase tracking-widest text-[#F5F5F5] hover:bg-white hover:text-black hover:border-white transition-all duration-150 cursor-pointer rounded-none font-display"
+                    className="px-4 py-2.5 border border-(--color-border-subtle) text-left text-[10px] font-bold uppercase tracking-widest text-(--color-text-primary) hover:bg-(--color-text-primary) hover:text-(--color-bg-primary) hover:border-(--color-text-primary) transition-all duration-150 cursor-pointer rounded-none font-display"
                   >
                     {sample.label}
                   </button>
@@ -178,8 +178,8 @@ export default function ChatSection({
               >
                 {/* Assistant Avatar */}
                 {!isUser && (
-                  <div className="w-8 h-8 bg-white/5 border border-white/15 text-white rounded-none flex items-center justify-center shrink-0 select-none">
-                    <BrainCircuit className="w-4 h-4 text-rose-500" />
+                  <div className="w-8 h-8 bg-white/5 border border-(--color-border-medium) text-(--color-text-primary) rounded-none flex items-center justify-center shrink-0 select-none">
+                    <BrainCircuit className="w-4 h-4 text-(--color-accent)" />
                   </div>
                 )}
 
@@ -187,9 +187,9 @@ export default function ChatSection({
                 <div className="space-y-2 max-w-[85%]">
                   {/* Thought/Reasoning Panel */}
                   {m.thought && (
-                    <div className="bg-[#121212] border-l-2 border-rose-600 p-3.5 text-[11px] text-white/60 font-mono space-y-1">
-                      <div className="flex items-center gap-1.5 text-[9px] text-white/40 font-bold uppercase tracking-widest select-none">
-                        <BrainCircuit className="w-3.5 h-3.5 text-rose-600" />
+                    <div className="bg-(--color-bg-secondary) border-l-2 border-(--color-accent) p-3.5 text-[11px] text-(--color-text-secondary) font-mono space-y-1">
+                      <div className="flex items-center gap-1.5 text-[9px] text-(--color-text-muted) font-bold uppercase tracking-widest select-none">
+                        <BrainCircuit className="w-3.5 h-3.5 text-(--color-accent)" />
                         <span>Cognitive Sequence</span>
                       </div>
                       <div className="leading-relaxed pl-1 whitespace-pre-wrap">
@@ -206,8 +206,8 @@ export default function ChatSection({
                     <div
                       className={`p-4 rounded-none text-xs leading-relaxed ${
                         isUser
-                          ? 'bg-white/5 text-white border border-white/25 selection:bg-rose-900/50'
-                          : 'bg-[#121212] text-white/90 border border-white/10 selection:bg-rose-900/50'
+                          ? 'bg-white/5 text-(--color-text-primary) border border-(--color-border-medium) selection:bg-(--color-accent-subtle)'
+                          : 'bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle)'
                       }`}
                     >
                       <div className="whitespace-pre-wrap leading-relaxed select-text font-sans">
@@ -216,7 +216,7 @@ export default function ChatSection({
 
                       {/* Run tag notification inside chat bubble */}
                       {containsRuns && (
-                        <div className="mt-3 flex items-center gap-2 text-[10px] bg-rose-600/10 text-rose-400 border border-rose-600/25 px-2.5 py-1.5 rounded-none font-mono tracking-wide select-none">
+                        <div className="mt-3 flex items-center gap-2 text-[10px] bg-(--color-accent-subtle) text-(--color-accent-text) border border-(--color-accent)/25 px-2.5 py-1.5 rounded-none font-mono tracking-wide select-none">
                           <Terminal className="w-3.5 h-3.5 shrink-0" />
                           <span className="uppercase font-bold">SCRIPT GENERATED IN TERMINAL PIPELINE</span>
                         </div>
@@ -227,7 +227,7 @@ export default function ChatSection({
 
                 {/* User Avatar */}
                 {isUser && (
-                  <div className="w-8 h-8 bg-white text-black rounded-none flex items-center justify-center shrink-0 select-none font-mono font-bold text-xs border border-white">
+                  <div className="w-8 h-8 bg-(--color-text-primary) text-(--color-bg-primary) rounded-none flex items-center justify-center shrink-0 select-none font-mono font-bold text-xs border border-(--color-border-medium)">
                     U
                   </div>
                 )}
@@ -241,21 +241,21 @@ export default function ChatSection({
       {/* Message Input Bar */}
       <form
         onSubmit={onSubmit}
-        className="p-4 border-t border-white/10 bg-[#0A0A0A] select-none shrink-0"
+        className="p-4 border-t border-(--color-border-subtle) bg-(--color-bg-primary) select-none shrink-0"
       >
-        <div className="flex items-center gap-3 max-w-3xl mx-auto bg-[#121212] border border-white/15 px-3 py-1">
+        <div className="flex items-center gap-3 max-w-3xl mx-auto bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1">
           <input
             type="text"
             value={inputPrompt}
             onChange={(e) => onInputChange(e.target.value)}
             disabled={loading}
             placeholder={loading ? "PROCESSOR EXECUTING LOOP..." : "PROMPT CONSOLE FOR DIRECTIVES..."}
-            className="flex-1 bg-transparent border-none py-2 text-xs text-[#F5F5F5] placeholder-white/35 focus:outline-none leading-relaxed font-sans select-text uppercase tracking-wide"
+            className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-white/35 focus:outline-none leading-relaxed font-sans select-text uppercase tracking-wide"
           />
           <button
             type="submit"
             disabled={loading || !inputPrompt.trim()}
-            className="p-2 bg-white text-black hover:bg-rose-600 hover:text-white disabled:bg-white/10 disabled:text-white/20 transition-all duration-150 rounded-none shrink-0 cursor-pointer"
+            className="p-2 bg-(--color-text-primary) text-(--color-bg-primary) hover:bg-(--color-accent) hover:text-white disabled:bg-white/10 disabled:text-(--color-text-muted) transition-all duration-150 rounded-none shrink-0 cursor-pointer"
           >
             <Send className="w-3.5 h-3.5" />
           </button>

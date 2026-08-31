@@ -471,11 +471,11 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#0A0A0A] text-white overflow-hidden select-none font-sans">
+    <div className="flex flex-col h-screen bg-(--color-bg-primary) text-(--color-text-primary) overflow-hidden select-none font-sans">
       {/* Upper Main Dashboard Area */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Left Side: Workspace Files & Settings Drawer */}
-        <div className="w-full md:w-80 shrink-0 flex flex-col border-r border-white/10 bg-[#0A0A0A] select-none">
+        <div className="w-full md:w-80 shrink-0 flex flex-col border-r border-(--color-border-subtle) bg-(--color-bg-primary) select-none">
           <div className="flex-1 overflow-hidden min-h-[300px]">
             <FileExplorer
               onFileSelect={(path) => setSelectedFilePath(path)}
@@ -484,7 +484,7 @@ export default function App() {
             />
           </div>
 
-          <div className="h-[280px] border-t border-white/10 overflow-hidden shrink-0">
+          <div className="h-[280px] border-t border-(--color-border-subtle) overflow-hidden shrink-0">
             <SettingsPanel
               keysStatus={keysStatus}
               models={models}
@@ -501,19 +501,19 @@ export default function App() {
         </div>
 
         {/* Center: Interactive Assistant Chat & Code Viewer */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#0A0A0A]">
+        <div className="flex-1 flex flex-col overflow-hidden bg-(--color-bg-primary)">
           {/* Top Navigation Bar for Workspace */}
-          <div className="flex items-center justify-between px-3 py-1.5 bg-[#0D0D0D] border-b border-white/10 shrink-0 select-none">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setIsTerminalExpanded(false)}
                 className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
                   !isTerminalExpanded
-                    ? 'bg-[#181818] border-rose-600/60 text-white shadow-sm'
-                    : 'bg-white/5 border-white/10 text-white/50 hover:text-white/80 hover:bg-white/10'
+                    ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
+                    : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+                <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
                 <span>AI Chat & Workspace</span>
               </button>
 
@@ -521,23 +521,23 @@ export default function App() {
                 onClick={() => setIsTerminalExpanded(true)}
                 className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
                   isTerminalExpanded
-                    ? 'bg-[#181818] border-rose-600/60 text-white shadow-sm'
-                    : 'bg-white/5 border-white/10 text-white/50 hover:text-white/80 hover:bg-white/10'
+                    ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
+                    : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
                 }`}
               >
-                <TerminalIcon className="w-3.5 h-3.5 text-rose-500" />
+                <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
                 <span>Console Interface</span>
-                <span className="text-rose-400 font-mono text-[9px] bg-rose-950/60 border border-rose-600/30 px-1 py-0.2">
+                <span className="text-(--color-accent-text) font-mono text-[9px] bg-(--color-accent-subtle) border border-(--color-accent)/30 px-1 py-0.2">
                   PTY
                 </span>
               </button>
             </div>
 
-            <div className="flex items-center gap-3 text-[10px] font-mono text-white/40">
-              <span className="hidden sm:inline">Mode: <strong className="text-white/70">Interactive Shell</strong></span>
+            <div className="flex items-center gap-3 text-[10px] font-mono text-(--color-text-muted)">
+              <span className="hidden sm:inline">Mode: <strong className="text-(--color-text-secondary)">Interactive Shell</strong></span>
               <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <strong className="text-emerald-400">Sandbox Ready</strong>
+                <span className="w-2 h-2 rounded-full bg-(--color-success) animate-pulse" />
+                <strong className="text-(--color-success)">Sandbox Ready</strong>
               </span>
             </div>
           </div>
@@ -577,7 +577,7 @@ export default function App() {
               </div>
 
               {/* Lower Bottom Panel: Terminal Shell */}
-              <div className="h-[280px] shrink-0 border-t border-white/10">
+              <div className="h-[280px] shrink-0 border-t border-(--color-border-subtle)">
                 <Terminal
                   pendingCommand={pendingCommand}
                   onConfirmPending={handleConfirmPending}

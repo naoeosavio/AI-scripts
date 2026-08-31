@@ -20,6 +20,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import { useTheme, xtermThemeFromConfig } from '../theme.tsx';
 
 export interface TerminalLine {
   type: 'input' | 'output' | 'error' | 'system' | 'request';
@@ -63,6 +64,7 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
+  const { config } = useTheme();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -80,21 +82,7 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
       fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
       scrollback: 5000,
       allowProposedApi: true,
-      theme: {
-        background: '#080808',
-        foreground: '#e5e5e5',
-        cursor: '#e11d48',
-        cursorAccent: '#000000',
-        selectionBackground: '#4c0519',
-        black: '#000000',
-        red: '#e11d48',
-        green: '#10b981',
-        yellow: '#fbbf24',
-        blue: '#3b82f6',
-        magenta: '#d946ef',
-        cyan: '#22d3ee',
-        white: '#e5e5e5',
-      },
+      theme: xtermThemeFromConfig(config),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -187,6 +175,11 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane.id]);
+
+  // Update the xterm color theme live when the user changes appearance prefs
+  useEffect(() => {
+    termRef.current?.setOption('theme', xtermThemeFromConfig(config));
+  }, [config]);
 
   return <div ref={containerRef} className="absolute inset-0" />;
 }
@@ -356,14 +349,14 @@ export default function Terminal({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0A0A0A] text-white/90 font-mono text-[11px] leading-relaxed select-text overflow-hidden relative">
+    <div className="flex flex-col h-full bg-(--color-bg-primary) text-(--color-text-primary) font-mono text-[11px] leading-relaxed select-text overflow-hidden relative">
       {/* Agent Feed (AI activity) */}
       {agentLines.length > 0 && (
-        <div className="shrink-0 border-b border-rose-600/20 bg-[#0C0A0A]">
+        <div className="shrink-0 border-b border-(--color-accent)/20 bg-(--color-bg-primary)">
           <div className="flex items-center justify-between px-3 py-1 select-none">
             <button
               onClick={() => setAgentFeedOpen(!agentFeedOpen)}
-              className="flex items-center gap-1.5 text-[9px] font-display font-black uppercase tracking-widest text-rose-500 cursor-pointer"
+              className="flex items-center gap-1.5 text-[9px] font-display font-black uppercase tracking-widest text-(--color-accent) cursor-pointer"
             >
               {agentFeedOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
               <SparkleIcon />
@@ -372,7 +365,7 @@ export default function Terminal({
             {onAgentLinesClear && (
               <button
                 onClick={onAgentLinesClear}
-                className="text-white/40 hover:text-rose-400 text-[9px] uppercase tracking-widest cursor-pointer"
+                className="text-(--color-text-muted) hover:text-(--color-accent-text) text-[9px] uppercase tracking-widest cursor-pointer"
               >
                 Clear
               </button>
@@ -383,20 +376,20 @@ export default function Terminal({
               {agentLines.map((line, i) => (
                 <div key={i} className="whitespace-pre-wrap break-all text-[9.5px]">
                   {line.type === 'input' && (
-                    <div className="text-white font-semibold">
-                      <span className="text-rose-600 font-black">$ </span>
+                    <div className="text-(--color-text-primary) font-semibold">
+                      <span className="text-(--color-accent) font-black">$ </span>
                       {line.text}
                     </div>
                   )}
-                  {line.type === 'output' && <div className="text-white/60">{line.text}</div>}
+                  {line.type === 'output' && <div className="text-(--color-text-secondary)">{line.text}</div>}
                   {line.type === 'error' && (
-                    <div className="text-rose-500 font-bold uppercase tracking-wide">{line.text}</div>
+                    <div className="text-(--color-error) font-bold uppercase tracking-wide">{line.text}</div>
                   )}
                   {line.type === 'system' && (
-                    <div className="text-white/35 italic font-sans">[ {line.text} ]</div>
+                    <div className="text-(--color-text-muted) italic font-sans">[ {line.text} ]</div>
                   )}
                   {line.type === 'request' && (
-                    <div className="text-rose-300 border border-rose-600/20 bg-rose-600/5 p-1 font-sans text-[9.5px]">
+                    <div className="text-(--color-accent-text) border border-(--color-accent)/20 bg-(--color-accent-subtle) p-1 font-sans text-[9.5px]">
                       {line.text}
                     </div>
                   )}
@@ -408,17 +401,17 @@ export default function Terminal({
       )}
 
       {/* Top Header & Tabs Bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#080808] border-b border-white/10 shrink-0 select-none">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-tertiary) border-b border-(--color-border-subtle) shrink-0 select-none">
         <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pr-2">
-          <div className="flex items-center gap-1.5 font-display font-black text-[10px] tracking-widest uppercase text-white/50 shrink-0 pr-1 select-none">
-            <TerminalIcon className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
-            <span className="inline font-bold text-white/80">Console Interface</span>
+          <div className="flex items-center gap-1.5 font-display font-black text-[10px] tracking-widest uppercase text-(--color-text-secondary) shrink-0 pr-1 select-none">
+            <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent) animate-pulse" />
+            <span className="inline font-bold text-(--color-text-secondary)">Console Interface</span>
             {isExpanded && (
-              <span className="text-white/60 bg-white/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wider">
+              <span className="text-(--color-text-secondary) bg-white/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wider">
                 Maximized
               </span>
             )}
-            <span className="text-rose-500 font-mono text-[9px] bg-rose-950/60 border border-rose-600/30 px-1.5 py-0.5 ml-0.5 font-semibold">
+            <span className="text-(--color-accent-text) font-mono text-[9px] bg-(--color-accent-subtle) border border-(--color-accent)/30 px-1.5 py-0.5 ml-0.5 font-semibold">
               TMUX
             </span>
           </div>
@@ -434,11 +427,11 @@ export default function Terminal({
                   onDoubleClick={(e) => handleStartRenameTab(tab, e)}
                   className={`flex items-center gap-1.5 px-3 py-1 text-[10px] border font-mono transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-[#141414] border-rose-600/60 text-white font-bold shadow-sm'
-                      : 'bg-white/5 border-white/10 text-white/50 hover:text-white/80 hover:bg-white/10'
+                      ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) font-bold shadow-sm'
+                      : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
                   }`}
                 >
-                  <Square className={`w-2.5 h-2.5 ${isActive ? 'fill-rose-600 text-rose-600' : 'text-white/30'}`} />
+                  <Square className={`w-2.5 h-2.5 ${isActive ? 'fill-(--color-accent) text-(--color-accent)' : 'text-(--color-text-muted)'}`} />
                   {isRenaming ? (
                     <input
                       type="text"
@@ -447,16 +440,16 @@ export default function Terminal({
                       onBlur={() => handleSaveTabName(tab.id)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSaveTabName(tab.id)}
                       autoFocus
-                      className="bg-black text-white px-1 py-0.5 border border-rose-500 text-[10px] w-20 focus:outline-none"
+                      className="bg-(--color-bg-primary) text-(--color-text-primary) px-1 py-0.5 border border-(--color-accent) text-[10px] w-20 focus:outline-none"
                     />
                   ) : (
                     <span className="truncate max-w-[100px]">{tab.name}</span>
                   )}
-                  <span className="text-[9px] text-white/30 font-sans ml-0.5">({tab.panes.length}P)</span>
+                  <span className="text-[9px] text-(--color-text-muted) font-sans ml-0.5">({tab.panes.length}P)</span>
                   {tabs.length > 1 && (
                     <button
                       onClick={(e) => handleCloseTab(tab.id, e)}
-                      className="p-0.5 hover:bg-white/10 text-white/30 hover:text-rose-400 transition-colors ml-1"
+                      className="p-0.5 hover:bg-white/10 text-(--color-text-muted) hover:text-(--color-accent-text) transition-colors ml-1"
                       title="Close Tab"
                     >
                       <X className="w-2.5 h-2.5" />
@@ -471,48 +464,48 @@ export default function Terminal({
               disabled={tabs.length >= 4}
               className={`flex items-center gap-1 px-2.5 py-1 text-[10px] border font-mono transition-all ${
                 tabs.length >= 4
-                  ? 'border-white/5 text-white/20 cursor-not-allowed opacity-50'
-                  : 'border-white/15 bg-white/5 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/30 cursor-pointer'
+                  ? 'border-(--color-border-subtle) text-(--color-text-muted) cursor-not-allowed opacity-50'
+                  : 'border-(--color-border-medium) bg-white/5 text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 hover:border-(--color-border-strong) cursor-pointer'
               }`}
               title={tabs.length >= 4 ? 'Maximum 4 parallel tabs reached' : 'Add new parallel tab (Max 4)'}
             >
-              <Plus className="w-3 h-3 text-rose-500" />
+              <Plus className="w-3 h-3 text-(--color-accent)" />
               <span className="hidden sm:inline">New Tab</span>
-              <span className="text-[9px] text-white/30">({tabs.length}/4)</span>
+              <span className="text-[9px] text-(--color-text-muted)">({tabs.length}/4)</span>
             </button>
           </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-white/10 p-0.5">
+          <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-(--color-border-subtle) p-0.5">
             <button
               onClick={() => handleSplitPane('vertical')}
               disabled={activeTab.panes.length >= 4}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] hover:bg-white/10 text-white/70 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               title="Split Pane Vertically (Side-by-side)"
             >
-              <Columns className="w-3 h-3 text-rose-500" />
+              <Columns className="w-3 h-3 text-(--color-accent)" />
               <span>Split V</span>
             </button>
             <button
               onClick={() => handleSplitPane('horizontal')}
               disabled={activeTab.panes.length >= 4}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] hover:bg-white/10 text-white/70 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+              className="flex items-center gap-1 px-2 py-0.5 text-[10px] hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
               title="Split Pane Horizontally (Stacked)"
             >
-              <Rows className="w-3 h-3 text-rose-500" />
+              <Rows className="w-3 h-3 text-(--color-accent)" />
               <span>Split H</span>
             </button>
           </div>
 
-          <span className="hidden md:flex items-center gap-1.5 text-[9px] bg-white/5 text-white/80 border border-white/15 px-2 py-0.5 uppercase font-bold tracking-wider">
-            <ShieldCheck className="w-3 h-3 text-rose-600" /> Sandbox
+          <span className="hidden md:flex items-center gap-1.5 text-[9px] bg-white/5 text-(--color-text-secondary) border border-(--color-border-medium) px-2 py-0.5 uppercase font-bold tracking-wider">
+            <ShieldCheck className="w-3 h-3 text-(--color-accent)" /> Sandbox
           </span>
 
           {onToggleExpand && (
             <button
               onClick={onToggleExpand}
-              className="p-1 hover:bg-white/10 text-white/50 hover:text-white transition-colors cursor-pointer"
+              className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
               title={isExpanded ? 'Restore Shell Height' : 'Maximize Shell Height'}
             >
               {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -521,7 +514,7 @@ export default function Terminal({
 
           <button
             onClick={() => handleClearPane(activeTab.activePaneId)}
-            className="p-1 hover:bg-white/10 text-white/40 hover:text-rose-400 transition-colors cursor-pointer"
+            className="p-1 hover:bg-white/10 text-(--color-text-muted) hover:text-(--color-accent-text) transition-colors cursor-pointer"
             title="Clear Active Pane Output"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -530,7 +523,7 @@ export default function Terminal({
       </div>
 
       {/* Main Panes Grid Container — all tabs stay mounted; inactive ones are hidden */}
-      <div className="relative flex-1 p-1.5 bg-[#050505] overflow-hidden">
+      <div className="relative flex-1 p-1.5 bg-(--color-bg-tertiary) overflow-hidden">
         {tabs.map((tab) => (
           <div
             key={tab.id}
@@ -549,18 +542,18 @@ export default function Terminal({
               onClick={() => handleSelectPane(pane.id)}
               className={`flex flex-col h-full min-h-0 border transition-all duration-200 ${
                 isFocused
-                  ? 'border-rose-600/80 bg-[#0C0C0C] shadow-lg shadow-rose-950/20'
-                  : 'border-white/10 bg-[#080808] opacity-80 hover:opacity-100 hover:border-white/20'
+                  ? 'border-(--color-accent)/80 bg-(--color-bg-elevated) shadow-lg shadow-(--color-accent)/20'
+                  : 'border-(--color-border-subtle) bg-(--color-bg-tertiary) opacity-80 hover:opacity-100 hover:border-(--color-border-medium)'
               }`}
             >
-              <div className="flex items-center justify-between px-2.5 py-1 bg-[#101010] border-b border-white/10 shrink-0 select-none">
+              <div className="flex items-center justify-between px-2.5 py-1 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) shrink-0 select-none">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFocused ? 'bg-rose-600' : 'bg-white/30'}`} />
-                  <span className="font-bold text-[10px] text-white/80 truncate">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFocused ? 'bg-(--color-accent)' : 'bg-(--color-text-muted)'}`} />
+                  <span className="font-bold text-[10px] text-(--color-text-secondary) truncate">
                     {pane.title || 'bash'}
                   </span>
                   {isFocused && (
-                    <span className="text-[8px] bg-rose-600 text-white font-black px-1 py-0.2 tracking-wider uppercase">
+                    <span className="text-[8px] bg-(--color-accent) text-white font-black px-1 py-0.2 tracking-wider uppercase">
                       ACTIVE
                     </span>
                   )}
@@ -569,7 +562,7 @@ export default function Terminal({
                   {activeTab.panes.length > 1 && (
                     <button
                       onClick={(e) => handleClosePane(pane.id, e)}
-                      className="p-1 hover:bg-rose-950 hover:text-rose-400 text-white/30 transition-colors cursor-pointer ml-1"
+                      className="p-1 hover:bg-(--color-accent-subtle) hover:text-(--color-accent-text) text-(--color-text-muted) transition-colors cursor-pointer ml-1"
                       title="Close Pane"
                     >
                       <X className="w-3 h-3" />
@@ -578,7 +571,7 @@ export default function Terminal({
                 </div>
               </div>
 
-              <div className="relative flex-1 min-h-0 bg-[#080808]">
+              <div className="relative flex-1 min-h-0 bg-(--color-bg-tertiary)">
                 <XtermPane
                   pane={pane}
                   preload={preload}
@@ -593,27 +586,27 @@ export default function Terminal({
                 {/* Pending Command Authorization Prompt inside Pane */}
                 {pendingCommand && isFocused && (
                   <div className="absolute inset-0 z-20 flex items-center justify-center p-3">
-                    <div className="border border-rose-600/40 bg-[#0B0404]/95 p-3 w-full space-y-2 text-white shadow-2xl">
-                      <div className="flex items-center gap-1.5 text-rose-500 font-black text-xs uppercase tracking-wider select-none font-display">
-                        <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <div className="border border-(--color-accent)/40 bg-(--color-bg-primary)/95 p-3 w-full space-y-2 text-(--color-text-primary) shadow-2xl">
+                      <div className="flex items-center gap-1.5 text-(--color-accent) font-black text-xs uppercase tracking-wider select-none font-display">
+                        <AlertCircle className="w-3.5 h-3.5 text-(--color-accent) shrink-0" />
                         <span>Permission Requested: Shell Execution</span>
                       </div>
-                      <p className="text-[10px] text-white/60 font-sans select-none">
+                      <p className="text-[10px] text-(--color-text-secondary) font-sans select-none">
                         The AI requested to execute this script in workspace:
                       </p>
-                      <pre className="p-2 bg-black border border-white/10 text-rose-300 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
+                      <pre className="p-2 bg-(--color-bg-tertiary) border border-(--color-border-subtle) text-(--color-accent-text) font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
                         {pendingCommand}
                       </pre>
                       <div className="flex items-center justify-end gap-2 pt-1 select-none">
                         <button
                           onClick={onSkipPending}
-                          className="px-3 py-1 border border-white/15 hover:bg-white/10 text-white/75 font-sans text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                          className="px-3 py-1 border border-(--color-border-medium) hover:bg-white/10 text-(--color-text-secondary) font-sans text-[10px] font-bold uppercase tracking-wider cursor-pointer"
                         >
                           Skip
                         </button>
                         <button
                           onClick={() => onConfirmPending(pendingCommand)}
-                          className="flex items-center gap-1 px-4 py-1 bg-white hover:bg-rose-600 text-black hover:text-white font-sans text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+                          className="flex items-center gap-1 px-4 py-1 bg-(--color-text-primary) hover:bg-(--color-accent) text-(--color-bg-primary) hover:text-white font-sans text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
                         >
                           <Play className="w-3 h-3 fill-current" />
                           Authorize & Execute
@@ -631,14 +624,14 @@ export default function Terminal({
       </div>
 
       {/* Classic TMUX Bottom Status Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-[#050505] border-t border-white/10 text-[9.5px] text-white/40 font-mono shrink-0 select-none">
+      <div className="flex items-center justify-between px-3 py-1 bg-(--color-bg-tertiary) border-t border-(--color-border-subtle) text-[9.5px] text-(--color-text-muted) font-mono shrink-0 select-none">
         <div className="flex items-center gap-3">
-          <span className="text-rose-500 font-bold uppercase tracking-wider">[tell-ai:tmux]</span>
-          <div className="flex items-center gap-1.5 text-white/60">
+          <span className="text-(--color-accent) font-bold uppercase tracking-wider">[tell-ai:tmux]</span>
+          <div className="flex items-center gap-1.5 text-(--color-text-secondary)">
             {tabs.map((tab, idx) => (
               <span
                 key={tab.id}
-                className={tab.id === activeTabId ? 'text-rose-400 font-bold underline' : 'text-white/30'}
+                className={tab.id === activeTabId ? 'text-(--color-accent-text) font-bold underline' : 'text-(--color-text-muted)'}
               >
                 {idx + 1}:{tab.name.split(':')[1] || tab.name}
                 {tab.id === activeTabId ? '*' : ''}
@@ -649,24 +642,24 @@ export default function Terminal({
 
         <div className="hidden md:flex items-center gap-3">
           <span>
-            Tabs: <strong className="text-white/80">{tabs.length}/4</strong>
+            Tabs: <strong className="text-(--color-text-secondary)">{tabs.length}/4</strong>
           </span>
           <span>
-            Panes in Tab: <strong className="text-white/80">{activeTab.panes.length}/4</strong>
+            Panes in Tab: <strong className="text-(--color-text-secondary)">{activeTab.panes.length}/4</strong>
           </span>
-          <span>CLI-AI Support: <strong className="text-rose-400">tell-ai, codex, opencode</strong></span>
+          <span>CLI-AI Support: <strong className="text-(--color-accent-text)">tell-ai, codex, opencode</strong></span>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-white/30 max-w-[180px] truncate" title={cwd}>
+          <span className="text-(--color-text-muted) max-w-[180px] truncate" title={cwd}>
             {cwd || 'CWD: /'}
           </span>
           {connected ? (
-            <span className="flex items-center gap-1 text-emerald-500 font-bold">
+            <span className="flex items-center gap-1 text-(--color-success) font-bold">
               <Wifi className="w-3 h-3" /> PTY Online
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-white/30">
+            <span className="flex items-center gap-1 text-(--color-text-muted)">
               <WifiOff className="w-3 h-3" /> Connecting
             </span>
           )}
@@ -677,5 +670,5 @@ export default function Terminal({
 }
 
 function SparkleIcon() {
-  return <span className="text-rose-500">✦</span>;
+  return <span className="text-(--color-accent)">✦</span>;
 }

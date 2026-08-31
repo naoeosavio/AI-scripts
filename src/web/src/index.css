@@ -5,19 +5,74 @@
   --font-sans: "Inter", system-ui, sans-serif;
   --font-display: "Space Grotesk", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
-  
+}
+
+/* Light / Dark color tokens (dark defaults; light overrides applied via [data-theme] + JS) */
+:root {
+  --ui-scale: 1;
+
   --color-bg-primary: #0A0A0A;
   --color-bg-secondary: #121212;
+  --color-bg-tertiary: #080808;
+  --color-bg-elevated: #141414;
+  --color-bg-input: #0D0D0D;
+
+  --color-text-primary: #F5F5F5;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-muted: rgba(255, 255, 255, 0.35);
+
   --color-border-subtle: rgba(255, 255, 255, 0.08);
   --color-border-medium: rgba(255, 255, 255, 0.15);
-  --color-brand-accent: #E11D48; /* Red-600 */
+  --color-border-strong: rgba(255, 255, 255, 0.25);
+
+  --color-accent: #E11D48;
+  --color-accent-hover: #F43F5E;
+  --color-accent-subtle: #4C0519;
+  --color-accent-text: #FB7185;
+
+  --color-success: #10B981;
+  --color-error: #EF4444;
+
+  --color-scrollbar-track: rgba(255, 255, 255, 0.03);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+}
+
+/* Font families are runtime-overridable via the ThemeProvider (inline root vars win) */
+:root[data-theme='light'] {
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F5F5F5;
+  --color-bg-tertiary: #E5E5E5;
+  --color-bg-elevated: #FAFAFA;
+  --color-bg-input: #F0F0F0;
+
+  --color-text-primary: #0A0A0A;
+  --color-text-secondary: rgba(0, 0, 0, 0.6);
+  --color-text-muted: rgba(0, 0, 0, 0.35);
+
+  --color-border-subtle: rgba(0, 0, 0, 0.08);
+  --color-border-medium: rgba(0, 0, 0, 0.15);
+  --color-border-strong: rgba(0, 0, 0, 0.25);
+
+  --color-accent: #E11D48;
+  --color-accent-hover: #F43F5E;
+  --color-accent-subtle: #FDE7EC;
+  --color-accent-text: #BE123C;
+
+  --color-success: #059669;
+  --color-error: #DC2626;
+
+  --color-scrollbar-track: rgba(0, 0, 0, 0.03);
+  --color-scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --color-scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
 }
 
 /* Custom global overrides */
 body {
-  background-color: #0A0A0A;
-  color: #F5F5F5;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
   font-family: var(--font-sans);
+  font-size: calc(var(--ui-scale) * 100%);
 }
 
 /* Custom scrollbars */
@@ -26,12 +81,12 @@ body {
   height: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #0A0A0A;
+  background: var(--color-scrollbar-track);
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-scrollbar-thumb);
   border-radius: 2px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--color-scrollbar-thumb-hover);
 }
