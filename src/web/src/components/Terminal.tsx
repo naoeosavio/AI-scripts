@@ -50,13 +50,14 @@ interface XtermPaneProps {
   replay: boolean;
   onConnectionChange: (connected: boolean) => void;
   registerClear: (paneId: string, fn: () => void) => void;
+  registerFit: (paneId: string, fn: () => void) => void;
 }
 
 const BOOT_MESSAGE =
   '\x1b[90mInteractive Core Shell initialized (PTY mode).\x1b[0m\r\n' +
   '\x1b[90mCLI AI engines available: tell-ai, codex, opencode.\x1b[0m\r\n';
 
-function XtermPane({ pane, preload, replay, onConnectionChange, registerClear }: XtermPaneProps) {
+function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, registerFit }: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -154,14 +155,26 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear }:
     };
 
     const observer = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {
-        /* ignore */
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        try {
+          fit.fit();
+        } catch {
+          /* ignore */
+        }
       }
     });
     observer.observe(el);
     observerRef.current = observer;
+
+    registerFit(pane.id, () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        try {
+          fit.fit();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
 
     return () => {
       observer.disconnect();
@@ -221,6 +234,7 @@ export default function Terminal({
 
   const adoptedInitialRef = useRef(false);
   const clearFnsRef = useRef(new Map<string, () => void>());
+  const fitFnsRef = useRef(new Map<string, () => void>());
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
@@ -295,6 +309,21 @@ export default function Terminal({
   const registerClear = (paneId: string, fn: () => void) => {
     clearFnsRef.current.set(paneId, fn);
   };
+
+  const registerFit = (paneId: string, fn: () => void) => {
+    fitFnsRef.current.set(paneId, fn);
+  };
+
+  // Refit every pane of the newly active tab (they were hidden -> 0-size while inactive)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const tab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+      for (const pane of tab.panes) {
+        fitFnsRef.current.get(pane.id)?.();
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClearPane = (paneId: string) => {
     clearFnsRef.current.get(paneId)?.();
@@ -500,9 +529,14 @@ export default function Terminal({
         </div>
       </div>
 
-      {/* Main Panes Grid Container */}
-      <div className={`flex-1 grid gap-1.5 p-1.5 bg-[#050505] overflow-hidden ${getGridClasses(activeTab.panes.length)}`}>
-        {activeTab.panes.map((pane) => {
+      {/* Main Panes Grid Container — all tabs stay mounted; inactive ones are hidden */}
+      <div className="relative flex-1 p-1.5 bg-[#050505] overflow-hidden">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            className={`absolute inset-0 grid gap-1.5 ${tab.id === activeTabId ? '' : 'hidden'} ${getGridClasses(tab.panes.length)}`}
+          >
+            {tab.panes.map((pane) => {
           const isFocused = pane.id === activeTab.activePaneId;
           const preloadScrollback = initialScrollback[pane.id] || '';
           const isRestored = adoptedInitialRef.current;
@@ -548,11 +582,12 @@ export default function Terminal({
                 <XtermPane
                   pane={pane}
                   preload={preload}
-                  replay={!preload}
+                  replay={replay}
                   onConnectionChange={(state) => {
                     if (pane.id === activeTab.activePaneId) setConnected(state);
                   }}
                   registerClear={registerClear}
+                  registerFit={registerFit}
                 />
 
                 {/* Pending Command Authorization Prompt inside Pane */}
@@ -590,7 +625,9 @@ export default function Terminal({
               </div>
             </div>
           );
-        })}
+            })}
+          </div>
+        ))}
       </div>
 
       {/* Classic TMUX Bottom Status Bar */}
