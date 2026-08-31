@@ -140,12 +140,25 @@ export function xtermThemeFromConfig(config: ThemeConfig) {
   };
 }
 
+function normalizeConfig(raw: any): ThemeConfig {
+  const c: ThemeConfig = { ...DEFAULT_THEME };
+  if (raw && typeof raw === 'object') {
+    if (raw.mode === 'dark' || raw.mode === 'light') c.mode = raw.mode;
+    if (ACCENT_COLORS[raw.accent as AccentPalette]) c.accent = raw.accent as AccentPalette;
+    if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontSans)) c.fontSans = raw.fontSans;
+    if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontDisplay)) c.fontDisplay = raw.fontDisplay;
+    if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontMono)) c.fontMono = raw.fontMono;
+    if ([0.85, 0.92, 1.0, 1.08, 1.15].includes(raw.scale)) c.scale = raw.scale;
+  }
+  return c;
+}
+
 function loadConfig(): ThemeConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_THEME, ...parsed };
+      return normalizeConfig(parsed);
     }
   } catch {}
   return DEFAULT_THEME;
@@ -158,27 +171,31 @@ function saveConfig(config: ThemeConfig) {
 }
 
 function applyConfigToRoot(config: ThemeConfig) {
-  const root = document.documentElement;
-  const modeVars = config.mode === 'dark' ? DARK_VARS : LIGHT_VARS;
-  const accent = ACCENT_COLORS[config.accent];
+  try {
+    const root = document.documentElement;
+    const modeVars = (config.mode === 'light' ? LIGHT_VARS : DARK_VARS) || DARK_VARS;
+    const accent = ACCENT_COLORS[config.accent] || ACCENT_COLORS.rose;
 
-  for (const [key, value] of Object.entries(modeVars)) {
-    root.style.setProperty(key, value);
+    for (const [key, value] of Object.entries(modeVars)) {
+      root.style.setProperty(key, value);
+    }
+
+    root.style.setProperty('--color-accent', accent.primary);
+    root.style.setProperty('--color-accent-hover', accent.hover);
+    root.style.setProperty('--color-accent-subtle', accent.subtle);
+    root.style.setProperty('--color-accent-text', accent.text);
+
+    root.style.setProperty('--font-sans', getFontFamily(config.fontSans));
+    root.style.setProperty('--font-display', getFontFamily(config.fontDisplay));
+    root.style.setProperty('--font-mono', getFontFamily(config.fontMono));
+
+    root.style.setProperty('--ui-scale', String(config.scale));
+
+    root.setAttribute('data-theme', config.mode);
+    root.style.colorScheme = config.mode;
+  } catch (err) {
+    console.error('[theme] failed to apply theme to root:', err);
   }
-
-  root.style.setProperty('--color-accent', accent.primary);
-  root.style.setProperty('--color-accent-hover', accent.hover);
-  root.style.setProperty('--color-accent-subtle', accent.subtle);
-  root.style.setProperty('--color-accent-text', accent.text);
-
-  root.style.setProperty('--font-sans', getFontFamily(config.fontSans));
-  root.style.setProperty('--font-display', getFontFamily(config.fontDisplay));
-  root.style.setProperty('--font-mono', getFontFamily(config.fontMono));
-
-  root.style.setProperty('--ui-scale', String(config.scale));
-
-  root.setAttribute('data-theme', config.mode);
-  root.style.colorScheme = config.mode;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -193,16 +210,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setConfig((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  const ctx: ThemeContextValue = {
-    config,
-    setMode: (mode) => update({ mode }),
-    setAccent: (accent) => update({ accent }),
-    setFontSans: (fontSans) => update({ fontSans }),
-    setFontDisplay: (fontDisplay) => update({ fontDisplay }),
-    setFontMono: (fontMono) => update({ fontMono }),
-    setScale: (scale) => update({ scale }),
-    resetTheme: () => setConfig(DEFAULT_THEME),
-  };
+  const ctx: ThemeContextValue = React.useMemo(
+    () => ({
+      config,
+      setMode: (mode) => update({ mode }),
+      setAccent: (accent) => update({ accent }),
+      setFontSans: (fontSans) => update({ fontSans }),
+      setFontDisplay: (fontDisplay) => update({ fontDisplay }),
+      setFontMono: (fontMono) => update({ fontMono }),
+      setScale: (scale) => update({ scale }),
+      resetTheme: () => setConfig(DEFAULT_THEME),
+    }),
+    [config, update],
+  );
 
   return <ThemeContext.Provider value={ctx}>{children}</ThemeContext.Provider>;
 }

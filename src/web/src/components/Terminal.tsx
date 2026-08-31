@@ -178,7 +178,11 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
 
   // Update the xterm color theme live when the user changes appearance prefs
   useEffect(() => {
-    termRef.current?.setOption('theme', xtermThemeFromConfig(config));
+    try {
+      termRef.current?.setOption('theme', xtermThemeFromConfig(config));
+    } catch (err) {
+      console.error('[terminal] failed to update xterm theme:', err);
+    }
   }, [config]);
 
   return <div ref={containerRef} className="absolute inset-0" />;
