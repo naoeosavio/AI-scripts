@@ -5,6 +5,7 @@ import FileViewer from './components/FileViewer.tsx';
 import Terminal, { TerminalLine, TerminalLayout } from './components/Terminal.tsx';
 import SettingsPanel from './components/SettingsPanel.tsx';
 import ChatSection, { ChatMessage } from './components/ChatSection.tsx';
+import { useTheme } from './theme.tsx';
 
 const DEFAULT_SYSTEM_PROMPT = `
 This is a multi-step terminal assistant running on linux.
@@ -41,6 +42,8 @@ interface HistoryEntry {
 }
 
 export default function App() {
+  const { config } = useTheme();
+  const focusedLayout = config.layout === 'focused';
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -470,155 +473,173 @@ export default function App() {
     }
   };
 
+  const sidebar = (
+    <div className="w-full md:w-80 shrink-0 flex flex-col bg-(--color-bg-primary) select-none">
+      <div className="flex-1 overflow-hidden min-h-[300px]">
+        <FileExplorer
+          onFileSelect={(path) => setSelectedFilePath(path)}
+          selectedFilePath={selectedFilePath}
+          refreshTrigger={refreshFileTreeTrigger}
+        />
+      </div>
+
+      <div className="h-[280px] border-t border-(--color-border-subtle) overflow-hidden shrink-0">
+        <SettingsPanel
+          keysStatus={keysStatus}
+          models={models}
+          systemPrompt={systemPrompt}
+          onSystemPromptChange={(val) => setSystemPrompt(val)}
+          onResetSystemPrompt={() => setSystemPrompt(generatedSystemPrompt || DEFAULT_SYSTEM_PROMPT)}
+          sessionInfo={sessionInfo}
+          onSnapshot={handleSnapshot}
+          snapshotBusy={snapshotBusy}
+          history={history}
+          onRefreshHistory={refreshHistory}
+        />
+      </div>
+    </div>
+  );
+
+  const navBar = (
+    <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => setIsTerminalExpanded(false)}
+          className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
+            !isTerminalExpanded
+              ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
+              : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
+          <span>AI Chat & Workspace</span>
+        </button>
+
+        <button
+          onClick={() => setIsTerminalExpanded(true)}
+          className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
+            isTerminalExpanded
+              ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
+              : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
+          }`}
+        >
+          <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
+          <span>Console Interface</span>
+          <span className="text-(--color-accent-text) font-mono text-[9px] bg-(--color-accent-subtle) border border-(--color-accent)/30 px-1 py-0.2">
+            PTY
+          </span>
+        </button>
+      </div>
+
+      <div className="flex items-center gap-3 text-[10px] font-mono text-(--color-text-muted)">
+        <span className="hidden sm:inline">Mode: <strong className="text-(--color-text-secondary)">Interactive Shell</strong></span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-(--color-success) animate-pulse" />
+          <strong className="text-(--color-success)">Sandbox Ready</strong>
+        </span>
+      </div>
+    </div>
+  );
+
+  const chatAndViewer = (
+    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+      {/* Chat box */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <ChatSection
+          messages={messages}
+          inputPrompt={inputPrompt}
+          onInputChange={(val) => setInputPrompt(val)}
+          onSubmit={handleChatSubmit}
+          loading={loading}
+          modelAlias={modelAlias}
+          onModelAliasChange={(alias) => setModelAlias(alias)}
+          models={models}
+          chainMode={chainMode}
+          onChainModeChange={(val) => setChainMode(val)}
+          autoExecute={autoExecute}
+          onAutoExecuteChange={(val) => setAutoExecute(val)}
+          onSelectSample={(prompt) => {
+            setInputPrompt(prompt);
+          }}
+        />
+      </div>
+
+      {/* Code Viewer & Editor (collapsible if none selected) */}
+      <div className={`${selectedFilePath ? 'flex-1 lg:max-w-xl' : 'w-0 lg:max-w-0'} flex flex-col shrink-0 transition-all duration-300 overflow-hidden`}>
+        <FileViewer
+          filePath={selectedFilePath}
+          onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
+          onCloseFile={() => setSelectedFilePath(null)}
+        />
+      </div>
+    </div>
+  );
+
+  const terminalEl = (expanded: boolean) => (
+    <Terminal
+      pendingCommand={pendingCommand}
+      onConfirmPending={handleConfirmPending}
+      onSkipPending={handleSkipPending}
+      isExpanded={expanded}
+      onToggleExpand={() => setIsTerminalExpanded(expanded ? false : true)}
+      agentLines={terminalLines}
+      onAgentLinesClear={() => setTerminalLines([])}
+      initialLayout={restoredLayout || undefined}
+      initialScrollback={terminalScrollback}
+      onLayoutChange={(layout) => {
+        layoutRef.current = layout;
+        setLayoutTick((t) => t + 1);
+      }}
+      cwd={cwd}
+    />
+  );
+
   return (
     <div className="flex flex-col h-screen bg-(--color-bg-primary) text-(--color-text-primary) overflow-hidden select-none font-sans">
-      {/* Upper Main Dashboard Area */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Left Side: Workspace Files & Settings Drawer */}
-        <div className="w-full md:w-80 shrink-0 flex flex-col border-r border-(--color-border-subtle) bg-(--color-bg-primary) select-none">
-          <div className="flex-1 overflow-hidden min-h-[300px]">
-            <FileExplorer
-              onFileSelect={(path) => setSelectedFilePath(path)}
-              selectedFilePath={selectedFilePath}
-              refreshTrigger={refreshFileTreeTrigger}
-            />
+      {focusedLayout ? (
+        /* ---- FOCUSED LAYOUT: explorer on the right, no bottom terminal, chat maximized ---- */
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          {/* Center column: chat / terminal toggled via nav (full-height, no bottom bar) */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-(--color-bg-primary)">
+            {navBar}
+            {isTerminalExpanded ? (
+              <div className="flex-1 h-full overflow-hidden">{terminalEl(true)}</div>
+            ) : (
+              chatAndViewer
+            )}
           </div>
 
-          <div className="h-[280px] border-t border-(--color-border-subtle) overflow-hidden shrink-0">
-            <SettingsPanel
-              keysStatus={keysStatus}
-              models={models}
-              systemPrompt={systemPrompt}
-              onSystemPromptChange={(val) => setSystemPrompt(val)}
-              onResetSystemPrompt={() => setSystemPrompt(generatedSystemPrompt || DEFAULT_SYSTEM_PROMPT)}
-              sessionInfo={sessionInfo}
-              onSnapshot={handleSnapshot}
-              snapshotBusy={snapshotBusy}
-              history={history}
-              onRefreshHistory={refreshHistory}
-            />
+          {/* Right Side: Workspace Files & Settings Drawer */}
+          <div className="border-l border-(--color-border-subtle) w-full md:w-80 shrink-0 flex flex-col bg-(--color-bg-primary) select-none">
+            {sidebar}
           </div>
         </div>
-
-        {/* Center: Interactive Assistant Chat & Code Viewer */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-(--color-bg-primary)">
-          {/* Top Navigation Bar for Workspace */}
-          <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setIsTerminalExpanded(false)}
-                className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
-                  !isTerminalExpanded
-                    ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
-                    : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
-                <span>AI Chat & Workspace</span>
-              </button>
-
-              <button
-                onClick={() => setIsTerminalExpanded(true)}
-                className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
-                  isTerminalExpanded
-                    ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
-                    : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
-                }`}
-              >
-                <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
-                <span>Console Interface</span>
-                <span className="text-(--color-accent-text) font-mono text-[9px] bg-(--color-accent-subtle) border border-(--color-accent)/30 px-1 py-0.2">
-                  PTY
-                </span>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-3 text-[10px] font-mono text-(--color-text-muted)">
-              <span className="hidden sm:inline">Mode: <strong className="text-(--color-text-secondary)">Interactive Shell</strong></span>
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-(--color-success) animate-pulse" />
-                <strong className="text-(--color-success)">Sandbox Ready</strong>
-              </span>
-            </div>
+      ) : (
+        /* ---- DEFAULT LAYOUT: explorer on the left, bottom terminal ---- */
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          <div className="border-r border-(--color-border-subtle) w-full md:w-80 shrink-0 flex flex-col">
+            {sidebar}
           </div>
 
-          {!isTerminalExpanded ? (
-            <>
-              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-                {/* Left Box: Chat console */}
-                <div className="flex-1 flex flex-col min-w-0">
-                  <ChatSection
-                    messages={messages}
-                    inputPrompt={inputPrompt}
-                    onInputChange={(val) => setInputPrompt(val)}
-                    onSubmit={handleChatSubmit}
-                    loading={loading}
-                    modelAlias={modelAlias}
-                    onModelAliasChange={(alias) => setModelAlias(alias)}
-                    models={models}
-                    chainMode={chainMode}
-                    onChainModeChange={(val) => setChainMode(val)}
-                    autoExecute={autoExecute}
-                    onAutoExecuteChange={(val) => setAutoExecute(val)}
-                    onSelectSample={(prompt) => {
-                      setInputPrompt(prompt);
-                    }}
-                  />
-                </div>
+          {/* Center: Interactive Assistant Chat & Code Viewer */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-(--color-bg-primary)">
+            {navBar}
 
-                {/* Right Box: Live Code Viewer & Editor (collapsible if none selected) */}
-                <div className={`${selectedFilePath ? 'flex-1 lg:max-w-xl' : 'w-0 lg:max-w-0'} flex flex-col shrink-0 transition-all duration-300 overflow-hidden`}>
-                  <FileViewer
-                    filePath={selectedFilePath}
-                    onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
-                    onCloseFile={() => setSelectedFilePath(null)}
-                  />
+            {!isTerminalExpanded ? (
+              <>
+                {chatAndViewer}
+                {/* Lower Bottom Panel: Terminal Shell */}
+                <div className="h-[280px] shrink-0 border-t border-(--color-border-subtle)">
+                  {terminalEl(false)}
                 </div>
-              </div>
-
-              {/* Lower Bottom Panel: Terminal Shell */}
-              <div className="h-[280px] shrink-0 border-t border-(--color-border-subtle)">
-                <Terminal
-                  pendingCommand={pendingCommand}
-                  onConfirmPending={handleConfirmPending}
-                  onSkipPending={handleSkipPending}
-                  isExpanded={false}
-                  onToggleExpand={() => setIsTerminalExpanded(true)}
-                  agentLines={terminalLines}
-                  onAgentLinesClear={() => setTerminalLines([])}
-                  initialLayout={restoredLayout || undefined}
-                  initialScrollback={terminalScrollback}
-                  onLayoutChange={(layout) => {
-                    layoutRef.current = layout;
-                    setLayoutTick((t) => t + 1);
-                  }}
-                  cwd={cwd}
-                />
-              </div>
-            </>
-          ) : (
-            /* Maximized Console Interface Tab View */
-            <div className="flex-1 h-full overflow-hidden">
-              <Terminal
-                pendingCommand={pendingCommand}
-                onConfirmPending={handleConfirmPending}
-                onSkipPending={handleSkipPending}
-                isExpanded={true}
-                onToggleExpand={() => setIsTerminalExpanded(false)}
-                agentLines={terminalLines}
-                onAgentLinesClear={() => setTerminalLines([])}
-                initialLayout={restoredLayout || undefined}
-                initialScrollback={terminalScrollback}
-                onLayoutChange={(layout) => {
-                  layoutRef.current = layout;
-                  setLayoutTick((t) => t + 1);
-                }}
-                cwd={cwd}
-              />
-            </div>
-          )}
+              </>
+            ) : (
+              /* Maximized Console Interface Tab View */
+              <div className="flex-1 h-full overflow-hidden">{terminalEl(true)}</div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

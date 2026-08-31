@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check } from 'lucide-react';
-import { useTheme, AccentPalette, FontChoice, ScaleLevel } from '../theme.tsx';
+import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, Focus } from 'lucide-react';
+import { useTheme, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
 
 interface SessionInfo {
   keysUsed: string[];
@@ -59,6 +59,10 @@ const SCALE_OPTIONS: { label: string; value: ScaleLevel }[] = [
   { label: '1.08', value: 1.08 },
   { label: '1.15', value: 1.15 },
 ];
+const LAYOUT_OPTIONS: { id: LayoutMode; label: string; desc: string }[] = [
+  { id: 'default', label: 'Classic', desc: 'Explorer left · bottom terminal' },
+  { id: 'focused', label: 'Focused', desc: 'Explorer right · fullscreen terminal · chat maximized' },
+];
 
 export default function SettingsPanel({
   keysStatus,
@@ -77,7 +81,7 @@ export default function SettingsPanel({
   const [showSession, setShowSession] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
 
-  const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, resetTheme } = useTheme();
+  const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, setLayout, resetTheme } = useTheme();
 
   return (
     <div className="flex flex-col h-full bg-(--color-bg-primary) overflow-y-auto custom-scrollbar p-5 space-y-5 text-(--color-text-secondary) select-none">
@@ -184,6 +188,30 @@ export default function SettingsPanel({
                     }`}
                   >
                     {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Layout */}
+            <div>
+              <span className="block text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold mb-1.5">Layout</span>
+              <div className="grid grid-cols-2 gap-1.5">
+                {LAYOUT_OPTIONS.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLayout(l.id)}
+                    className={`flex flex-col items-start gap-1 px-2.5 py-2 text-left border cursor-pointer transition-colors ${
+                      config.layout === l.id
+                        ? 'bg-(--color-accent-subtle) border-(--color-accent) text-(--color-text-primary)'
+                        : 'bg-(--color-bg-primary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider">
+                      {l.id === 'default' ? <PanelLeft className="w-3 h-3" /> : <Focus className="w-3 h-3" />}
+                      {l.label}
+                    </span>
+                    <span className="text-[8.5px] font-sans leading-snug opacity-80">{l.desc}</span>
                   </button>
                 ))}
               </div>

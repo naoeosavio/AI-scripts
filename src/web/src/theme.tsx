@@ -4,6 +4,7 @@ export type ThemeMode = 'dark' | 'light';
 export type AccentPalette = 'rose' | 'blue' | 'emerald' | 'amber' | 'violet' | 'cyan';
 export type FontChoice = 'Inter' | 'Space Grotesk' | 'JetBrains Mono';
 export type ScaleLevel = 0.85 | 0.92 | 1.0 | 1.08 | 1.15;
+export type LayoutMode = 'default' | 'focused';
 
 export interface ThemeConfig {
   mode: ThemeMode;
@@ -12,6 +13,7 @@ export interface ThemeConfig {
   fontDisplay: FontChoice;
   fontMono: FontChoice;
   scale: ScaleLevel;
+  layout: LayoutMode;
 }
 
 const STORAGE_KEY = 'theme-config';
@@ -23,6 +25,7 @@ const DEFAULT_THEME: ThemeConfig = {
   fontDisplay: 'Space Grotesk',
   fontMono: 'JetBrains Mono',
   scale: 1.0,
+  layout: 'default',
 };
 
 const ACCENT_COLORS: Record<AccentPalette, { primary: string; hover: string; subtle: string; text: string }> = {
@@ -86,6 +89,7 @@ interface ThemeContextValue {
   setFontDisplay: (f: FontChoice) => void;
   setFontMono: (f: FontChoice) => void;
   setScale: (s: ScaleLevel) => void;
+  setLayout: (l: LayoutMode) => void;
   resetTheme: () => void;
 }
 
@@ -97,6 +101,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   setFontDisplay: () => {},
   setFontMono: () => {},
   setScale: () => {},
+  setLayout: () => {},
   resetTheme: () => {},
 });
 
@@ -149,6 +154,7 @@ function normalizeConfig(raw: any): ThemeConfig {
     if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontDisplay)) c.fontDisplay = raw.fontDisplay;
     if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontMono)) c.fontMono = raw.fontMono;
     if ([0.85, 0.92, 1.0, 1.08, 1.15].includes(raw.scale)) c.scale = raw.scale;
+    if (raw.layout === 'default' || raw.layout === 'focused') c.layout = raw.layout;
   }
   return c;
 }
@@ -219,6 +225,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setFontDisplay: (fontDisplay) => update({ fontDisplay }),
       setFontMono: (fontMono) => update({ fontMono }),
       setScale: (scale) => update({ scale }),
+      setLayout: (layout) => update({ layout }),
       resetTheme: () => setConfig(DEFAULT_THEME),
     }),
     [config, update],
