@@ -92,7 +92,7 @@ export default function SettingsPanel({
       </div>
 
       {/* Appearance & Theme Customizer */}
-      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle) overflow-hidden">
+      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle)">
         <button
           onClick={() => setShowAppearance(!showAppearance)}
           className="w-full flex items-center justify-between p-4 text-left font-display font-black text-[10px] tracking-widest text-(--color-text-primary) uppercase hover:bg-white/5 transition-colors cursor-pointer"
@@ -312,7 +312,7 @@ export default function SettingsPanel({
       </div>
 
       {/* System Prompt Customizer */}
-      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle) overflow-hidden">
+      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle)">
         <button
           onClick={() => setShowPromptEditor(!showPromptEditor)}
           className="w-full flex items-center justify-between p-4 text-left font-display font-black text-[10px] tracking-widest text-(--color-text-primary) uppercase hover:bg-white/5 transition-colors cursor-pointer"
@@ -347,7 +347,7 @@ export default function SettingsPanel({
       </div>
 
       {/* Session & History */}
-      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle) overflow-hidden">
+      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle)">
         <button
           onClick={() => setShowSession(!showSession)}
           className="w-full flex items-center justify-between p-4 text-left font-display font-black text-[10px] tracking-widest text-(--color-text-primary) uppercase hover:bg-white/5 transition-colors cursor-pointer"
@@ -472,7 +472,7 @@ export default function SettingsPanel({
       </div>
 
       {/* Alias Legend / Support List */}
-      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle) overflow-hidden">
+      <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle)">
         <button
           onClick={() => setShowModelsList(!showModelsList)}
           className="w-full flex items-center justify-between p-4 text-left font-display font-black text-[10px] tracking-widest text-(--color-text-primary) uppercase hover:bg-white/5 transition-colors cursor-pointer"

@@ -14,9 +14,10 @@ export interface ThemeConfig {
   fontMono: FontChoice;
   scale: ScaleLevel;
   layout: LayoutMode;
+  settingsHeight: number;
 }
 
-const STORAGE_KEY = 'theme-config';
+const STORAGE_KEY = 'theme-config-v2';
 
 const DEFAULT_THEME: ThemeConfig = {
   mode: 'dark',
@@ -25,7 +26,8 @@ const DEFAULT_THEME: ThemeConfig = {
   fontDisplay: 'Space Grotesk',
   fontMono: 'JetBrains Mono',
   scale: 1.0,
-  layout: 'default',
+  layout: 'focused',
+  settingsHeight: 320,
 };
 
 const ACCENT_COLORS: Record<AccentPalette, { primary: string; hover: string; subtle: string; text: string }> = {
@@ -90,6 +92,7 @@ interface ThemeContextValue {
   setFontMono: (f: FontChoice) => void;
   setScale: (s: ScaleLevel) => void;
   setLayout: (l: LayoutMode) => void;
+  setSettingsHeight: (h: number) => void;
   resetTheme: () => void;
 }
 
@@ -102,6 +105,7 @@ const ThemeContext = createContext<ThemeContextValue>({
   setFontMono: () => {},
   setScale: () => {},
   setLayout: () => {},
+  setSettingsHeight: () => {},
   resetTheme: () => {},
 });
 
@@ -155,6 +159,9 @@ function normalizeConfig(raw: any): ThemeConfig {
     if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontMono)) c.fontMono = raw.fontMono;
     if ([0.85, 0.92, 1.0, 1.08, 1.15].includes(raw.scale)) c.scale = raw.scale;
     if (raw.layout === 'default' || raw.layout === 'focused') c.layout = raw.layout;
+    if (typeof raw.settingsHeight === 'number' && !Number.isNaN(raw.settingsHeight)) {
+      c.settingsHeight = Math.min(Math.max(raw.settingsHeight, 140), 900);
+    }
   }
   return c;
 }
@@ -226,6 +233,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setFontMono: (fontMono) => update({ fontMono }),
       setScale: (scale) => update({ scale }),
       setLayout: (layout) => update({ layout }),
+      setSettingsHeight: (settingsHeight) => update({ settingsHeight }),
       resetTheme: () => setConfig(DEFAULT_THEME),
     }),
     [config, update],

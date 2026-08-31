@@ -42,8 +42,9 @@ interface HistoryEntry {
 }
 
 export default function App() {
-  const { config } = useTheme();
+  const { config, setSettingsHeight } = useTheme();
   const focusedLayout = config.layout === 'focused';
+  const dragStartRef = useRef<{ y: number; h: number } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -473,9 +474,43 @@ export default function App() {
     }
   };
 
+  const onDragMove = useCallback((e: MouseEvent) => {
+    if (!dragStartRef.current) return;
+    const delta = dragStartRef.current.y - e.clientY;
+    const next = dragStartRef.current.h + delta;
+    const max = window.innerHeight - 120;
+    setSettingsHeight(Math.min(Math.max(next, 140), max));
+  }, [setSettingsHeight]);
+
+  const onDragEnd = useCallback(() => {
+    dragStartRef.current = null;
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  }, [onDragMove]);
+
+  const startDragSettings = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragStartRef.current = { y: e.clientY, h: config.settingsHeight };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+  }, [config.settingsHeight, onDragMove, onDragEnd]);
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragEnd);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [onDragMove, onDragEnd]);
+
   const sidebar = (
-    <div className="w-full md:w-80 shrink-0 flex flex-col bg-(--color-bg-primary) select-none">
-      <div className="flex-1 overflow-hidden min-h-[300px]">
+    <div className="w-full md:w-80 shrink-0 h-full min-h-0 flex flex-col bg-(--color-bg-primary) select-none">
+      <div className="flex-1 min-h-0 overflow-hidden">
         <FileExplorer
           onFileSelect={(path) => setSelectedFilePath(path)}
           selectedFilePath={selectedFilePath}
@@ -483,7 +518,13 @@ export default function App() {
         />
       </div>
 
-      <div className="h-[280px] border-t border-(--color-border-subtle) overflow-hidden shrink-0">
+      <div
+        onMouseDown={startDragSettings}
+        className="shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors"
+        title="Arraste para redimensionar o painel de Settings"
+      />
+
+      <div className="shrink-0 overflow-hidden" style={{ height: config.settingsHeight }}>
         <SettingsPanel
           keysStatus={keysStatus}
           models={models}
