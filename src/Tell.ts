@@ -25,7 +25,7 @@ type CliOptions = {
   exec?: boolean;
   input?: boolean;
   web?: boolean;
-  sandboxWeb?: boolean;
+  cwd?: string;
 };
 
 type ParsedInput = { model: string; parts: string[]; readStdin: boolean };
@@ -383,8 +383,8 @@ function buildProgram(argv: string[]): Command {
     .option('-y, --yes', 'execute requested commands without confirmation')
     .option('--chain', 'continue after command output until the assistant gives a final answer')
     .option('-i, --input', 'read stdin and include it with the prompt')
-    .option('--web', 'launch the interactive Tell Web sandbox')
-    .option('--sandbox-web', 'launch the interactive Tell Web sandbox with project context')
+    .option('-w, --web', 'launch the interactive Tell Web sandbox')
+    .option('--cwd <path>', 'working directory for the sandbox (created if missing)')
     .option('--no-exec', 'do not execute requested commands')
     .parse(argv);
 }
@@ -460,12 +460,35 @@ async function runResponseLoop(
   }
 }
 
-async function launchWeb(model: string): Promise<void> {
+async function launchWeb(opts: { model: string; prompt: string; cwd?: string; noExec?: boolean }): Promise<void> {
   const { spawn } = await import('node:child_process');
-  const child = spawn('tell-web', [model], {
+
+  let cwd = process.cwd();
+  if (opts.cwd) {
+    cwd = path.resolve(opts.cwd);
+    if (!fs.existsSync(cwd)) {
+      try {
+        fs.mkdirSync(cwd, { recursive: true });
+        process.stderr.write(`\x1b[33mWarning: '${opts.cwd}' did not exist; created it.\x1b[0m\n`);
+      } catch (err) {
+        console.error(
+          '\x1b[31mFailed to create working directory ' +
+            `${JSON.stringify(opts.cwd)}: ${err instanceof Error ? err.message : String(err)}\x1b[0m`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+  }
+
+  const childArgs = [opts.model, '--cwd', cwd];
+  if (opts.noExec) childArgs.push('--no-exec');
+  if (opts.prompt) childArgs.push('--prompt', opts.prompt);
+
+  const child = spawn('tell-web', childArgs, {
     stdio: 'inherit',
-    env: { ...process.env, TELL_MODEL: model, NODE_ENV: 'production' },
-    cwd: process.cwd(),
+    env: { ...process.env, TELL_MODEL: opts.model, NODE_ENV: 'production' },
+    cwd,
   });
   child.on('error', (err: any) => {
     if (err?.code === 'ENOENT') {
@@ -542,12 +565,12 @@ async function main() {
   const program = buildProgram(process.argv);
   const opts = program.opts<CliOptions>();
   const input = parseArgs(program.args, opts.model, Boolean(opts.input));
-  if (opts.web || opts.sandboxWeb || (input.parts.length === 1 && input.parts[0] === 'web')) {
-    await launchWeb(input.model);
-    return;
-  }
   const stdinText = input.readStdin ? await readStdin().catch(() => '') : '';
   const prompt = formatPrompt(input.parts.join(' '), stdinText, opts);
+  if (opts.web) {
+    await launchWeb({ model: input.model, prompt, cwd: opts.cwd, noExec: opts.exec === false });
+    return;
+  }
   if (!prompt) {
     console.error(formatMissingPromptError(program));
     process.exitCode = 1;

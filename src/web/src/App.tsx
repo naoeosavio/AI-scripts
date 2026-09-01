@@ -151,6 +151,7 @@ export default function App() {
         const res = await fetch('/api/config');
         const data = await res.json();
         if (data.defaultModel) setModelAlias(data.defaultModel);
+        if (typeof data.autoExecute === 'boolean') setAutoExecute(data.autoExecute);
       } catch (error) {
         console.error('Error fetching server config:', error);
       }
