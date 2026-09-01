@@ -162,6 +162,7 @@ Launch the interactive Tell Web sandbox in your browser:
 tell --web                       # open the sandbox at http://localhost:3000
 tell -w --cwd /path/to/project   # run in another working directory (created if missing)
 tell -w --no-exec "ola"          # start the chat pre-seeded with "ola", auto-execution off
+tell -w -m g --chain -y "refactor"  # pick model, chain mode, auto-confirm execution
 ```
 
 Options:
@@ -170,6 +171,12 @@ Options:
   and a warning is shown. Defaults to the current working directory.
 - A trailing prompt (e.g. `"ola"`) pre-seeds the first chat message.
 - `--no-exec` — disables automatic execution of AI-generated commands in the sandbox.
+- `-y` / `--yes` — auto-confirm command execution (turns on auto-execution in the sandbox).
+- `--chain` — multi-step mode: keep going after command output until the AI gives a final answer.
+- `-m` / `--model <model>` — set the sandbox model (shortcode or full spec).
+
+The project context (directory tree + README/AGENTS system prompt) is always generated
+by default in the sandbox — no separate flag needed.
 
 The web server runs in the selected working directory. If the `tell-web` binary is
 not installed, install it with `npm install -g @tell-ai/web`.
