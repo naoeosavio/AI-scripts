@@ -10,6 +10,7 @@ import { generateText } from 'ai';
 import { getModel, MODELS, resolveModelSpec } from '../ai/models';
 import { buildSystemPrompt } from './context-builder';
 import { attachTerminalServer, getScrollback } from './pty';
+import { parseCliArgs } from './cli-args';
 import {
   emptySession,
   loadSession,
@@ -24,23 +25,15 @@ const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const DEFAULT_MODEL = (process.env.TELL_MODEL || 'l').trim();
 
-// CLI args: --cwd <path>, --prompt <text>, --no-exec
-const argv = process.argv.slice(2);
-const argCwd = (() => {
-  const i = argv.indexOf('--cwd');
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : undefined;
-})();
-const argPrompt = (() => {
-  const i = argv.indexOf('--prompt');
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : undefined;
-})();
-const argNoExec = argv.includes('--no-exec');
-
-const CWD = path.resolve(argCwd || process.cwd());
-const INITIAL_PROMPT = argPrompt || undefined;
-const AUTO_EXECUTE = !argNoExec;
+// CLI args: --cwd <path>, --prompt <text>, -m/--model, --chain, -y/--yes, --no-exec
+const cliArgs = parseCliArgs(process.argv.slice(2), process.cwd());
+const CWD = cliArgs.cwd;
+const INITIAL_PROMPT = cliArgs.initialPrompt;
+const AUTO_EXECUTE = cliArgs.autoExecute;
+const DEFAULT_MODEL = (cliArgs.model || process.env.TELL_MODEL || 'l').trim();
+const CHAIN = cliArgs.chain;
+const YES = cliArgs.yes;
 
 app.use(express.json());
 
@@ -321,7 +314,13 @@ function sanitizeReasoning(val: any): string | null {
 
 // API: Server configuration (default model set via TELL_MODEL, e.g. `tell g web`)
 app.get('/api/config', (req, res) => {
-  res.json({ defaultModel: DEFAULT_MODEL, autoExecute: AUTO_EXECUTE, cwd: CWD });
+  res.json({
+    defaultModel: DEFAULT_MODEL,
+    autoExecute: AUTO_EXECUTE,
+    chain: CHAIN,
+    yes: YES,
+    cwd: CWD,
+  });
 });
 
 // API: Auto-generated project context (tree 4 levels + README + AGENTS + protocol)

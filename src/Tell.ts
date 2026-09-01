@@ -460,7 +460,14 @@ async function runResponseLoop(
   }
 }
 
-async function launchWeb(opts: { model: string; prompt: string; cwd?: string; noExec?: boolean }): Promise<void> {
+async function launchWeb(opts: {
+  model: string;
+  prompt: string;
+  cwd?: string;
+  chain?: boolean;
+  yes?: boolean;
+  noExec?: boolean;
+}): Promise<void> {
   const { spawn } = await import('node:child_process');
 
   let cwd = process.cwd();
@@ -481,8 +488,10 @@ async function launchWeb(opts: { model: string; prompt: string; cwd?: string; no
     }
   }
 
-  const childArgs = [opts.model, '--cwd', cwd];
+  const childArgs = ['--cwd', cwd, '-m', opts.model];
   if (opts.noExec) childArgs.push('--no-exec');
+  if (opts.yes) childArgs.push('--yes');
+  if (opts.chain) childArgs.push('--chain');
   if (opts.prompt) childArgs.push('--prompt', opts.prompt);
 
   const child = spawn('tell-web', childArgs, {
@@ -568,7 +577,14 @@ async function main() {
   const stdinText = input.readStdin ? await readStdin().catch(() => '') : '';
   const prompt = formatPrompt(input.parts.join(' '), stdinText, opts);
   if (opts.web) {
-    await launchWeb({ model: input.model, prompt, cwd: opts.cwd, noExec: opts.exec === false });
+    await launchWeb({
+      model: input.model,
+      prompt,
+      cwd: opts.cwd,
+      chain: Boolean(opts.chain),
+      yes: Boolean(opts.yes),
+      noExec: opts.exec === false,
+    });
     return;
   }
   if (!prompt) {

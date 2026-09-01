@@ -152,6 +152,7 @@ export default function App() {
         const data = await res.json();
         if (data.defaultModel) setModelAlias(data.defaultModel);
         if (typeof data.autoExecute === 'boolean') setAutoExecute(data.autoExecute);
+        if (typeof data.chain === 'boolean') setChainMode(data.chain);
       } catch (error) {
         console.error('Error fetching server config:', error);
       }
