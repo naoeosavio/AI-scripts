@@ -1,6 +1,6 @@
 # Tell Web Sandbox
 
-The **Tell Web Sandbox** (`tell --web` / `tell --sandbox-web`) turns the `tell` CLI
+The **Tell Web Sandbox** (`tell -w` / `tell --web`) turns the `tell` CLI
 into a full browser-based development console. It mirrors your real shell through
 pseudo-terminals (PTY), gives the AI an auto-generated system prompt built from the
 project itself, and persists your session in a hidden `.tell/` folder.
@@ -33,7 +33,7 @@ browser tab, no SSH client or local terminal needed.
 | **Console Interface (real PTY)** | Each pane is a persistent interactive bash session with a real TTY. `tmux`, `vim`, `htop`, `codex`, `opencode`, `claude-code`, `tell-ai` all work as in your local shell. Up to 4 tabs / 4 panes each. |
 | **AI Chat & Workspace** | General chat that manages the session: ask questions, request changes, and let the AI run commands through the `<RUN>` bridge (`/api/execute`). |
 | **File Explorer & Editor** | Browse the project tree and open/edit files directly in the browser. |
-| **Auto-generated system prompt** | `--sandbox-web` builds a persistent system prompt from the project: directory tree (up to 4 levels), `README.md`, and `AGENTS.md`/`agent.md` if present. |
+| **Auto-generated system prompt** | The sandbox builds a persistent system prompt from the project: directory tree (up to 4 levels), `README.md`, and `AGENTS.md`/`agent.md` if present. |
 | **Session persistence** | Auto-saved to `.tell/` (chat, model, prompt, tabs/panes, scrollback, keys used, files changed, stats) and restored on your next visit. |
 
 ---
@@ -45,11 +45,14 @@ npm install -g tell-ai
 npm install -g @tell-ai/web      # the web sandbox server (tell-web)
 
 cd /path/to/your/project
-tell --sandbox-web               # open http://localhost:3000
+tell --web                       # open http://localhost:3000
 ```
 
-> `--sandbox-web` enables the auto-generated project context. `--web` works the same
-> but starts with a minimal prompt. The legacy positional form `tell web` also works.
+> `-w` / `--web` enables the auto-generated project context. You can run the sandbox
+> in another directory with `--cwd <path>` (created with a warning if it does not
+> exist) and pre-seed the first chat message by passing a prompt, e.g.
+> `tell -w --no-exec "ola"`. The legacy `--sandbox-web` / positional `tell web`
+> forms are removed.
 
 Open **http://localhost:3000**. You get a dashboard with three areas:
 
@@ -80,7 +83,7 @@ The simplest case: a nicer UI for your local shell, with the AI assistant attach
 
 ```bash
 cd ~/my-project
-tell --sandbox-web
+tell --web
 ```
 
 Use the panes for long-running interactive work (servers, dev servers, `tmux`
@@ -96,7 +99,7 @@ git operations without installing anything on your laptop:
 ```bash
 # On the server / machine that owns the repo:
 cd /srv/git/my-repo
-tell --sandbox-web --model g
+tell --web --model g
 
 # From your browser anywhere: review the diff, edit files, commit and push.
 # In a pane:
@@ -117,7 +120,7 @@ of remembering SSH flags. Useful for servers that lack a desktop:
 # On the VPS, inside a tmux session so it survives disconnects:
 tmux new -s tell
 cd /opt/my-app
-tell --sandbox-web --model g
+tell --web --model g
 # detach with Ctrl-b d
 
 # Reconnect to your work anytime:
@@ -140,7 +143,7 @@ reverse proxy. Pick the option that fits your setup.
 
 ```bash
 # Server:
-tell --sandbox-web
+tell --web
 
 # Your laptop:
 ssh -L 3000:localhost:3000 user@your-server
@@ -151,7 +154,7 @@ ssh -L 3000:localhost:3000 user@your-server
 
 ```bash
 # Server:
-tell --sandbox-web
+tell --web
 cloudflared tunnel --url http://localhost:3000
 # Cloudflare prints something like https://random-words.trycloudflare.com
 ```
@@ -175,7 +178,7 @@ After=network.target
 WorkingDirectory=/opt/my-app
 Environment=PORT=3000
 Environment=TELL_MODEL=g
-ExecStart=/usr/bin/tell --sandbox-web
+ExecStart=/usr/bin/tell --web
 Restart=always
 
 [Install]
@@ -305,7 +308,7 @@ docker run --rm -it -p 3000:3000 \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
   -v $PWD:/workspace \
   -w /workspace \
-  node:22 bash -c "npm i -g tell-ai @tell-ai/web && tell --sandbox-web"
+  node:22 bash -c "npm i -g tell-ai @tell-ai/web && tell --web"
 ```
 
 ---
@@ -315,8 +318,8 @@ docker run --rm -it -p 3000:3000 \
 | Problem | Fix |
 |---------|-----|
 | `Failed to load native module: pty.node` | `node-pty` is a native module. Run `npm rebuild node-pty` (from `src/web`) or install build tools (`python3`, `make`, `g++`). |
-| Port already in use | Set another port: `PORT=3100 tell --sandbox-web` |
-| Wrong model | Set `TELL_MODEL` (e.g. `TELL_MODEL=g tell --sandbox-web`) or pick the model in the chat header. |
+| Port already in use | Set another port: `PORT=3100 tell --web` |
+| Wrong model | Set `TELL_MODEL` (e.g. `TELL_MODEL=g tell --web`) or pick the model in the chat header. |
 | Terminal looks blank / no prompt | Refresh the page; the PTY reconnects. Check the `.tell/` scrollback restore if a session exists. |
 | `tell: command not found` for `tell-web` | Install the web server: `npm install -g @tell-ai/web` |
 | Session not restored | The server must run from the same working directory (`.tell/` lives there). |

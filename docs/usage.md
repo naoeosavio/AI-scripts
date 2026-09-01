@@ -154,17 +154,24 @@ Without any flag, context is deleted on start (one-shot execution, no history ke
 `--chain` loops up to 8 rounds feeding command outputs to the model, but does not persist context across invocations.  
 `-c --chain` reads previous context, loops up to 8 rounds, and writes incrementally — each round's output is appended to the context file.
 
-## Web sandbox (`--web` / `--sandbox-web`)
+## Web sandbox (`-w` / `--web`)
 
 Launch the interactive Tell Web sandbox in your browser:
 
 ```bash
-tell --web                # open the sandbox at http://localhost:3000
-tell --sandbox-web        # same, with project context auto-generated
-tell web                  # legacy positional form, still works
+tell --web                       # open the sandbox at http://localhost:3000
+tell -w --cwd /path/to/project   # run in another working directory (created if missing)
+tell -w --no-exec "ola"          # start the chat pre-seeded with "ola", auto-execution off
 ```
 
-The web server runs in the current working directory. If the `tell-web` binary is
+Options:
+
+- `--cwd <path>` — working directory for the sandbox. If it does not exist it is created
+  and a warning is shown. Defaults to the current working directory.
+- A trailing prompt (e.g. `"ola"`) pre-seeds the first chat message.
+- `--no-exec` — disables automatic execution of AI-generated commands in the sandbox.
+
+The web server runs in the selected working directory. If the `tell-web` binary is
 not installed, install it with `npm install -g @tell-ai/web`.
 
 > Full guide with deployment scenarios, real-world examples and security notes:
@@ -172,8 +179,7 @@ not installed, install it with `npm install -g @tell-ai/web`.
 
 ### Auto-generated system prompt
 
-`--sandbox-web` (and the default prompt when none is edited) generates a persistent
-system prompt from the project itself:
+The sandbox generates a persistent system prompt from the project itself:
 
 - Directory tree up to 4 levels deep (skipping `node_modules`, `.git`, `dist`, `.env`, `.tell`)
 - `README.md` contents if present

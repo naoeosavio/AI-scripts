@@ -65,8 +65,9 @@ Web Sandbox
 Launch a browser-based terminal + AI console from any working directory:
 
 ```bash
-tell --sandbox-web      # open http://localhost:3000
-tell --web              # same, minimal prompt
+tell --web                      # open http://localhost:3000
+tell -w --cwd /path/to/project  # run the sandbox in another working directory (created if missing)
+tell -w --no-exec "ola"         # start the chat pre-seeded with "ola", auto-execution off
 ```
 
 The sandbox mirrors your real shell through PTY panes (tmux/codex/opencode/claude-code
