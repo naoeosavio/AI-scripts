@@ -51,6 +51,20 @@ export const MODELS: Record<string, string> = {
   'c++': 'openai:gpt-5.6-luna:max',
   C: 'openai:gpt-5.6-luna:high',
 
+  'e--': 'openai:gpt-6-astra:none',
+  'e-': 'openai:gpt-6-astra:low',
+  e: 'openai:gpt-6-astra:medium',
+  'e+': 'openai:gpt-6-astra:high',
+  'e++': 'openai:gpt-6-astra:max',
+  E: 'openai:gpt-6-astra:high',
+
+  'r--': 'openai:gpt-6-astra-pro:none',
+  'r-': 'openai:gpt-6-astra-pro:low',
+  r: 'openai:gpt-6-astra-pro:medium',
+  'r+': 'openai:gpt-6-astra-pro:high',
+  'r++': 'openai:gpt-6-astra-pro:max',
+  R: 'openai:gpt-6-astra-pro:high',
+
   's--': 'anthropic:claude-sonnet-5:none',
   's-': 'anthropic:claude-sonnet-5:low',
   s: 'anthropic:claude-sonnet-5:medium',
@@ -65,12 +79,12 @@ export const MODELS: Record<string, string> = {
   'o++': 'anthropic:claude-opus-5:max',
   O: 'anthropic:claude-opus-5:high',
 
-  'f--': 'anthropic:claude-fable-5:none',
-  'f-': 'anthropic:claude-fable-5:low',
-  f: 'anthropic:claude-fable-5:medium',
-  'f+': 'anthropic:claude-fable-5:high',
-  'f++': 'anthropic:claude-fable-5:max',
-  F: 'anthropic:claude-fable-5:high',
+  'f--': 'anthropic:claude-fable-5.1:none',
+  'f-': 'anthropic:claude-fable-5.1:low',
+  f: 'anthropic:claude-fable-5.1:medium',
+  'f+': 'anthropic:claude-fable-5.1:high',
+  'f++': 'anthropic:claude-fable-5.1:max',
+  F: 'anthropic:claude-fable-5.1:high',
 
   'i-': 'google:gemini-3.1-pro-preview:low',
   i: 'google:gemini-3.1-pro-preview:medium',
@@ -83,12 +97,12 @@ export const MODELS: Record<string, string> = {
   'j+': 'google:gemini-3.5-flash-lite:high',
   J: 'google:gemini-3.5-flash-lite:high',
 
-  'l--': 'google:gemini-3.7-flash:none',
-  'l-': 'google:gemini-3.7-flash:low',
-  l: 'google:gemini-3.7-flash:medium',
-  'l+': 'google:gemini-3.7-flash:high',
-  'l++': 'google:gemini-3.7-flash:max',
-  L: 'google:gemini-3.7-flash:high',
+  'l--': 'google:gemini-3.8-flash:none',
+  'l-': 'google:gemini-3.8-flash:low',
+  l: 'google:gemini-3.8-flash:medium',
+  'l+': 'google:gemini-3.8-flash:high',
+  'l++': 'google:gemini-3.8-flash:max',
+  L: 'google:gemini-3.8-flash:high',
 
   'x--': 'xai:grok-4.6:none',
   'x-': 'xai:grok-4.6:low',
@@ -108,10 +122,31 @@ export const MODELS: Record<string, string> = {
   'a++': 'alibaba:qwen3.8-max:xhigh',
   A: 'alibaba:qwen3.8-max:high',
 
-  'd--': 'deepseek:deepseek-v4-flash:none',
-  'd-': 'deepseek:deepseek-v4-flash:low',
-  d: 'deepseek:deepseek-v4-flash:high',
-  'd+': 'deepseek:deepseek-v4-flash:max',
+  'at--': 'alibaba:qwen3.8-2.4t-a95b:none',
+  'at-': 'alibaba:qwen3.8-2.4t-a95b:low',
+  at: 'alibaba:qwen3.8-2.4t-a95b:medium',
+  'at+': 'alibaba:qwen3.8-2.4t-a95b:high',
+  'at++': 'alibaba:qwen3.8-2.4t-a95b:xhigh',
+  AT: 'alibaba:qwen3.8-2.4t-a95b:high',
+
+  'al--': 'alibaba:qwen3.8-27b:none',
+  'al-': 'alibaba:qwen3.8-27b:low',
+  al: 'alibaba:qwen3.8-27b:medium',
+  'al+': 'alibaba:qwen3.8-27b:high',
+  'al++': 'alibaba:qwen3.8-27b:xhigh',
+  AL: 'alibaba:qwen3.8-27b:high',
+
+  'af--': 'alibaba:qwen3.8-flash:none',
+  'af-': 'alibaba:qwen3.8-flash:low',
+  af: 'alibaba:qwen3.8-flash:medium',
+  'af+': 'alibaba:qwen3.8-flash:high',
+  'af++': 'alibaba:qwen3.8-flash:xhigh',
+  AF: 'alibaba:qwen3.8-flash:high',
+
+  'd--': 'deepseek:deepseek-v4-flash-vision-exp:none',
+  'd-': 'deepseek:deepseek-v4-flash-vision-exp:low',
+  d: 'deepseek:deepseek-v4-flash-vision-exp:high',
+  'd+': 'deepseek:deepseek-v4-flash-vision-exp:max',
 
   'D--': 'deepseek:deepseek-v4-pro:none',
   'D-': 'deepseek:deepseek-v4-pro:low',
@@ -125,11 +160,25 @@ export const MODELS: Record<string, string> = {
   'z++': 'zai:glm-5.3:max',
   Z: 'zai:glm-5.3:high',
 
+  'zf--': 'zai:glm-5.3-flash:none',
+  'zf-': 'zai:glm-5.3-flash:low',
+  zf: 'zai:glm-5.3-flash:medium',
+  'zf+': 'zai:glm-5.3-flash:high',
+  'zf++': 'zai:glm-5.3-flash:max',
+  ZF: 'zai:glm-5.3-flash:high',
+
   k: 'moonshotai:kimi-k2.7-code:none',
 
   'K-': 'moonshotai:kimi-k3:low',
   K: 'moonshotai:kimi-k3:high',
   'K+': 'moonshotai:kimi-k3:max',
+
+  'm--': 'openrouter:meta/muse-spark-1.3:none',
+  'm-': 'openrouter:meta/muse-spark-1.3:low',
+  m: 'openrouter:meta/muse-spark-1.3:medium',
+  'm+': 'openrouter:meta/muse-spark-1.3:high',
+  'm++': 'openrouter:meta/muse-spark-1.3:max',
+  M: 'openrouter:meta/muse-spark-1.3:high',
 };
 
 const AI_SDK_THINKING: Record<string, string> = {
