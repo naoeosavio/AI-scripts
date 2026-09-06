@@ -1,10 +1,21 @@
 import http from 'node:http';
 import { spawn, IPty } from 'node-pty';
 import type { WebSocket } from 'ws';
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
+import { isValidPaneId, clampTerminalSize } from './guards';
 
 const MAX_SCROLLBACK_CHARS = 50 * 1024;
 const GC_AFTER_MS = 5 * 60 * 1000;
+const MAX_SESSIONS = 12;
+
+export interface TerminalServerOptions {
+  cwd: string;
+  shell?: string;
+  /** When set, WS upgrades must carry ?token=<value> (mirrors TELL_TOKEN auth). */
+  token?: string;
+}
 
 interface PaneSession {
   paneId: string;
@@ -14,11 +25,6 @@ interface PaneSession {
   scrollbackChars: number;
   lastDisconnect: number | null;
   timer: NodeJS.Timeout | null;
-}
-
-export interface TerminalServerOptions {
-  cwd: string;
-  shell?: string;
 }
 
 const sessions = new Map<string, PaneSession>();
@@ -123,9 +129,36 @@ function detachClient(session: PaneSession, ws: WebSocket): void {
 export function attachTerminalServer(server: http.Server, opts: TerminalServerOptions): void {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on('upgrade', (req, socket, head) => {
+  server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const { pathname, searchParams } = new URL(req.url || '/', `http://${req.headers.host}`);
-    if (pathname !== '/api/terminal') return;
+
+    // Leave Vite's HMR socket alone in dev; destroy anything else off-path so
+    // unmatched upgrades never hang the client.
+    if (pathname !== '/api/terminal') {
+      const protocol = req.headers['sec-websocket-protocol'] || '';
+      if (!String(protocol).includes('vite-hmr')) socket.destroy();
+      return;
+    }
+
+    // Origin check: same host only (anti cross-site WS hijacking)
+    const origin = req.headers.origin;
+    if (origin) {
+      try {
+        if (new URL(origin).host !== req.headers.host) {
+          socket.destroy();
+          return;
+        }
+      } catch {
+        socket.destroy();
+        return;
+      }
+    }
+
+    // Bearer token parity with the REST API
+    if (opts.token && searchParams.get('token') !== opts.token) {
+      socket.destroy();
+      return;
+    }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
@@ -134,16 +167,30 @@ export function attachTerminalServer(server: http.Server, opts: TerminalServerOp
 
   wss.on('connection', (ws, req) => {
     const { searchParams } = new URL(req.url || '/', `http://${req.headers.host}`);
-    const paneId = searchParams.get('paneId') || `pane-${Math.random().toString(36).slice(2)}`;
-    const cols = Math.max(20, Number(searchParams.get('cols')) || 80);
-    const rows = Math.max(5, Number(searchParams.get('rows')) || 24);
+
+    const rawPaneId = searchParams.get('paneId') || `pane-${Math.random().toString(36).slice(2)}`;
+    if (!isValidPaneId(rawPaneId)) {
+      ws.close(4400, 'invalid paneId');
+      return;
+    }
+    const paneId = rawPaneId;
+
+    const size = clampTerminalSize(
+      Number(searchParams.get('cols')) || 80,
+      Number(searchParams.get('rows')) || 24,
+    );
+
+    if (!sessions.has(paneId) && sessions.size >= MAX_SESSIONS) {
+      ws.close(4429, 'too many terminal sessions');
+      return;
+    }
 
     const session = ensureSession(paneId, opts);
     const replay = searchParams.get('scrollback') !== '0';
     attachClient(session, ws, replay);
 
     try {
-      session.pty.resize(cols, rows);
+      session.pty.resize(size.cols, size.rows);
     } catch {
       /* resize before spawn of underlying pts is fine to ignore */
     }
@@ -157,10 +204,12 @@ export function attachTerminalServer(server: http.Server, opts: TerminalServerOp
       }
       if (!session || !session.pty) return;
       if (msg.type === 'input' && typeof msg.data === 'string') {
+        if (msg.data.length > 4096) return;
         session.pty.write(msg.data);
       } else if (msg.type === 'resize' && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
+        const clamped = clampTerminalSize(msg.cols, msg.rows);
         try {
-          session.pty.resize(Math.max(20, msg.cols), Math.max(5, msg.rows));
+          session.pty.resize(clamped.cols, clamped.rows);
         } catch {
           /* ignore */
         }

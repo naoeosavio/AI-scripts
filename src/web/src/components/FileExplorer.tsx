@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Folder, File, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react';
+import { apiFetch } from '../api.ts';
 
 interface FileNode {
   name: string;
@@ -22,7 +23,7 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
   const fetchFiles = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/status');
+      const res = await apiFetch('/api/status');
       const data = await res.json();
       if (data.files) {
         setFiles(data.files);

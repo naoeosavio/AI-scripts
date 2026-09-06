@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, AlertCircle, CheckCircle, Edit3, X, Loader2 } from 'lucide-react';
+import { apiFetch } from '../api.ts';
 
 interface FileViewerProps {
   filePath: string | null;
@@ -27,7 +28,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
       setLoading(true);
       setMessage(null);
       try {
-        const res = await fetch(`/api/file?path=${encodeURIComponent(filePath)}`);
+        const res = await apiFetch(`/api/file?path=${encodeURIComponent(filePath)}`);
         const data = await res.json();
         if (data.content !== undefined) {
           setContent(data.content);
@@ -51,7 +52,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/save-file', {
+      const res = await apiFetch('/api/save-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: filePath, content }),

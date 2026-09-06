@@ -13,6 +13,12 @@ import { attachTerminalServer, getScrollback } from './pty';
 import { parseCliArgs, printHelp } from './cli-args';
 import { resolveWithin } from './paths';
 import {
+  isSensitiveRelPath,
+  isHighRiskScript,
+  createRateLimiter,
+  validateTellPayload,
+} from './guards';
+import {
   emptySession,
   loadSession,
   saveSession,
@@ -43,8 +49,53 @@ const DEFAULT_MODEL = (cliArgs.model || process.env.TELL_MODEL || 'l').trim();
 const CHAIN = cliArgs.chain;
 const YES = cliArgs.yes;
 const PORT = cliArgs.port ?? Number(process.env.PORT || 3000);
+const HOST = cliArgs.host || '127.0.0.1';
+const EXEC_TIMEOUT_MS = cliArgs.execTimeout ?? 120_000;
+const TELL_TOKEN = process.env.TELL_TOKEN || '';
 
-app.use(express.json());
+const EXEC_MAX_CONCURRENCY = 2;
+const EXEC_OUTPUT_LIMIT = 200 * 1024;
+const executeRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });
+const tellRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });
+let activeExecutions = 0;
+
+function clientIp(req: { ip?: string; socket: { remoteAddress?: string } }): string {
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+app.use(express.json({ limit: '1mb' }));
+
+// Basic security headers (hand-rolled; avoids the helmet dependency)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-XSS-Protection', '0');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:",
+  );
+  next();
+});
+
+// Bearer token auth for the API surface (opt-in via TELL_TOKEN)
+app.use((req, res, next) => {
+  if (!TELL_TOKEN) return next();
+  if (!req.path.startsWith('/api/') || req.path === '/api/config') return next();
+  const header = req.headers.authorization || '';
+  if (header === `Bearer ${TELL_TOKEN}`) return next();
+  res.setHeader('WWW-Authenticate', 'Bearer realm="tell-web"');
+  res.status(401).json({ error: 'Unauthorized: missing or invalid token' });
+});
+
+// Friendly 413 for oversized bodies (must be registered after express.json)
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (err?.type === 'entity.too.large') {
+    res.status(413).json({ error: 'Payload too large (limit: 1mb)' });
+    return;
+  }
+  next(err);
+});
 
 // ---------------------------------------------------------------------------
 // Server-side session facts (tracked here, never stored in the client)
@@ -55,29 +106,6 @@ const serverState = {
   commandsRun: 0,
   aiTurns: 0,
 };
-
-// Helper: security check for high-risk scripts (copied from Tell-ai's engine)
-function isHighRiskScript(script: string): boolean {
-  const compact = script.replace(/\\\n/g, ' ').replace(/\s+/g, ' ').trim();
-  const privilegedPath = [
-    String.raw`(?:/(?:etc|boot|dev|proc|sys|usr|bin|sbin|lib|lib64)(?:\b|/)|`,
-    String.raw`/(?:var/(?:spool/cron|cron)|etc/cron(?:\.(?:d|daily|hourly|monthly|weekly))?)(?:\b|/)|`,
-    String.raw`(?:~|\$HOME)/(?:\.config/(?:autostart|systemd/user)|\.local/share/systemd/user)(?:\b|/))`,
-  ].join('');
-  return [
-    /\b(?:sudo|doas|pkexec)\b/,
-    /\brm\s+(-[^\s]*[rf][^\s]*|-[^\s]*[fr][^\s]*)\b/,
-    /\b(git\s+clean\s+-[^\s]*[xfd]|mkfs|shutdown|reboot)\b/,
-    /\bdd\b.*\bof=/,
-    /\b(chmod|chown)\s+-R\b.*\s\/(?:\s|$)/,
-    /(?:curl|wget)\b[^|;&]*\|\s*(?:ba)?sh\b/,
-    /(?:^|[\s;&|])(?:crontab|systemctl\s+--user\s+enable)\b/,
-    new RegExp(String.raw`(?:^|[\s;&|])(?:cp|mv|ln)\b[^;&|]*\s["']?${privilegedPath}`),
-    new RegExp(String.raw`(?:^|[\s;&|])sed\b[^;&|]*\s-i[^\s;&|]*[^;&|]*\s["']?${privilegedPath}`),
-    new RegExp(String.raw`(?:^|[\s;&|])tee\b[^;&|]*\s["']?${privilegedPath}`),
-    new RegExp(String.raw`(?:^|[\s;&|])\d*(?:>>?|>\||&>)\s*["']?${privilegedPath}`),
-  ].some((pattern) => pattern.test(compact));
-}
 
 // Recursively builds the file tree for the workspace status explorer
 interface FileNode {
@@ -204,6 +232,9 @@ app.get('/api/file', (req, res) => {
   if (!resolvedPath) {
     return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
   }
+  if (isSensitiveRelPath(path.relative(CWD, resolvedPath))) {
+    return res.status(403).json({ error: 'Access denied: Sensitive file' });
+  }
 
   try {
     if (!fs.existsSync(resolvedPath)) {
@@ -227,6 +258,9 @@ app.post('/api/save-file', (req, res) => {
   if (!resolvedPath) {
     return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
   }
+  if (isSensitiveRelPath(path.relative(CWD, resolvedPath))) {
+    return res.status(403).json({ error: 'Access denied: Sensitive file' });
+  }
 
   try {
     fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
@@ -241,34 +275,45 @@ app.post('/api/save-file', (req, res) => {
 // API: Execute bash command safely
 app.post('/api/execute', async (req, res) => {
   const { command } = req.body;
-  if (!command) {
+  if (!command || typeof command !== 'string') {
     return res.status(400).json({ error: 'Command is required' });
   }
 
-  serverState.commandsRun += 1;
+  if (!executeRateLimit.check(clientIp(req))) {
+    return res.status(429).json({ error: 'Rate limit exceeded (10/min). Slow down.' });
+  }
 
   if (isHighRiskScript(command)) {
     return res.status(400).json({
-      output: `Blocked Command: "${command}"\n\nSecurity Guard: This command contains high-risk patterns (e.g. root deletion, modification of system directories, curl pipe execution, or sudo privileges) and has been blocked for safety.`
+      output: `Blocked Command: "${command}"\n\nSecurity Guard: This command contains high-risk patterns (e.g. root deletion, modification of system directories, interpreter eval, curl pipe execution, or sudo privileges) and has been blocked for safety.`
     });
   }
 
+  if (activeExecutions >= EXEC_MAX_CONCURRENCY) {
+    return res.status(429).json({ error: 'Server busy: max concurrent executions reached' });
+  }
+
+  serverState.commandsRun += 1;
+  activeExecutions += 1;
   try {
     const { stdout, stderr } = await execAsync(command, {
       cwd: CWD,
       maxBuffer: 32 * 1024 * 1024,
       shell: '/bin/bash',
-      timeout: 120_000,
+      timeout: EXEC_TIMEOUT_MS,
     });
-    res.json({ output: stdout + stderr });
+    const truncate = (text: string) =>
+      text.length > EXEC_OUTPUT_LIMIT ? `${text.slice(0, EXEC_OUTPUT_LIMIT)}\n[truncated]` : text;
+    res.json({ output: truncate(stdout) + truncate(stderr) });
   } catch (error: any) {
-    res.json({
-      output: [
-        error.stdout || '',
-        error.stderr || '',
-        error.message || ''
-      ].filter(Boolean).join('\n')
-    });
+    const output = [
+      error.stdout || '',
+      error.stderr || '',
+      error.killed ? `Process timed out after ${EXEC_TIMEOUT_MS}ms` : error.message || '',
+    ].filter(Boolean).join('\n');
+    res.json({ output: output.slice(0, EXEC_OUTPUT_LIMIT + 32) });
+  } finally {
+    activeExecutions -= 1;
   }
 });
 
@@ -361,8 +406,13 @@ app.get('/api/context', (req, res) => {
 app.post('/api/tell', async (req, res) => {
   const { messages, modelAlias, systemPrompt } = req.body;
 
-  if (!messages || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'messages array is required' });
+  const payloadError = validateTellPayload({ messages, systemPrompt });
+  if (payloadError) {
+    return res.status(400).json({ error: payloadError });
+  }
+
+  if (!tellRateLimit.check(clientIp(req))) {
+    return res.status(429).json({ error: 'Rate limit exceeded (10/min). Slow down.' });
   }
 
   const modelSpec = modelAlias || DEFAULT_MODEL;
@@ -402,9 +452,7 @@ app.post('/api/tell', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Error generating AI text:', error);
-    res.status(500).json({
-      error: error.message || 'An error occurred during AI text generation.',
-    });
+    res.status(500).json({ error: 'AI generation failed. Check server logs.' });
   }
 });
 
@@ -472,10 +520,14 @@ async function startServer() {
   }
 
   const server = http.createServer(app);
-  attachTerminalServer(server, { cwd: CWD });
+  attachTerminalServer(server, { cwd: CWD, token: TELL_TOKEN || undefined });
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Tell AI custom backend running at http://0.0.0.0:${PORT}`);
+  server.listen(PORT, HOST, () => {
+    const address = server.address();
+    const boundPort = typeof address === 'object' && address ? address.port : PORT;
+    console.log(`Tell AI custom backend running at http://${HOST}:${boundPort}`);
+    if (TELL_TOKEN) console.log('API auth: TELL_TOKEN active (Bearer required on /api/*)');
+    else console.log('API auth: disabled (set TELL_TOKEN to require a Bearer token)');
   });
 }
 

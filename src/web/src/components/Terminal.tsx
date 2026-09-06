@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Terminal as Xterm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { wsAuthQuery } from '../api.ts';
 import {
   Terminal as TerminalIcon,
   Play,
@@ -97,7 +98,7 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const wsUrl = `${proto}://${window.location.host}/api/terminal?paneId=${encodeURIComponent(
       pane.id,
-    )}&cols=${term.cols}&rows=${term.rows}&scrollback=${replay ? '1' : '0'}`;
+    )}&cols=${term.cols}&rows=${term.rows}&scrollback=${replay ? '1' : '0'}${wsAuthQuery()}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
