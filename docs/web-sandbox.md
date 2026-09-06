@@ -21,6 +21,7 @@ browser tab, no SSH client or local terminal needed.
   - [4. Via a website / hosted instance](#4-via-a-website--hosted-instance)
 - [Real-world examples](#real-world-examples)
 - [Session persistence (`.tell/`)](#session-persistence-tell)
+- [Authentication (`TELL_TOKEN`)](#authentication-tell_token)
 - [Security notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
 
@@ -139,6 +140,10 @@ Day-to-day ops become point-and-click:
 Expose the sandbox so you can reach it from any browser, through a tunnel or a
 reverse proxy. Pick the option that fits your setup.
 
+> Whenever the sandbox is reachable from another device, start it with a token:
+> `TELL_TOKEN=$(openssl rand -hex 32) tell --web` — see
+> [Authentication](#authentication-tell_token).
+
 **A. SSH reverse tunnel (no extra software on the server):**
 
 ```bash
@@ -178,6 +183,8 @@ After=network.target
 WorkingDirectory=/opt/my-app
 Environment=PORT=3000
 Environment=TELL_MODEL=g
+# Generate once with `openssl rand -hex 32`; clients paste it in the browser prompt.
+Environment=TELL_TOKEN=replace-with-generated-token
 ExecStart=/usr/bin/tell --web
 Restart=always
 
@@ -286,18 +293,69 @@ history list.
 
 ---
 
+## Authentication (`TELL_TOKEN`)
+
+By default the sandbox binds to `127.0.0.1` (localhost only) and needs no
+authentication. To make it reachable from other devices, expose the port
+explicitly **and** protect it with a token:
+
+```bash
+# 1. Generate a strong token
+openssl rand -hex 32
+# or, without openssl:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# 2. Start the sandbox with it (bind on all interfaces)
+TELL_TOKEN=<generated-token> tell --web --host 0.0.0.0
+```
+
+With `TELL_TOKEN` set:
+
+- Every `/api/*` endpoint requires `Authorization: Bearer <token>`
+  (`GET /api/config` stays open so the UI can boot).
+- The terminal WebSocket requires the same token (`?token=` on the upgrade
+  request) and only accepts same-origin connections.
+- The command bridge enforces limits even with a valid token: 10 commands/min
+  per IP, max 2 concurrent commands, 200 KB output truncation, per-command
+  timeout (`--exec-timeout`, default 120 s).
+
+**Logging in from the browser:** nothing to configure. On the first request the
+page gets a `401`, a native prompt asks for the token, and the answer is stored
+in `localStorage` — every following request (and the terminal WebSocket) sends
+it automatically. Reloading the page does not ask again.
+
+- Wrong or rotated token? The prompt reappears on the next `401` — just paste
+  the new one.
+- To log out: in the browser console run `localStorage.removeItem('tell-token')`
+  and reload.
+- `curl`/API clients: `-H "Authorization: Bearer <token>"`.
+
+> `TELL_TOKEN` also blocks read/write access to secret-looking files
+> independently: `.env*`, `.tell/**`, `.git/**`, `*.key` and `*.pem` always
+> answer `403`, even for authenticated clients.
+
+---
+
 ## Security notes
 
 - **It is a shell in a browser.** Anyone who reaches the port can run commands as the
-  user running `tell-web`. Never expose it to the public internet without a tunnel
-  that enforces authentication, or a reverse proxy with auth (e.g. Basic auth,
-  OAuth via `oauth2-proxy`), and TLS.
-- **High-risk commands are blocked** by the sandbox guard: `sudo`, `rm -rf`, writes to
-  system paths (`/etc`, `/boot`, `/usr`), `curl | sh`, crontab manipulation, `mkfs`,
-  `dd of=`, etc. This is a heuristic, not a security boundary — treat it as
-  best-effort.
+  user running `tell-web`. By default the server listens only on `127.0.0.1`;
+  use `--host 0.0.0.0` (plus `TELL_TOKEN`) only when you really need remote
+  access, and keep TLS in front (reverse proxy or tunnel). See
+  [Authentication](#authentication-tell_token).
+- **High-risk and obfuscated commands are blocked** by the sandbox guard: `sudo`,
+  `rm -rf`, writes to system paths (`/etc`, `/boot`, `/usr`), `curl | sh`,
+  crontab manipulation, `mkfs`, `dd of=`, interpreter eval (`python/node/perl/ruby
+  -c/-e`), `env`-launched commands, `base64 -d` payloads, and shell expansion
+  (`${…}`, `$(…)`, backticks with pipes). This is a heuristic, not a security
+  boundary — treat it as best-effort.
+- **Sensitive files are never served** through the file API (`.env*`, `.tell/`,
+  `.git/`, `*.key`, `*.pem`) and cannot be overwritten via the editor API.
 - **API keys come from the environment** (`OPENAI_API_KEY`, etc.). The sandbox never
   stores key values — only the provider names you used.
+- **Abuse limits are built in**: 1 MB request body cap (HTTP 413), rate limits on
+  the AI chat and command bridge (10/min per IP), and a maximum of 12 concurrent
+  PTY sessions (extra connections are rejected).
 - For untrusted or adversarial use, run the sandbox **inside a container or VM**
   (see below) so damage is contained.
 
@@ -306,6 +364,7 @@ history list.
 ```bash
 docker run --rm -it -p 3000:3000 \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  -e TELL_TOKEN=$(openssl rand -hex 32) \
   -v $PWD:/workspace \
   -w /workspace \
   node:22 bash -c "npm i -g tell-ai @tell-ai/web && tell --web"
@@ -317,6 +376,7 @@ docker run --rm -it -p 3000:3000 \
 
 | Problem | Fix |
 |---------|-----|
+| `401 Unauthorized` / login prompt keeps appearing | The server runs with `TELL_TOKEN`. Paste the exact value into the prompt; if it is stale, clear it with `localStorage.removeItem('tell-token')` and reload. |
 | `Failed to load native module: pty.node` | `node-pty` is a native module. Run `npm rebuild node-pty` (from `src/web`) or install build tools (`python3`, `make`, `g++`). |
 | Port already in use | Set another port: `PORT=3100 tell --web` |
 | Wrong model | Set `TELL_MODEL` (e.g. `TELL_MODEL=g tell --web`) or pick the model in the chat header. |
