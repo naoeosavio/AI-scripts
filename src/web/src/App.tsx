@@ -6,6 +6,7 @@ import Terminal, { TerminalLine, TerminalLayout } from './components/Terminal.ts
 import SettingsPanel from './components/SettingsPanel.tsx';
 import ChatSection, { ChatMessage } from './components/ChatSection.tsx';
 import { useTheme } from './theme.tsx';
+import { apiFetch } from './api.ts';
 
 const DEFAULT_SYSTEM_PROMPT = `
 This is a multi-step terminal assistant running on linux.
@@ -97,7 +98,7 @@ export default function App() {
   }, [modelAlias, systemPrompt, messages]);
 
   const persistSession = useCallback(() => {
-    fetch('/api/session', {
+    apiFetch('/api/session', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(collectSessionPayload()),
@@ -118,7 +119,7 @@ export default function App() {
   useEffect(() => {
     const handler = () => {
       try {
-        fetch('/api/session', {
+        apiFetch('/api/session', {
           method: 'PUT',
           keepalive: true,
           headers: { 'Content-Type': 'application/json' },
@@ -136,7 +137,7 @@ export default function App() {
   useEffect(() => {
     const fetchModels = async () => {
       try {
-        const res = await fetch('/api/models');
+        const res = await apiFetch('/api/models');
         const data = await res.json();
         if (data.models) {
           setModels(data.models);
@@ -148,7 +149,7 @@ export default function App() {
     };
     const fetchConfig = async () => {
       try {
-        const res = await fetch('/api/config');
+        const res = await apiFetch('/api/config');
         const data = await res.json();
         if (data.defaultModel) setModelAlias(data.defaultModel);
         if (typeof data.autoExecute === 'boolean') setAutoExecute(data.autoExecute);
@@ -159,7 +160,7 @@ export default function App() {
     };
     const fetchContext = async () => {
       try {
-        const res = await fetch('/api/context');
+        const res = await apiFetch('/api/context');
         const data = await res.json();
         if (data.systemPrompt) {
           setGeneratedSystemPrompt(data.systemPrompt);
@@ -172,7 +173,7 @@ export default function App() {
     };
     const fetchSession = async () => {
       try {
-        const res = await fetch('/api/session');
+        const res = await apiFetch('/api/session');
         const data = await res.json();
         if (data.session) {
           const s = data.session;
@@ -216,7 +217,7 @@ export default function App() {
     };
     const fetchHistory = async () => {
       try {
-        const res = await fetch('/api/session/history');
+        const res = await apiFetch('/api/session/history');
         const data = await res.json();
         if (Array.isArray(data.history)) setHistory(data.history);
       } catch {
@@ -245,7 +246,7 @@ export default function App() {
   const runAiTurn = async (currentMessages: ChatMessage[]) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/tell', {
+      const res = await apiFetch('/api/tell', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -321,7 +322,7 @@ export default function App() {
       appendAgentLine('input', command);
     }
     try {
-      const res = await fetch('/api/execute', {
+      const res = await apiFetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command }),
@@ -346,7 +347,7 @@ export default function App() {
   const executeAndContinue = async (script: string, currentMessages: ChatMessage[]) => {
     appendAgentLine('input', script);
     try {
-      const res = await fetch('/api/execute', {
+      const res = await apiFetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: script }),
@@ -383,7 +384,7 @@ export default function App() {
 
     appendAgentLine('input', command);
     try {
-      const res = await fetch('/api/execute', {
+      const res = await apiFetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command }),
@@ -442,14 +443,14 @@ export default function App() {
   const handleSnapshot = async () => {
     setSnapshotBusy(true);
     try {
-      const res = await fetch('/api/session/snapshot', {
+      const res = await apiFetch('/api/session/snapshot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(collectSessionPayload()),
       });
       const data = await res.json();
       if (Array.isArray(data.history)) setHistory(data.history);
-      const sessionRes = await fetch('/api/session');
+      const sessionRes = await apiFetch('/api/session');
       const sessionData = await sessionRes.json();
       if (sessionData.session) {
         setSessionInfo({
@@ -468,7 +469,7 @@ export default function App() {
 
   const refreshHistory = async () => {
     try {
-      const res = await fetch('/api/session/history');
+      const res = await apiFetch('/api/session/history');
       const data = await res.json();
       if (Array.isArray(data.history)) setHistory(data.history);
     } catch {

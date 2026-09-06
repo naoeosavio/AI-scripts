@@ -15,6 +15,10 @@ export interface CliArgs {
   yes: boolean;
   /** TCP port for the web server (`--port`). Overrides PORT env. */
   port?: number;
+  /** Bind address for the web server (`--host`). Defaults to 127.0.0.1. */
+  host?: string;
+  /** Per-command execution timeout in ms (`--exec-timeout`). Defaults to 120000. */
+  execTimeout?: number;
   /** Whether `--help` was requested. */
   help: boolean;
 }
@@ -48,6 +52,9 @@ export function parseCliArgs(argv: string[], defaultCwd: string): CliArgs {
   const noExec = has(argv, '--no-exec');
   const portRaw = argValue(argv, '--port');
   const port = portRaw !== undefined ? Number(portRaw) : undefined;
+  const host = argValue(argv, '--host');
+  const execTimeoutRaw = argValue(argv, '--exec-timeout');
+  const execTimeout = execTimeoutRaw !== undefined ? Number(execTimeoutRaw) : undefined;
   return {
     cwd: path.resolve(argCwd || defaultCwd),
     initialPrompt,
@@ -56,6 +63,11 @@ export function parseCliArgs(argv: string[], defaultCwd: string): CliArgs {
     chain,
     yes,
     port: port !== undefined && Number.isFinite(port) && port > 0 ? port : undefined,
+    host,
+    execTimeout:
+      execTimeout !== undefined && Number.isFinite(execTimeout)
+        ? Math.min(600_000, Math.max(1_000, Math.round(execTimeout)))
+        : undefined,
     help: has(argv, '--help', '-h'),
   };
 }
@@ -68,6 +80,9 @@ Options:
   --prompt <text>   Initial chat prompt
   -m, --model <id>  Model shortcode or full spec (default: TELL_MODEL env or "l")
   --port <number>   TCP port for the web server (default: PORT env or 3000)
+  --host <address>  Bind address (default: 127.0.0.1; use 0.0.0.0 to expose on LAN)
+  --exec-timeout <ms>
+                    Per-command timeout in ms (default: 120000, max: 600000)
   --chain           Continue after command output until the AI gives a final answer
   -y, --yes         Auto-confirm command execution
   --no-exec         Disable automatic execution of AI-generated commands
