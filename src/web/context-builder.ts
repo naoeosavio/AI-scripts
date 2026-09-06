@@ -4,6 +4,8 @@ import path from 'node:path';
 
 const MAX_DEPTH = 4;
 const MAX_FILE_CHARS = 6 * 1024;
+const MAX_DOC_BYTES = 64 * 1024;
+const MAX_TREE_FILES = 2000;
 
 const SKIP_DIRS = new Set([
   'node_modules',
@@ -28,7 +30,12 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-function scanTree(dir: string, depth: number): TreeNode[] {
+interface ScanState {
+  visited: Set<string>;
+  fileCount: number;
+}
+
+function scanTree(dir: string, depth: number, state: ScanState): TreeNode[] {
   if (depth > MAX_DEPTH) return [];
   let entries: string[];
   try {
@@ -36,22 +43,38 @@ function scanTree(dir: string, depth: number): TreeNode[] {
   } catch {
     return [];
   }
+  let real: string | null = null;
+  try {
+    real = fs.realpathSync(dir);
+    if (state.visited.has(real)) return []; // symlink loop guard
+    state.visited.add(real);
+  } catch {
+    return [];
+  }
   const nodes: TreeNode[] = [];
   for (const name of entries.sort()) {
     if (SKIP_DIRS.has(name)) continue;
+    if (state.fileCount >= MAX_TREE_FILES) {
+      nodes.push({ name: '[truncated-tree]', isDirectory: false });
+      break;
+    }
     const full = path.join(dir, name);
-    let stat;
+    let stat: fs.Stats | undefined;
     try {
-      stat = fs.statSync(full);
+      stat = fs.lstatSync(full);
     } catch {
       continue;
     }
+    if (stat.isSymbolicLink()) continue; // skip symlinks (dirs and files)
     if (stat.isDirectory()) {
-      nodes.push({ name, isDirectory: true, children: scanTree(full, depth + 1) });
-    } else {
+      state.fileCount += 1;
+      nodes.push({ name, isDirectory: true, children: scanTree(full, depth + 1, state) });
+    } else if (stat.isFile()) {
+      state.fileCount += 1;
       nodes.push({ name, isDirectory: false });
     }
   }
+  if (real) state.visited.delete(real);
   return nodes;
 }
 
@@ -68,11 +91,35 @@ function renderTree(nodes: TreeNode[], prefix = ''): string {
   return out.join('\n');
 }
 
-function readDoc(cwd: string, name: string): string | null {
-  const full = path.join(cwd, name);
-  if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return null;
+function findDoc(cwd: string, name: string): fs.Stats | null {
   try {
-    const text = fs.readFileSync(full, 'utf8');
+    const stat = fs.statSync(path.join(cwd, name));
+    return stat.isFile() ? stat : null;
+  } catch {
+    return null;
+  }
+}
+
+function readDoc(cwd: string, name: string): string | null {
+  const stat = findDoc(cwd, name);
+  if (!stat) return null;
+  const full = path.join(cwd, name);
+  try {
+    let text: string;
+    if (stat.size > MAX_DOC_BYTES) {
+      // Partial read of the first MAX_DOC_BYTES bytes; avoids reading oversized docs.
+      const fd = fs.openSync(full, 'r');
+      try {
+        const buf = Buffer.alloc(MAX_DOC_BYTES);
+        const bytes = fs.readSync(fd, buf, 0, MAX_DOC_BYTES, 0);
+        text = buf.toString('utf8', 0, bytes);
+      } finally {
+        fs.closeSync(fd);
+      }
+      if (!text.trim()) return null;
+      return `${text}\n\n[truncated ${stat.size} bytes total]`;
+    }
+    text = fs.readFileSync(full, 'utf8');
     if (!text.trim()) return null;
     return text.length > MAX_FILE_CHARS ? `${text.slice(0, MAX_FILE_CHARS)}\n\n[truncated]` : text;
   } catch {
@@ -90,9 +137,10 @@ export interface ProjectContext {
 }
 
 export function buildProjectContext(cwd: string): ProjectContext {
-  const tree = renderTree(scanTree(cwd, 0)) || '(empty project)';
-  const readme = DOC_FILES.find((f) => fs.existsSync(path.join(cwd, f)) && fs.statSync(path.join(cwd, f)).isFile());
-  const agents = DOC_FILES.find((f) => /^agent/i.test(f) && fs.existsSync(path.join(cwd, f)) && fs.statSync(path.join(cwd, f)).isFile());
+  const tree = renderTree(scanTree(cwd, 0, { visited: new Set(), fileCount: 0 })) || '(empty project)';
+  const isDoc = (f: string) => findDoc(cwd, f) !== null;
+  const readme = DOC_FILES.find(isDoc);
+  const agents = DOC_FILES.find((f) => /^(agent|claude)/i.test(f) && isDoc(f));
   return {
     cwd,
     platform: `${os.platform()} ${os.arch()}`,

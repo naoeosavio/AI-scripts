@@ -62,23 +62,77 @@ export function emptySession(cwd: string): TellSession {
   };
 }
 
+const MAX_SESSION_BYTES = 2 * 1024 * 1024;
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+/** Coerce a partially-corrupted session object into a valid TellSession. */
+function sanitizeSession(cwd: string, raw: unknown): TellSession {
+  const base = emptySession(cwd);
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+  const obj = raw as Record<string, any>;
+  const terminal =
+    obj.terminal && typeof obj.terminal === 'object' && !Array.isArray(obj.terminal)
+      ? {
+          tabs: asArray<TerminalTabState>(obj.terminal.tabs).filter(
+            (t) => t && typeof t === 'object' && typeof t.id === 'string',
+          ),
+          activeTabId: typeof obj.terminal.activeTabId === 'string' ? obj.terminal.activeTabId : '',
+        }
+      : base.terminal;
+  const stats =
+    obj.stats && typeof obj.stats === 'object' && !Array.isArray(obj.stats)
+      ? {
+          commandsRun: Number(obj.stats.commandsRun) || 0,
+          aiTurns: Number(obj.stats.aiTurns) || 0,
+          snapshots: Number(obj.stats.snapshots) || 0,
+        }
+      : base.stats;
+  return {
+    ...base,
+    ...obj,
+    version: Number(obj.version) || base.version,
+    messages: asArray<{ role: string; content: string; thought?: string | null }>(obj.messages).filter(
+      (m) => m && typeof m === 'object' && typeof m.role === 'string',
+    ),
+    keysUsed: asArray<string>(obj.keysUsed).filter((k) => typeof k === 'string'),
+    filesChanged: asArray<string>(obj.filesChanged).filter((f) => typeof f === 'string'),
+    terminal,
+    stats,
+  };
+}
+
 export function loadSession(cwd: string): TellSession | null {
   const file = sessionPath(cwd);
   if (!fs.existsSync(file)) return null;
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return { ...emptySession(cwd), ...raw };
+    return sanitizeSession(cwd, raw);
   } catch {
     return null;
   }
 }
 
+/** Check serialized size before writing to disk. Returns null when oversized. */
+function serializeBounded(session: TellSession, label: string): string | null {
+  const json = JSON.stringify(session, null, 2);
+  if (Buffer.byteLength(json, 'utf8') > MAX_SESSION_BYTES) {
+    console.warn(`[tell] ${label} rejected: exceeds ${MAX_SESSION_BYTES} bytes`);
+    return null;
+  }
+  return json;
+}
+
 export function saveSession(cwd: string, session: TellSession): boolean {
   try {
-    fs.mkdirSync(sessionDir(cwd), { recursive: true });
     session.updatedAt = new Date().toISOString();
+    const json = serializeBounded(session, 'saveSession');
+    if (!json) return false;
+    fs.mkdirSync(sessionDir(cwd), { recursive: true });
     const tmp = `${sessionPath(cwd)}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(session, null, 2), 'utf8');
+    fs.writeFileSync(tmp, json, 'utf8');
     fs.renameSync(tmp, sessionPath(cwd));
     return true;
   } catch {
@@ -87,6 +141,7 @@ export function saveSession(cwd: string, session: TellSession): boolean {
 }
 
 export function listHistory(cwd: string): Array<{ name: string; createdAt: string; size: number }> {
+  repairLatestSymlink(cwd);
   const dir = historyDir(cwd);
   if (!fs.existsSync(dir)) return [];
   let names: string[];
@@ -99,26 +154,29 @@ export function listHistory(cwd: string): Array<{ name: string; createdAt: strin
     .filter((n) => n.endsWith('.json'))
     .map((name) => {
       const full = path.join(dir, name);
-      let stat;
+      let stat: fs.Stats | undefined;
       try {
         stat = fs.statSync(full);
       } catch {
         return null;
       }
-      return { name, createdAt: stat.mtime.toISOString(), size: stat.size };
+      return { name, createdAt: stat.mtime.toISOString(), mtimeMs: stat.mtimeMs, size: stat.size };
     })
-    .filter((x): x is { name: string; createdAt: string; size: number } => x !== null)
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    .filter((x): x is { name: string; createdAt: string; mtimeMs: number; size: number } => x !== null)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .map(({ name, createdAt, size }) => ({ name, createdAt, size }));
 }
 
 export function createSnapshot(cwd: string, session: TellSession): string | null {
   try {
-    fs.mkdirSync(historyDir(cwd), { recursive: true });
     session.stats.snapshots = (session.stats.snapshots || 0) + 1;
     session.updatedAt = new Date().toISOString();
+    const json = serializeBounded(session, 'createSnapshot');
+    if (!json) return null;
+    fs.mkdirSync(historyDir(cwd), { recursive: true });
     const name = `${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
     const full = path.join(historyDir(cwd), name);
-    fs.writeFileSync(full, JSON.stringify(session, null, 2), 'utf8');
+    fs.writeFileSync(full, json, 'utf8');
     updateLatestSymlink(cwd, name);
     return name;
   } catch {
@@ -137,6 +195,29 @@ function updateLatestSymlink(cwd: string, snapshotName: string): void {
     fs.symlinkSync(path.join('history', snapshotName), latest);
   } catch {
     /* best-effort */
+  }
+}
+
+/** Drop a dangling `latest` symlink; ignore if missing or valid. */
+export function repairLatestSymlink(cwd: string): void {
+  const latest = path.join(sessionDir(cwd), 'latest');
+  let isSymlink = false;
+  try {
+    isSymlink = fs.lstatSync(latest).isSymbolicLink();
+  } catch {
+    return; // not present
+  }
+  if (!isSymlink) return;
+  try {
+    const target = fs.readlinkSync(latest);
+    fs.accessSync(path.resolve(sessionDir(cwd), target));
+  } catch {
+    try {
+      fs.unlinkSync(latest);
+      console.warn('[tell] dangling `latest` symlink removed');
+    } catch {
+      /* best-effort */
+    }
   }
 }
 

@@ -8,8 +8,9 @@
   "scripts": {
     "build": "rm -rf dist && tsup && chmod +x dist/*.js",
     "prepare": "npm run build",
-    "test": "npm run test:security",
+    "test": "npm run test:security && npm run test:web",
     "test:security": "npm run build && node test/test-tell-security.js",
+    "test:web": "node test/test-web-backend.js",
     "lint": "tsc",
     "format": "biome check --write src",
     "check:format": "biome check src",

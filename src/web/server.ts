@@ -10,7 +10,8 @@ import { generateText } from 'ai';
 import { getModel, MODELS, resolveModelSpec } from '../ai/models';
 import { buildSystemPrompt } from './context-builder';
 import { attachTerminalServer, getScrollback } from './pty';
-import { parseCliArgs } from './cli-args';
+import { parseCliArgs, printHelp } from './cli-args';
+import { resolveWithin } from './paths';
 import {
   emptySession,
   loadSession,
@@ -24,16 +25,24 @@ import {
 const execAsync = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
 
-// CLI args: --cwd <path>, --prompt <text>, -m/--model, --chain, -y/--yes, --no-exec
+// CLI args: --cwd <path>, --prompt <text>, -m/--model, --port <n>, --chain, -y/--yes, --no-exec
 const cliArgs = parseCliArgs(process.argv.slice(2), process.cwd());
+if (cliArgs.help) {
+  printHelp();
+  process.exit(0);
+}
+if (!fs.existsSync(cliArgs.cwd) || !fs.statSync(cliArgs.cwd).isDirectory()) {
+  console.error(`Error: --cwd "${cliArgs.cwd}" does not exist or is not a directory.`);
+  process.exit(1);
+}
 const CWD = cliArgs.cwd;
 const INITIAL_PROMPT = cliArgs.initialPrompt;
 const AUTO_EXECUTE = cliArgs.autoExecute;
 const DEFAULT_MODEL = (cliArgs.model || process.env.TELL_MODEL || 'l').trim();
 const CHAIN = cliArgs.chain;
 const YES = cliArgs.yes;
+const PORT = cliArgs.port ?? Number(process.env.PORT || 3000);
 
 app.use(express.json());
 
@@ -78,12 +87,19 @@ interface FileNode {
   children?: FileNode[];
 }
 
-function getFileTree(dir: string, baseDir = dir): FileNode[] {
-  if (!fs.existsSync(dir)) return [];
+const FILE_TREE_MAX_DEPTH = 6;
+const FILE_TREE_MAX_NODES = 2000;
+
+function getFileTree(dir: string, baseDir = dir, depth = 0, count = { nodes: 0 }): FileNode[] {
+  if (!fs.existsSync(dir) || depth > FILE_TREE_MAX_DEPTH || count.nodes >= FILE_TREE_MAX_NODES) return [];
   const items = fs.readdirSync(dir);
   const nodes: FileNode[] = [];
 
   for (const item of items) {
+    if (count.nodes >= FILE_TREE_MAX_NODES) {
+      nodes.push({ name: '[truncated-tree]', path: '', isDirectory: false });
+      break;
+    }
     if (
       item === 'node_modules' ||
       item === '.git' ||
@@ -99,19 +115,21 @@ function getFileTree(dir: string, baseDir = dir): FileNode[] {
 
     const fullPath = path.join(dir, item);
     const relPath = path.relative(baseDir, fullPath);
-    let stat;
+    let stat: fs.Stats | undefined;
     try {
-      stat = fs.statSync(fullPath);
+      stat = fs.lstatSync(fullPath);
+      if (stat.isSymbolicLink()) continue;
     } catch {
       continue;
     }
+    count.nodes += 1;
 
     if (stat.isDirectory()) {
       nodes.push({
         name: item,
         path: relPath,
         isDirectory: true,
-        children: getFileTree(fullPath, baseDir),
+        children: getFileTree(fullPath, baseDir, depth + 1, count),
       });
     } else {
       nodes.push({
@@ -182,8 +200,8 @@ app.get('/api/file', (req, res) => {
     return res.status(400).json({ error: 'File path is required' });
   }
 
-  const resolvedPath = path.resolve(CWD, filePath);
-  if (!resolvedPath.startsWith(CWD)) {
+  const resolvedPath = resolveWithin(CWD, filePath);
+  if (!resolvedPath) {
     return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
   }
 
@@ -205,8 +223,8 @@ app.post('/api/save-file', (req, res) => {
     return res.status(400).json({ error: 'Path and content are required' });
   }
 
-  const resolvedPath = path.resolve(CWD, filePath);
-  if (!resolvedPath.startsWith(CWD)) {
+  const resolvedPath = resolveWithin(CWD, filePath);
+  if (!resolvedPath) {
     return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
   }
 
@@ -290,26 +308,32 @@ app.get('/api/models', (req, res) => {
 });
 
 // Helper: safely convert reasoning tokens/objects to string
-function sanitizeReasoning(val: any): string | null {
-  if (!val) return null;
-  if (typeof val === 'string') return val;
-  if (typeof val === 'object') {
-    if (typeof val.text === 'string') {
-      return val.text;
-    }
-    if (Array.isArray(val)) {
-      return val
-        .map((item) => {
-          if (typeof item === 'string') return item;
-          if (item && typeof item === 'object' && typeof item.text === 'string') return item.text;
-          return JSON.stringify(item);
-        })
-        .filter(Boolean)
-        .join('\n');
-    }
-    return JSON.stringify(val);
+const REASONING_MAX_CHARS = 10 * 1024;
+
+function truncateReasoning(text: string): string {
+  return text.length > REASONING_MAX_CHARS ? `${text.slice(0, REASONING_MAX_CHARS)}\n[truncated]` : text;
+}
+
+function sanitizeReasoning(val: any, depth = 0): string | null {
+  if (!val || depth > 4) return null;
+  if (typeof val === 'string') return truncateReasoning(val);
+  if (Array.isArray(val)) {
+    const parts = val
+      .map((item) => sanitizeReasoning(item, depth + 1))
+      .filter(Boolean) as string[];
+    return parts.length ? truncateReasoning(parts.join('\n')) : null;
   }
-  return String(val);
+  if (typeof val === 'object') {
+    // Nested shapes vary by SDK/provider: {text}, {reasoning}, {content}, {type, text}
+    for (const key of ['text', 'reasoning', 'content']) {
+      if (val[key] !== undefined && val[key] !== val) {
+        const inner = sanitizeReasoning(val[key], depth + 1);
+        if (inner) return inner;
+      }
+    }
+    return null;
+  }
+  return truncateReasoning(String(val));
 }
 
 // API: Server configuration (default model set via TELL_MODEL, e.g. `tell g web`)
@@ -367,7 +391,6 @@ app.post('/api/tell', async (req, res) => {
     const result = await generateText({
       model: handle.model,
       system: effectiveSystem,
-      instructions: effectiveSystem, // safety fallback for older sdks
       messages: formattedMessages,
       reasoning: reasoning as any,
     });
@@ -426,7 +449,7 @@ app.post('/api/session/snapshot', async (req, res) => {
     const merged = buildMergedSession(body || {});
     saveSession(CWD, merged);
     const name = createSnapshot(CWD, merged);
-    res.json({ success: !!name, name, gitChanges });
+    res.json({ success: !!name, name, gitChanges, history: listHistory(CWD) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
