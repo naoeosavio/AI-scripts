@@ -7,6 +7,7 @@ import SettingsPanel from './components/SettingsPanel.tsx';
 import ChatSection, { ChatMessage } from './components/ChatSection.tsx';
 import { useTheme } from './theme.tsx';
 import { apiFetch } from './api.ts';
+import { useToast } from './components/Toast.tsx';
 
 const DEFAULT_SYSTEM_PROMPT = `
 This is a multi-step terminal assistant running on linux.
@@ -37,6 +38,9 @@ const FEEDBACK_OUTPUT_LIMIT = 4 * 1024;
 // beforeunload keepalive body budget: browsers reject keepalive bodies > 64KB.
 const UNLOAD_BODY_LIMIT = 60 * 1024;
 
+// Vendors that require an API key (mirrors ChatSection; used for the submit guard)
+const KEYED_VENDORS = new Set(['openai', 'anthropic', 'google', 'xai', 'deepseek', 'fireworks', 'openrouter', 'moonshotai', 'cerebras']);
+
 interface SessionInfo {
   keysUsed: string[];
   filesChanged: string[];
@@ -51,6 +55,7 @@ interface HistoryEntry {
 
 export default function App() {
   const { config, setSettingsHeight, setTerminalHeight, setSidebarCollapsed } = useTheme();
+  const { toast } = useToast();
   // Layout resolution: presets pin sidebar/terminal; 'custom' reads user-decided config
   const sidebarSide: 'left' | 'right' =
     config.layout === 'focused' ? 'right' : config.layout === 'default' ? 'left' : config.customSidebarSide;
@@ -106,6 +111,8 @@ export default function App() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chainDepthRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // Latest "console takes the main area" value, readable from async closures
+  const consoleActiveRef = useRef(false);
 
   const collectSessionPayload = useCallback(() => {
     return {
@@ -296,6 +303,32 @@ export default function App() {
     appendAgentLine('system', 'Chain stopped by user.');
   };
 
+  // Clear the whole chat: messages + agent feed + any in-flight chain.
+  const handleClearChat = () => {
+    if (loading) {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setLoading(false);
+    }
+    chainDepthRef.current = 0;
+    setPendingCommand(null);
+    setMessages([]);
+    setTerminalLines([]);
+  };
+
+  // ChatGPT-style edit: replace the user message, drop everything after it, resend.
+  const handleEditMessage = async (id: string, content: string) => {
+    if (loading) return;
+    const idx = messages.findIndex((m) => m.id === id);
+    if (idx === -1 || !messages[idx]) return;
+    const edited: ChatMessage = { ...messages[idx], content };
+    const updated = [...messages.slice(0, idx), edited];
+    setMessages(updated);
+    appendAgentLine('system', 'Message edited — resending from this point.');
+    chainDepthRef.current = 0;
+    await runAiTurn(updated);
+  };
+
   // Helper: run AI text generation step
   const runAiTurn = async (currentMessages: ChatMessage[]) => {
     if (chainDepthRef.current >= MAX_CHAIN_ITERATIONS) {
@@ -372,6 +405,7 @@ export default function App() {
       }
       console.error(error);
       appendAgentLine('error', `AI Generation Error: ${error.message}`);
+      toast('error', `AI generation failed: ${error.message}`);
       setLoading(false);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -381,6 +415,14 @@ export default function App() {
   const handleChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputPrompt.trim() || loading) return;
+
+    // Guard: refuse to submit when the selected model has no API key (otherwise the error is invisible)
+    const selectedModel = models.find((m) => m.alias === modelAlias);
+    const vendorKeys = keysStatus as Record<string, boolean>;
+    if (selectedModel && KEYED_VENDORS.has(selectedModel.vendor) && !vendorKeys[selectedModel.vendor]) {
+      toast('error', `Model "${modelAlias}" (${selectedModel.vendor}) has no API key. Set it in .env and restart the server.`);
+      return;
+    }
 
     const userPrompt = inputPrompt;
     setInputPrompt('');
@@ -418,6 +460,7 @@ export default function App() {
       const data = await res.json();
       const output = data.output || '';
       appendAgentLine('output', output);
+      if (!consoleActiveRef.current) toast('success', 'Command executed — output in Agent Feed');
 
       setRefreshFileTreeTrigger((prev) => prev + 1);
 
@@ -446,6 +489,7 @@ export default function App() {
         return;
       }
       appendAgentLine('error', `Execution failure: ${error.message}`);
+      toast('error', `Execution failed: ${error.message}`);
       setLoading(false);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -470,6 +514,7 @@ export default function App() {
       const data = await res.json();
       const output = data.output || '';
       appendAgentLine('output', output);
+      if (!consoleActiveRef.current) toast('success', 'Command executed — output in Agent Feed');
 
       setRefreshFileTreeTrigger((prev) => prev + 1);
 
@@ -493,6 +538,7 @@ export default function App() {
         return;
       }
       appendAgentLine('error', `Execution failure: ${error.message}`);
+      toast('error', `Execution failed: ${error.message}`);
       setLoading(false);
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
@@ -537,9 +583,15 @@ export default function App() {
           stats: sessionData.session.stats || {},
         });
       }
-      if (data.success) appendAgentLine('system', `Snapshot saved: ${data.name}`);
+      if (data.success) {
+        appendAgentLine('system', `Snapshot saved: ${data.name}`);
+        toast('success', `Snapshot saved: ${data.name}`);
+      } else {
+        toast('error', 'Snapshot failed.');
+      }
     } catch (error: any) {
       appendAgentLine('error', `Snapshot failed: ${error.message}`);
+      toast('error', `Snapshot failed: ${error.message}`);
     } finally {
       setSnapshotBusy(false);
     }
@@ -725,6 +777,10 @@ export default function App() {
   const bottomTerminal = terminalPlacement === 'bottom' && chatVisible && !terminalMinimized;
   const chatActive = chatVisible && !terminalMinimized;
   const consoleActive = terminalVisible || terminalMinimized;
+  consoleActiveRef.current = consoleActive;
+
+  // Badge feedback outside the pane: pending auth + Agent Feed errors
+  const agentFeedErrorCount = terminalLines.filter((l) => l.type === 'error').length;
 
   const navBar = (
     <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
@@ -749,7 +805,7 @@ export default function App() {
           }`}
         >
           <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
-          <span>AI Chat & Workspace</span>
+          <span>Agent</span>
         </button>
 
         <button
@@ -765,10 +821,15 @@ export default function App() {
           }`}
         >
           <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
-          <span>Console Interface</span>
-          <span className="text-(--color-accent-text) font-mono text-[9px] bg-(--color-accent-subtle) border border-(--color-accent)/30 px-1 py-0.2">
-            PTY
-          </span>
+          <span>Terminal</span>
+          {!consoleActive && (pendingCommand || agentFeedErrorCount > 0) && (
+            <span
+              title={pendingCommand ? 'Command awaiting authorization' : `${agentFeedErrorCount} Agent Feed error(s)`}
+              className="flex items-center justify-center min-w-[14px] h-[14px] px-1 bg-(--color-error) text-white text-[8px] font-black font-mono"
+            >
+              {pendingCommand ? '!' : agentFeedErrorCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -803,11 +864,14 @@ export default function App() {
           onSelectSample={(prompt) => {
             setInputPrompt(prompt);
           }}
+          cwd={cwd}
           keysStatus={keysStatus}
           onMinimize={() => {
             setView('terminal');
             setChatMinimized(true);
           }}
+          onClearChat={handleClearChat}
+          onEditMessage={handleEditMessage}
         />
       </div>
 
@@ -827,7 +891,7 @@ export default function App() {
     <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) select-none">
       <div className="flex items-center gap-2 text-[10px] font-display font-black uppercase tracking-widest text-(--color-text-secondary)">
         <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
-        <span>AI Chat — minimizado</span>
+        <span>Agent — minimizado</span>
         <span className="text-(--color-text-muted) font-mono tracking-normal">({messages.length} msg)</span>
       </div>
       <button

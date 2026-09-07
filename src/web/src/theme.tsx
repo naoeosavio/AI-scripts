@@ -54,13 +54,18 @@ const DEFAULT_THEME: ThemeConfig = {
   customFonts: DEFAULT_CUSTOM_FONTS,
 };
 
-const ACCENT_COLORS: Record<AccentPalette, { primary: string; hover: string; subtle: string; text: string }> = {
-  rose:   { primary: '#E11D48', hover: '#F43F5E', subtle: '#4C0519', text: '#FB7185' },
-  blue:   { primary: '#2563EB', hover: '#3B82F6', subtle: '#1E3A5F', text: '#60A5FA' },
-  emerald:{ primary: '#059669', hover: '#10B981', subtle: '#064E3B', text: '#34D399' },
-  amber:  { primary: '#D97706', hover: '#F59E0B', subtle: '#78350F', text: '#FBBF24' },
-  violet: { primary: '#7C3AED', hover: '#8B5CF6', subtle: '#4C1D95', text: '#A78BFA' },
-  cyan:   { primary: '#0891B2', hover: '#06B6D4', subtle: '#164E63', text: '#22D3EE' },
+// Single source of truth for accent tokens (per mode). applyConfigToRoot writes
+// these to inline root vars, which override the :root fallbacks in index.css.
+const ACCENT_COLORS: Record<
+  AccentPalette,
+  { primary: string; hover: string; subtle: Record<ThemeMode, string>; text: Record<ThemeMode, string> }
+> = {
+  rose:   { primary: '#E11D48', hover: '#F43F5E', subtle: { dark: '#4C0519', light: '#FDE7EC' }, text: { dark: '#FB7185', light: '#BE123C' } },
+  blue:   { primary: '#2563EB', hover: '#3B82F6', subtle: { dark: '#1E3A5F', light: '#DBEAFE' }, text: { dark: '#60A5FA', light: '#1D4ED8' } },
+  emerald:{ primary: '#059669', hover: '#10B981', subtle: { dark: '#064E3B', light: '#D1FAE5' }, text: { dark: '#34D399', light: '#047857' } },
+  amber:  { primary: '#D97706', hover: '#F59E0B', subtle: { dark: '#78350F', light: '#FEF3C7' }, text: { dark: '#FBBF24', light: '#B45309' } },
+  violet: { primary: '#7C3AED', hover: '#8B5CF6', subtle: { dark: '#4C1D95', light: '#EDE9FE' }, text: { dark: '#A78BFA', light: '#6D28D9' } },
+  cyan:   { primary: '#0891B2', hover: '#06B6D4', subtle: { dark: '#164E63', light: '#CFFAFE' }, text: { dark: '#22D3EE', light: '#0E7490' } },
 };
 
 const DARK_VARS: Record<string, string> = {
@@ -101,7 +106,7 @@ const LIGHT_VARS: Record<string, string> = {
 
 const FONT_CHOICES: FontChoice[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Custom'];
 
-function getFontFamily(name: FontChoice, custom?: string): string {
+export function getFontFamily(name: FontChoice, custom?: string): string {
   if (name === 'Custom') {
     return custom && custom.trim() ? `"${sanitizeFontFamily(custom)}", system-ui, sans-serif` : '"Inter", system-ui, sans-serif';
   }
@@ -170,7 +175,7 @@ export function xtermThemeFromConfig(config: ThemeConfig) {
       foreground: '#1A1A1A',
       cursor: accent.primary,
       cursorAccent: '#FFFFFF',
-      selectionBackground: accent.subtle,
+      selectionBackground: accent.subtle.light,
       black: '#000000',
       red: accent.primary,
       green: '#059669',
@@ -186,7 +191,7 @@ export function xtermThemeFromConfig(config: ThemeConfig) {
     foreground: '#e5e5e5',
     cursor: accent.primary,
     cursorAccent: '#000000',
-    selectionBackground: accent.subtle,
+    selectionBackground: accent.subtle.dark,
     black: '#000000',
     red: accent.primary,
     green: '#10B981',
@@ -255,8 +260,8 @@ function applyConfigToRoot(config: ThemeConfig) {
 
     root.style.setProperty('--color-accent', accent.primary);
     root.style.setProperty('--color-accent-hover', accent.hover);
-    root.style.setProperty('--color-accent-subtle', accent.subtle);
-    root.style.setProperty('--color-accent-text', accent.text);
+    root.style.setProperty('--color-accent-subtle', accent.subtle[config.mode]);
+    root.style.setProperty('--color-accent-text', accent.text[config.mode]);
 
     root.style.setProperty('--font-sans', getFontFamily(config.fontSans, config.customFonts.sans));
     root.style.setProperty('--font-display', getFontFamily(config.fontDisplay, config.customFonts.display));

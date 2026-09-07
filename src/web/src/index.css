@@ -42,7 +42,9 @@
   --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
 }
 
-/* Font families are runtime-overridable via the ThemeProvider (inline root vars win) */
+/* Font families and accent tokens are runtime-overridable via the ThemeProvider
+ * (inline root vars from theme.tsx are the single source of truth — they win).
+ * Only neutral tokens are mirrored here as first-paint fallbacks. */
 :root[data-theme='light'] {
   --color-bg-primary: #FFFFFF;
   --color-bg-secondary: #F5F5F5;
@@ -58,11 +60,6 @@
   --color-border-medium: rgba(0, 0, 0, 0.15);
   --color-border-strong: rgba(0, 0, 0, 0.25);
 
-  --color-accent: #E11D48;
-  --color-accent-hover: #F43F5E;
-  --color-accent-subtle: #FDE7EC;
-  --color-accent-text: #BE123C;
-
   --color-success: #059669;
   --color-error: #DC2626;
 
@@ -76,7 +73,25 @@ body {
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
-  font-size: calc(var(--ui-scale) * 100%);
+}
+
+/* Real UI scale: zoom the app root (scales px-type text too).
+ * --ui-scale is runtime-updated by theme.tsx from the Scale setting. */
+#root {
+  zoom: var(--ui-scale);
+}
+
+/* Global keyboard focus indicator (accent ring, brutalist outline) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Decorative pulsing only: spinning loaders stay (they are functional feedback) */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none !important;
+  }
 }
 
 /* Custom scrollbars */
