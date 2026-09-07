@@ -10,11 +10,12 @@
     "prepare": "npm run build",
     "test": "npm run test:security && npm run test:web",
     "test:security": "npm run build && node test/test-tell-security.js",
-    "test:web": "node test/test-web-backend.js",
+    "test:web": "node test/test-web-backend.js && npm test --prefix src/web",
     "lint": "tsc",
+    "lint:web": "npm run typecheck --prefix src/web",
     "format": "biome check --write src",
     "check:format": "biome check src",
-    "ci": "npm run lint && npm run check:format && npm run test && npm run build",
+    "ci": "npm run lint && npm run lint:web && npm run check:format && npm run test && npm run build",
     "prepublish": "npm run ci"
   },
   "repository": {
