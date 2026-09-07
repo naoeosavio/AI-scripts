@@ -1,5 +1,13 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown, Minimize2, Pencil, Trash2 } from 'lucide-react';
+import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown, Minimize2, Pencil, Trash2, RotateCcw, ChevronDown, ChevronUp, GitFork } from 'lucide-react';
+import { useTheme } from '../theme.tsx';
+import {
+  FEEDBACK_PREFIX_RE,
+  parseFeedback,
+  findLinkedFeedbackIndex,
+  displaySideFor,
+  defaultFeedbackOpen,
+} from '../../chain-feedback.ts';
 
 export interface ChatMessage {
   id: string;
@@ -37,6 +45,8 @@ interface ChatSectionProps {
   cwd?: string;
   onClearChat?: () => void;
   onEditMessage?: (id: string, content: string) => void;
+  onRetryMessage?: (id: string) => void;
+  onForkFromMessage?: (id: string) => void;
 }
 
 const SAMPLE_PROMPTS = [
@@ -59,12 +69,8 @@ const VENDOR_KEY_ALIASES: Record<string, string> = { google: 'google' };
 
 // Autoscroll only sticks when the user is already this close to the bottom
 const NEAR_BOTTOM_PX = 80;
-// Feedback messages longer than this render collapsed (<details>)
-const FEEDBACK_COLLAPSE_CHARS = 400;
 // Hard cap for the prompt textarea
 const MAX_INPUT_CHARS = 8000;
-
-const FEEDBACK_PREFIX_RE = /^(Executed command|Skipped by user):/;
 
 export default function ChatSection({
   messages,
@@ -86,7 +92,10 @@ export default function ChatSection({
   cwd,
   onClearChat,
   onEditMessage,
+  onRetryMessage,
+  onForkFromMessage,
 }: ChatSectionProps) {
+  const { config } = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const nearBottomRef = useRef(true);
@@ -94,6 +103,18 @@ export default function ChatSection({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
+  const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null);
+  // Explicit per-card open overrides; default follows content length (long starts collapsed).
+  const [feedbackOpen, setFeedbackOpen] = useState<Record<string, boolean>>({});
+  const isFeedbackOpen = (m: { id: string; content: string }) =>
+    feedbackOpen[m.id] ?? defaultFeedbackOpen(m.content);
+
+  // Chat width: custom layout reads customChatWrap (default 80ch, 'max' = free space)
+  const chatWrap = config.layout === 'custom' ? config.customChatWrap : 80;
+  const isMaxWrap = chatWrap === 'max';
+  const wrapStyle: React.CSSProperties = isMaxWrap
+    ? { maxWidth: 'none', width: '100%', marginLeft: 0, marginRight: 0 }
+    : { maxWidth: `${chatWrap}ch`, width: '100%' };
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -146,6 +167,10 @@ export default function ChatSection({
     return /<run>[\s\S]*?<\/run>/i.test(text);
   };
 
+  const extractRunScripts = (text: string): string[] => {
+    return [...text.matchAll(/<run>([\s\S]*?)<\/run>/gi)].map((m) => (m[1] ?? '').trim()).filter(Boolean);
+  };
+
   const selectedModel = models.find((m) => m.alias === modelAlias);
   const hasKey = (vendor: string) => !KEYED_VENDORS.has(vendor) || !!keysStatus[VENDOR_KEY_ALIASES[vendor] || vendor];
 
@@ -154,23 +179,6 @@ export default function ChatSection({
       e.preventDefault();
       if (!loading && inputPrompt.trim()) formRef.current?.requestSubmit();
     }
-  };
-
-  const renderFeedbackBody = (content: string) => {
-    const nl = content.indexOf('\n');
-    const header = nl >= 0 ? content.slice(0, nl) : content;
-    return (
-      <details className="w-full group">
-        <summary className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-(--color-accent-text) hover:text-(--color-accent) transition-colors list-none flex items-center gap-1.5">
-          <Terminal className="w-3 h-3 shrink-0" />
-          <span className="truncate">{header}</span>
-          <span className="text-(--color-text-muted) font-normal normal-case group-open:hidden">· expand</span>
-        </summary>
-        <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text">
-          {content}
-        </pre>
-      </details>
-    );
   };
 
   return (
@@ -317,29 +325,125 @@ export default function ChatSection({
             </div>
           </div>
         ) : (
-          messages.map((m) => {
+          messages.map((m, msgIdx) => {
             const isUser = m.role === 'user';
-            const cleanContent = isUser ? m.content : cleanResponseContent(m.content);
-            const containsRuns = !isUser && hasRunsInMessage(m.content);
             const isFeedback = isUser && FEEDBACK_PREFIX_RE.test(m.content);
+            // Chain-loop feedback (Executed/Skipped) renders on the LLM side;
+            // the stored role stays 'user' so the LLM context is unchanged.
+            const displayIsUser = displaySideFor(m) === 'user';
+            const cleanContent = displayIsUser ? m.content : cleanResponseContent(m.content);
+            const containsRuns = !displayIsUser && hasRunsInMessage(m.content);
+            const runScripts = !displayIsUser && containsRuns ? extractRunScripts(m.content) : [];
+            const scriptExpanded = expandedScriptId === m.id;
+            const linkedFeedbackIdx =
+              !displayIsUser && containsRuns ? findLinkedFeedbackIndex(messages, msgIdx) : -1;
+            const linkedFeedback =
+              linkedFeedbackIdx >= 0 ? parseFeedback(messages[linkedFeedbackIdx]?.content ?? '') : null;
 
             // Skip rendering if content is empty (e.g. intermediate thought only messages or silent system runs)
             if (!cleanContent && !m.thought) return null;
 
+            // Feedback pipeline card (left/LLM side, never a user bubble)
+            if (isFeedback) {
+              const parsed = parseFeedback(m.content);
+              const header = parsed?.kind === 'skipped' ? 'SKIPPED BY USER' : 'EXECUTED COMMAND';
+              const open = isFeedbackOpen(m);
+              return (
+                <div
+                  key={m.id}
+                  style={wrapStyle}
+                  className="group/msg flex gap-3 mx-auto relative z-10 justify-start"
+                >
+                  <div className="w-8 h-8 bg-white/5 border border-(--color-border-medium) text-(--color-text-primary) rounded-none flex items-center justify-center shrink-0 select-none">
+                    <Terminal className="w-4 h-4 text-(--color-accent)" />
+                  </div>
+                  <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'flex-1 max-w-full' : 'max-w-[85%]'}`}>
+                    <div className="rounded-none text-xs leading-relaxed bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle) overflow-hidden">
+                      <button
+                        onClick={() => setFeedbackOpen((prev) => ({ ...prev, [m.id]: !open }))}
+                        aria-expanded={open}
+                        title={open ? 'Esconder resultado' : 'Expandir resultado'}
+                        className="w-full flex items-center gap-1.5 p-4 text-[10px] font-bold uppercase tracking-wider text-(--color-accent-text) cursor-pointer hover:bg-white/5 transition-colors select-none"
+                      >
+                        <Terminal className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1 text-left">{header}</span>
+                        {open ? (
+                          <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                      </button>
+                      {open && (
+                      <div className="px-4 pb-4 space-y-2">
+                      {parsed && parsed.command && (
+                        <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto custom-scrollbar select-text">
+                          {parsed.command}
+                        </pre>
+                      )}
+                      {parsed?.kind === 'executed' ? (
+                        parsed.output ? (
+                          <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text text-(--color-text-secondary)">
+                            {parsed.output}
+                          </pre>
+                        ) : (
+                          <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">(sem output)</p>
+                        )
+                      ) : (
+                        <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">Comando ignorado pelo usuário.</p>
+                      )}
+                      <div className="mt-2 flex justify-end gap-1.5 select-none">
+                        {parsed && parsed.command && (
+                          <button
+                            onClick={() => handleCopy(`${m.id}-cmd`, parsed.command)}
+                            title="Copiar comando"
+                            className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                          >
+                            {copiedId === `${m.id}-cmd` ? (
+                              <Check className="w-3 h-3 text-(--color-success)" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                            {copiedId === `${m.id}-cmd` ? 'Copiado' : 'Cmd'}
+                          </button>
+                        )}
+                        {parsed?.kind === 'executed' && parsed.output && (
+                          <button
+                            onClick={() => handleCopy(`${m.id}-out`, parsed.output)}
+                            title="Copiar resultado"
+                            className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                          >
+                            {copiedId === `${m.id}-out` ? (
+                              <Check className="w-3 h-3 text-(--color-success)" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                            {copiedId === `${m.id}-out` ? 'Copiado' : 'Output'}
+                          </button>
+                        )}
+                      </div>
+                      </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <div
                 key={m.id}
-                className={`group/msg flex gap-3 max-w-3xl mx-auto relative z-10 ${isUser ? 'justify-end' : 'justify-start'}`}
+                style={wrapStyle}
+                className={`group/msg flex gap-3 mx-auto relative z-10 ${displayIsUser ? 'justify-end' : 'justify-start'}`}
               >
                 {/* Assistant Avatar */}
-                {!isUser && (
+                {!displayIsUser && (
                   <div className="w-8 h-8 bg-white/5 border border-(--color-border-medium) text-(--color-text-primary) rounded-none flex items-center justify-center shrink-0 select-none">
                     <BrainCircuit className="w-4 h-4 text-(--color-accent)" />
                   </div>
                 )}
 
                 {/* Message Bubble */}
-                <div className="space-y-2 max-w-[85%] min-w-0">
+                <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'flex-1 max-w-full' : 'max-w-[85%]'}`}>
                   {/* Thought/Reasoning Panel */}
                   {m.thought && (
                     <div className="bg-(--color-bg-secondary) border-l-2 border-(--color-accent) p-3.5 text-[11px] text-(--color-text-secondary) font-mono space-y-1">
@@ -394,35 +498,138 @@ export default function ChatSection({
                     cleanContent && (
                       <div
                         className={`p-4 rounded-none text-xs leading-relaxed group ${
-                          isUser
+                          displayIsUser
                             ? 'bg-white/5 text-(--color-text-primary) border border-(--color-border-medium) selection:bg-(--color-accent-subtle)'
                             : 'bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle)'
                         }`}
                       >
-                        <div className="whitespace-pre-wrap leading-relaxed select-text font-sans">
-                          {isFeedback && m.content.length > FEEDBACK_COLLAPSE_CHARS ? renderFeedbackBody(m.content) : cleanContent}
+                        <div
+                          className="whitespace-pre-wrap leading-relaxed select-text font-sans"
+                          style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                        >
+                          {cleanContent}
                         </div>
 
-                        {/* Run tag notification inside chat bubble */}
+                        {/* Run tag notification inside chat bubble — click to expand/collapse script */}
                         {containsRuns && (
-                          <div className="mt-3 flex items-center gap-2 text-[10px] bg-(--color-accent-subtle) text-(--color-accent-text) border border-(--color-accent)/25 px-2.5 py-1.5 rounded-none font-mono tracking-wide select-none">
-                            <Terminal className="w-3.5 h-3.5 shrink-0" />
-                            <span className="uppercase font-bold">SCRIPT GENERATED IN TERMINAL PIPELINE</span>
+                          <div className="mt-3 border border-(--color-accent)/25 bg-(--color-accent-subtle) rounded-none overflow-hidden">
+                            <button
+                              onClick={() => setExpandedScriptId(scriptExpanded ? null : m.id)}
+                              aria-expanded={scriptExpanded}
+                              title={scriptExpanded ? 'Minimizar script' : 'Expandir para ver o script e o resultado'}
+                              className="w-full flex items-center gap-2 text-[10px] text-(--color-accent-text) px-2.5 py-1.5 font-mono tracking-wide cursor-pointer hover:bg-white/5 transition-colors"
+                            >
+                              <Terminal className="w-3.5 h-3.5 shrink-0" />
+                              <span className="uppercase font-bold flex-1 text-left">
+                                SCRIPT GENERATED IN TERMINAL PIPELINE
+                              </span>
+                              {scriptExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5 shrink-0" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                              )}
+                            </button>
+                            {scriptExpanded && runScripts.length > 0 && (
+                              <div className="border-t border-(--color-accent)/25 p-2 space-y-2">
+                                {runScripts.map((script, idx) => (
+                                  <div key={idx} className="space-y-1.5">
+                                    {runScripts.length > 1 && (
+                                      <div className="text-[9px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                                        Script {idx + 1}/{runScripts.length}
+                                      </div>
+                                    )}
+                                    <pre className="p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text text-(--color-text-primary)">
+                                      {script}
+                                    </pre>
+                                    <div className="flex justify-end">
+                                      <button
+                                        onClick={() => handleCopy(`${m.id}-script-${idx}`, script)}
+                                        title="Copiar script"
+                                        className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                                      >
+                                        {copiedId === `${m.id}-script-${idx}` ? (
+                                          <Check className="w-3 h-3 text-(--color-success)" />
+                                        ) : (
+                                          <Copy className="w-3 h-3" />
+                                        )}
+                                        {copiedId === `${m.id}-script-${idx}` ? 'Copiado' : 'Copiar'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                                <div className="space-y-1.5 border-t border-(--color-accent)/25 pt-2">
+                                  <div className="text-[9px] font-bold uppercase tracking-wider text-(--color-text-muted)">
+                                    Resultado do comando
+                                  </div>
+                                  {linkedFeedback?.kind === 'executed' ? (
+                                    linkedFeedback.output ? (
+                                      <>
+                                        <pre className="p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text text-(--color-text-secondary)">
+                                          {linkedFeedback.output}
+                                        </pre>
+                                        <div className="flex justify-end">
+                                          <button
+                                            onClick={() => handleCopy(`${m.id}-output`, linkedFeedback.output)}
+                                            title="Copiar resultado"
+                                            className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                                          >
+                                            {copiedId === `${m.id}-output` ? (
+                                              <Check className="w-3 h-3 text-(--color-success)" />
+                                            ) : (
+                                              <Copy className="w-3 h-3" />
+                                            )}
+                                            {copiedId === `${m.id}-output` ? 'Copiado' : 'Copiar resultado'}
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <p className="text-[10px] text-(--color-text-muted) font-sans">(sem output)</p>
+                                    )
+                                  ) : linkedFeedback?.kind === 'skipped' ? (
+                                    <p className="text-[10px] text-(--color-text-muted) font-sans">Comando ignorado pelo usuário.</p>
+                                  ) : (
+                                    <p className="text-[10px] text-(--color-text-muted) font-sans">
+                                      Aguardando execução — o output aparece aqui após autorizar e rodar o comando.
+                                    </p>
+                                  )}
+                                </div>                              </div>
+                            )}
                           </div>
-                        )}
-
-                        {/* Copy assistant answers */}
-                        {!isUser && (
-                          <button
-                            onClick={() => handleCopy(m.id, cleanContent)}
-                            title="Copy answer"
-                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-(--color-text-muted) hover:text-(--color-text-primary) cursor-pointer"
-                          >
-                            {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
-                          </button>
                         )}
                       </div>
                     )
+                  )}
+
+                  {/* Assistant message actions (copy / retry / fork) — always visible on touch */}
+                  {!displayIsUser && editingId !== m.id && (
+                    <div className="flex justify-start gap-1 opacity-100 md:opacity-0 md:group-hover/msg:opacity-100 focus-within:opacity-100 transition-opacity select-none">
+                      <button
+                        onClick={() => handleCopy(m.id, cleanContent)}
+                        title="Copiar resposta"
+                        className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                      >
+                        {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                      {onRetryMessage && (
+                        <button
+                          onClick={() => onRetryMessage(m.id)}
+                          disabled={loading}
+                          title="Tentar de novo — regenera a partir desta resposta"
+                          className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                        </button>
+                      )}
+                      {onForkFromMessage && (
+                        <button
+                          onClick={() => onForkFromMessage(m.id)}
+                          title="Fork a partir desta mensagem"
+                          className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                        >
+                          <GitFork className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {/* User message actions (copy / edit, ChatGPT-style hover row) */}
@@ -483,7 +690,10 @@ export default function ChatSection({
         onSubmit={onSubmit}
         className="p-4 border-t border-(--color-border-subtle) bg-(--color-bg-primary) select-none shrink-0"
       >
-        <div className="flex items-end gap-3 max-w-3xl mx-auto bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1">
+        <div
+          style={wrapStyle}
+          className="flex items-end gap-3 mx-auto bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1"
+        >
           <textarea
             value={inputPrompt}
             onChange={(e) => onInputChange(e.target.value.slice(0, MAX_INPUT_CHARS))}
