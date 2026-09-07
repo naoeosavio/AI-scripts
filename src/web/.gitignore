@@ -2,7 +2,10 @@ node_modules/
 build/
 dist/
 coverage/
+test/.tmp/
 .DS_Store
 *.log
 .env*
 !.env.example
+# Sessão local do sandbox (nunca versionar: contém scrollbacks e histórico)
+.tell/
