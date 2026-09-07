@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as TerminalIcon, Sparkles } from 'lucide-react';
+import { Terminal as TerminalIcon, Sparkles, PanelLeftClose, PanelLeftOpen, Maximize2 } from 'lucide-react';
 import FileExplorer from './components/FileExplorer.tsx';
 import FileViewer from './components/FileViewer.tsx';
 import Terminal, { TerminalLine, TerminalLayout } from './components/Terminal.tsx';
@@ -50,9 +50,13 @@ interface HistoryEntry {
 }
 
 export default function App() {
-  const { config, setSettingsHeight } = useTheme();
-  const focusedLayout = config.layout === 'focused';
-  const dragStartRef = useRef<{ y: number; h: number } | null>(null);
+  const { config, setSettingsHeight, setTerminalHeight, setSidebarCollapsed } = useTheme();
+  // Layout resolution: presets pin sidebar/terminal; 'custom' reads user-decided config
+  const sidebarSide: 'left' | 'right' =
+    config.layout === 'focused' ? 'right' : config.layout === 'default' ? 'left' : config.customSidebarSide;
+  const terminalPlacement: 'bottom' | 'fullscreen' | 'hidden' =
+    config.layout === 'focused' ? 'fullscreen' : config.layout === 'default' ? 'bottom' : config.customTerminal;
+  const sidebarCollapsed = config.sidebarCollapsed;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -80,7 +84,15 @@ export default function App() {
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [refreshFileTreeTrigger, setRefreshFileTreeTrigger] = useState<number>(0);
-  const [isTerminalExpanded, setIsTerminalExpanded] = useState<boolean>(false);
+  // Unified view state: 'chat' shows the chat section, 'terminal' maximizes the console.
+  // chatMinimized collapses the chat to a slim bar while the console takes the area.
+  // terminalMinimized hides the bottom console (chat view, bottom placement only).
+  // The Terminal component itself is ALWAYS mounted in a stable position — view
+  // switching only toggles classes, so closing tabs/clearing panes survives switches.
+  const [view, setView] = useState<'chat' | 'terminal'>('chat');
+  const [chatMinimized, setChatMinimized] = useState<boolean>(false);
+  const [terminalMinimized, setTerminalMinimized] = useState<boolean>(false);
+  const [editorWidth, setEditorWidth] = useState<number>(480);
 
   const [restoredLayout, setRestoredLayout] = useState<TerminalLayout | null>(null);
   const [terminalScrollback, setTerminalScrollback] = useState<Record<string, string>>({});
@@ -572,30 +584,64 @@ export default function App() {
     }
   };
 
-  const onDragMove = useCallback((e: MouseEvent) => {
-    if (!dragStartRef.current) return;
-    const delta = dragStartRef.current.y - e.clientY;
-    const next = dragStartRef.current.h + delta;
-    const max = window.innerHeight - 120;
-    setSettingsHeight(Math.min(Math.max(next, 140), max));
-  }, [setSettingsHeight]);
+  type DragKind = 'settings' | 'terminal' | 'editor';
+  const dragStateRef = useRef<{ kind: DragKind; y: number; x: number; h: number; w: number } | null>(null);
+
+  const onDragMove = useCallback(
+    (e: MouseEvent) => {
+      const st = dragStateRef.current;
+      if (!st) return;
+      if (st.kind === 'editor') {
+        const next = st.w + (st.x - e.clientX);
+        setEditorWidth(Math.min(Math.max(next, 240), Math.floor(window.innerWidth * 0.6)));
+        return;
+      }
+      const next = st.h + (st.y - e.clientY);
+      if (st.kind === 'terminal') {
+        setTerminalHeight(Math.min(Math.max(next, 120), Math.floor(window.innerHeight * 0.6)));
+      } else {
+        setSettingsHeight(Math.min(Math.max(next, 140), window.innerHeight - 120));
+      }
+    },
+    [setSettingsHeight, setTerminalHeight],
+  );
 
   const onDragEnd = useCallback(() => {
-    dragStartRef.current = null;
+    dragStateRef.current = null;
     document.removeEventListener('mousemove', onDragMove);
     document.removeEventListener('mouseup', onDragEnd);
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
   }, [onDragMove]);
 
-  const startDragSettings = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    dragStartRef.current = { y: e.clientY, h: config.settingsHeight };
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'row-resize';
-    document.addEventListener('mousemove', onDragMove);
-    document.addEventListener('mouseup', onDragEnd);
-  }, [config.settingsHeight, onDragMove, onDragEnd]);
+  const startDrag = useCallback(
+    (kind: DragKind, e: React.MouseEvent) => {
+      e.preventDefault();
+      dragStateRef.current = {
+        kind,
+        y: e.clientY,
+        x: e.clientX,
+        h: kind === 'terminal' ? config.terminalHeight : config.settingsHeight,
+        w: editorWidth,
+      };
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = kind === 'editor' ? 'col-resize' : 'row-resize';
+      document.addEventListener('mousemove', onDragMove);
+      document.addEventListener('mouseup', onDragEnd);
+    },
+    [config.terminalHeight, config.settingsHeight, editorWidth, onDragMove, onDragEnd],
+  );
+
+  const onSettingsKeyDown = (e: React.KeyboardEvent) => {
+    const step = 16;
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSettingsHeight(Math.min(config.settingsHeight + step, window.innerHeight - 120));
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSettingsHeight(Math.max(config.settingsHeight - step, 140));
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -606,48 +652,98 @@ export default function App() {
     };
   }, [onDragMove, onDragEnd]);
 
-  const sidebar = (
-    <div className="w-full md:w-80 shrink-0 h-full min-h-0 flex flex-col bg-(--color-bg-primary) select-none">
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <FileExplorer
-          onFileSelect={(path) => setSelectedFilePath(path)}
-          selectedFilePath={selectedFilePath}
-          refreshTrigger={refreshFileTreeTrigger}
-        />
-      </div>
-
+  const renderSidebar = (borderSide: 'left' | 'right') => {
+    const borderCls = borderSide === 'left' ? 'md:border-r' : 'md:border-l';
+    if (sidebarCollapsed) {
+      return (
+        <div
+          className={`${borderCls} border-(--color-border-subtle) w-full md:w-8 shrink-0 h-8 md:h-full flex md:flex-col items-center justify-center bg-(--color-bg-primary) select-none`}
+        >
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+            title="Abrir Explorer"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        </div>
+      );
+    }
+    return (
       <div
-        onMouseDown={startDragSettings}
-        className="shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors"
-        title="Arraste para redimensionar o painel de Settings"
-      />
+        className={`${borderCls} border-(--color-border-subtle) w-full md:w-80 shrink-0 h-full min-h-0 flex flex-col bg-(--color-bg-primary) select-none`}
+      >
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <FileExplorer
+            onFileSelect={(path) => setSelectedFilePath(path)}
+            selectedFilePath={selectedFilePath}
+            refreshTrigger={refreshFileTreeTrigger}
+          />
+        </div>
 
-      <div className="shrink-0 overflow-hidden" style={{ height: config.settingsHeight }}>
-        <SettingsPanel
-          keysStatus={keysStatus}
-          models={models}
-          systemPrompt={systemPrompt}
-          onSystemPromptChange={(val) => setSystemPrompt(val)}
-          onResetSystemPrompt={() => setSystemPrompt(generatedSystemPrompt || DEFAULT_SYSTEM_PROMPT)}
-          sessionInfo={sessionInfo}
-          onSnapshot={handleSnapshot}
-          snapshotBusy={snapshotBusy}
-          history={history}
-          onRefreshHistory={refreshHistory}
-          onRestoreSnapshot={handleRestoreSnapshot}
-          onDeleteSnapshot={handleDeleteSnapshot}
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Redimensionar painel de Settings"
+          aria-valuenow={Math.round(config.settingsHeight)}
+          aria-valuemin={140}
+          aria-valuemax={900}
+          tabIndex={0}
+          onKeyDown={onSettingsKeyDown}
+          onMouseDown={(e) => startDrag('settings', e)}
+          className="shrink-0 h-2 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent)"
+          title="Arraste para redimensionar o painel de Settings"
         />
+
+        <div className="shrink-0 overflow-hidden" style={{ height: config.settingsHeight }}>
+          <SettingsPanel
+            keysStatus={keysStatus}
+            models={models}
+            systemPrompt={systemPrompt}
+            onSystemPromptChange={(val) => setSystemPrompt(val)}
+            onResetSystemPrompt={() => setSystemPrompt(generatedSystemPrompt || DEFAULT_SYSTEM_PROMPT)}
+            sessionInfo={sessionInfo}
+            onSnapshot={handleSnapshot}
+            snapshotBusy={snapshotBusy}
+            history={history}
+            onRefreshHistory={refreshHistory}
+            onRestoreSnapshot={handleRestoreSnapshot}
+            onDeleteSnapshot={handleDeleteSnapshot}
+          />
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // Terminal visibility model:
+  // - terminalVisible: console takes the main area (fullscreen view or chat minimized)
+  // - bottomTerminal: docked console below the chat (bottom placement, chat view)
+  // The <Terminal> is rendered exactly once, always mounted — switching views only
+  // changes classes, so closed tabs / cleared panes never resurrect on remount.
+  const terminalVisible = view === 'terminal' || chatMinimized;
+  const chatVisible = !terminalVisible;
+  const bottomTerminal = terminalPlacement === 'bottom' && chatVisible && !terminalMinimized;
+  const chatActive = chatVisible && !terminalMinimized;
+  const consoleActive = terminalVisible || terminalMinimized;
 
   const navBar = (
     <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
       <div className="flex items-center gap-1.5">
         <button
-          onClick={() => setIsTerminalExpanded(false)}
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          title={sidebarCollapsed ? 'Abrir Explorer' : 'Minimizar Explorer'}
+          className="p-1.5 border transition-all cursor-pointer bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10"
+        >
+          {sidebarCollapsed ? <PanelLeftOpen className="w-3.5 h-3.5" /> : <PanelLeftClose className="w-3.5 h-3.5" />}
+        </button>
+
+        <button
+          onClick={() => {
+            setView('chat');
+            setChatMinimized(false);
+          }}
           className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
-            !isTerminalExpanded
+            chatActive
               ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
               : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
           }`}
@@ -657,9 +753,13 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setIsTerminalExpanded(true)}
+          onClick={() => {
+            setView('terminal');
+            setChatMinimized(false);
+            setTerminalMinimized(false);
+          }}
           className={`flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold border transition-all cursor-pointer font-display ${
-            isTerminalExpanded
+            consoleActive
               ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) shadow-sm'
               : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
           }`}
@@ -704,6 +804,10 @@ export default function App() {
             setInputPrompt(prompt);
           }}
           keysStatus={keysStatus}
+          onMinimize={() => {
+            setView('terminal');
+            setChatMinimized(true);
+          }}
         />
       </div>
 
@@ -718,71 +822,135 @@ export default function App() {
     </div>
   );
 
-  const terminalEl = (expanded: boolean) => (
-    <Terminal
-      pendingCommand={pendingCommand}
-      onConfirmPending={handleConfirmPending}
-      onSkipPending={handleSkipPending}
-      isExpanded={expanded}
-      onToggleExpand={() => setIsTerminalExpanded(expanded ? false : true)}
-      agentLines={terminalLines}
-      onAgentLinesClear={() => setTerminalLines([])}
-      initialLayout={restoredLayout || undefined}
-      initialScrollback={terminalScrollback}
-      onLayoutChange={(layout) => {
-        layoutRef.current = layout;
-        setLayoutTick((t) => t + 1);
-      }}
-      cwd={cwd}
-    />
+  // Slim bar shown while the chat is minimized — restores it with one click
+  const minimizedChatBar = (
+    <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) select-none">
+      <div className="flex items-center gap-2 text-[10px] font-display font-black uppercase tracking-widest text-(--color-text-secondary)">
+        <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
+        <span>AI Chat — minimizado</span>
+        <span className="text-(--color-text-muted) font-mono tracking-normal">({messages.length} msg)</span>
+      </div>
+      <button
+        onClick={() => {
+          setView('chat');
+          setChatMinimized(false);
+        }}
+        title="Restaurar chat"
+        className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
+      >
+        <Maximize2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+
+  // Slim bar shown while the docked console is hidden — restores it with one click
+  const consoleMinimizedBar = (
+    <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) select-none">
+      <div className="flex items-center gap-2 text-[10px] font-display font-black uppercase tracking-widest text-(--color-text-secondary)">
+        <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
+        <span>Console — minimizado</span>
+      </div>
+      <button
+        onClick={() => setTerminalMinimized(false)}
+        title="Restaurar console"
+        className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
+      >
+        <Maximize2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+
+  const centerContent = (
+    <>
+      {/* Chat area — hidden (kept mounted) while the console takes the main area */}
+      <div className={chatVisible ? 'flex-1 min-h-0 flex overflow-hidden' : 'hidden'}>
+        {chatAndViewer}
+      </div>
+
+      {/* Docked console resize handle (chat view, bottom placement) */}
+      {bottomTerminal && (
+        <div
+          onMouseDown={(e) => startDrag('terminal', e)}
+          className="shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors"
+          title="Arraste para redimensionar o terminal"
+        />
+      )}
+
+      {chatMinimized && minimizedChatBar}
+      {!terminalVisible && terminalMinimized && consoleMinimizedBar}
+
+      {/* Console — single stable mount; view switching only changes classes */}
+      <div
+        className={
+          terminalVisible
+            ? 'flex-1 min-h-0 flex overflow-hidden border-t border-(--color-border-subtle)'
+            : bottomTerminal
+            ? 'shrink-0 flex border-t border-(--color-border-subtle)'
+            : 'hidden'
+        }
+        style={bottomTerminal ? { height: config.terminalHeight } : undefined}
+      >
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <Terminal
+            pendingCommand={pendingCommand}
+            onConfirmPending={handleConfirmPending}
+            onSkipPending={handleSkipPending}
+            isExpanded={terminalVisible}
+            onToggleExpand={() => {
+              if (terminalVisible) {
+                setView('chat');
+                setChatMinimized(false);
+              } else {
+                setView('terminal');
+              }
+            }}
+            onHide={bottomTerminal ? () => setTerminalMinimized(true) : undefined}
+            agentLines={terminalLines}
+            onAgentLinesClear={() => setTerminalLines([])}
+            initialLayout={restoredLayout || undefined}
+            initialScrollback={terminalScrollback}
+            onLayoutChange={(layout) => {
+              layoutRef.current = layout;
+              setLayoutTick((t) => t + 1);
+            }}
+            cwd={cwd}
+          />
+        </div>
+
+        {/* Editor panel next to the maximized console */}
+        {terminalVisible && selectedFilePath && (
+          <>
+            <div
+              onMouseDown={(e) => startDrag('editor', e)}
+              className="w-1.5 shrink-0 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors"
+              title="Arraste para redimensionar o editor"
+            />
+            <div className="h-full shrink-0 overflow-hidden" style={{ width: editorWidth }}>
+              <FileViewer
+                filePath={selectedFilePath}
+                onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
+                onCloseFile={() => setSelectedFilePath(null)}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 
   return (
     <div className="flex flex-col h-screen bg-(--color-bg-primary) text-(--color-text-primary) overflow-hidden select-none font-sans">
-      {focusedLayout ? (
-        /* ---- FOCUSED LAYOUT: explorer on the right, no bottom terminal, chat maximized ---- */
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          {/* Center column: chat / terminal toggled via nav (full-height, no bottom bar) */}
-          <div className="flex-1 flex flex-col overflow-hidden bg-(--color-bg-primary)">
-            {navBar}
-            {isTerminalExpanded ? (
-              <div className="flex-1 h-full overflow-hidden">{terminalEl(true)}</div>
-            ) : (
-              chatAndViewer
-            )}
-          </div>
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+        {sidebarSide === 'left' && renderSidebar('left')}
 
-          {/* Right Side: Workspace Files & Settings Drawer */}
-          <div className="border-l border-(--color-border-subtle) w-full md:w-80 shrink-0 flex flex-col bg-(--color-bg-primary) select-none">
-            {sidebar}
-          </div>
+        {/* Center: chat / editor / console — single stable column */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-(--color-bg-primary)">
+          {navBar}
+          {centerContent}
         </div>
-      ) : (
-        /* ---- DEFAULT LAYOUT: explorer on the left, bottom terminal ---- */
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-          <div className="border-r border-(--color-border-subtle) w-full md:w-80 shrink-0 flex flex-col">
-            {sidebar}
-          </div>
 
-          {/* Center: Interactive Assistant Chat & Code Viewer */}
-          <div className="flex-1 flex flex-col overflow-hidden bg-(--color-bg-primary)">
-            {navBar}
-
-            {!isTerminalExpanded ? (
-              <>
-                {chatAndViewer}
-                {/* Lower Bottom Panel: Terminal Shell */}
-                <div className="h-[280px] shrink-0 border-t border-(--color-border-subtle)">
-                  {terminalEl(false)}
-                </div>
-              </>
-            ) : (
-              /* Maximized Console Interface Tab View */
-              <div className="flex-1 h-full overflow-hidden">{terminalEl(true)}</div>
-            )}
-          </div>
-        </div>
-      )}
+        {sidebarSide === 'right' && renderSidebar('right')}
+      </div>
     </div>
   );
 }
