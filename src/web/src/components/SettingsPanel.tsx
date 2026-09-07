@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, Focus } from 'lucide-react';
+import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, Focus, RotateCcw, Download, Trash2 } from 'lucide-react';
 import { useTheme, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
+import { apiFetch } from '../api.ts';
 
 interface SessionInfo {
   keysUsed: string[];
@@ -15,15 +16,7 @@ interface HistoryEntry {
 }
 
 interface SettingsPanelProps {
-  keysStatus: {
-    google: boolean;
-    openai: boolean;
-    anthropic: boolean;
-    xai: boolean;
-    deepseek: boolean;
-    fireworks: boolean;
-    openrouter: boolean;
-  };
+  keysStatus: Record<string, boolean>;
   models: Array<{
     alias: string;
     spec: string;
@@ -40,6 +33,31 @@ interface SettingsPanelProps {
   snapshotBusy?: boolean;
   history?: HistoryEntry[];
   onRefreshHistory?: () => void;
+  onRestoreSnapshot?: (name: string) => void;
+  onDeleteSnapshot?: (name: string) => void;
+}
+
+// Vendor key → display label (drives the credentials grid from keysStatus)
+const VENDOR_LABELS: Record<string, string> = {
+  google: 'Gemini API',
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  xai: 'xAI',
+  deepseek: 'DeepSeek',
+  fireworks: 'Fireworks',
+  cerebras: 'Cerebras',
+  moonshotai: 'Moonshot AI',
+  openrouter: 'OpenRouter',
+};
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR');
 }
 
 const ACCENT_OPTIONS: { id: AccentPalette; label: string; color: string }[] = [
@@ -75,6 +93,8 @@ export default function SettingsPanel({
   snapshotBusy,
   history = [],
   onRefreshHistory,
+  onRestoreSnapshot,
+  onDeleteSnapshot,
 }: SettingsPanelProps) {
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [showModelsList, setShowModelsList] = useState(false);
@@ -82,6 +102,23 @@ export default function SettingsPanel({
   const [showAppearance, setShowAppearance] = useState(false);
 
   const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, setLayout, resetTheme } = useTheme();
+
+  const downloadSnapshot = async (name: string) => {
+    try {
+      const res = await apiFetch(`/api/session/history/${encodeURIComponent(name)}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      /* ignore */
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-(--color-bg-primary) overflow-y-auto custom-scrollbar p-5 space-y-5 text-(--color-text-secondary) select-none">
@@ -238,76 +275,31 @@ export default function SettingsPanel({
         </div>
 
         <p className="text-[10px] text-(--color-text-muted) leading-relaxed font-sans">
-          To activate auxiliary APIs, specify security credentials in the platform secrets manager.
+          To activate auxiliary APIs, set the provider keys in your local{' '}
+          <span className="text-(--color-text-secondary) font-mono">.env</span> file (e.g.{' '}
+          <span className="text-(--color-text-secondary) font-mono">OPENAI_API_KEY=...</span>) and restart the server.
         </p>
 
         <div className="grid grid-cols-2 gap-2 text-[10px]">
-          <div className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono">
-            <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">Gemini API</span>
-            {keysStatus.google ? (
-              <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
-                Active
+          {Object.entries(keysStatus).map(([vendor, active]) => (
+            <div
+              key={vendor}
+              className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono"
+            >
+              <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">
+                {VENDOR_LABELS[vendor] || vendor}
               </span>
-            ) : (
-              <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
-                Missing
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono">
-            <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">OpenAI</span>
-            {keysStatus.openai ? (
-              <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
-                Active
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
-                Missing
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono">
-            <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">Anthropic</span>
-            {keysStatus.anthropic ? (
-              <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
-                Active
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
-                Missing
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono">
-            <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">DeepSeek</span>
-            {keysStatus.deepseek ? (
-              <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
-                Active
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
-                Missing
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5 p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) col-span-2 font-mono">
-            <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">Other Pipelines</span>
-            <div className="flex gap-4 pt-1 text-[9px] uppercase tracking-wider">
-              <span className={keysStatus.xai ? "text-(--color-accent) font-bold" : "text-(--color-text-muted)"}>
-                xAI: {keysStatus.xai ? "ON" : "OFF"}
-              </span>
-              <span className={keysStatus.fireworks ? "text-(--color-accent) font-bold" : "text-(--color-text-muted)"}>
-                Fireworks: {keysStatus.fireworks ? "ON" : "OFF"}
-              </span>
-              <span className={keysStatus.openrouter ? "text-(--color-accent) font-bold" : "text-(--color-text-muted)"}>
-                OpenRouter: {keysStatus.openrouter ? "ON" : "OFF"}
-              </span>
+              {active ? (
+                <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
+                  Active
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
+                  Missing
+                </span>
+              )}
             </div>
-          </div>
+          ))}
         </div>
       </div>
 
@@ -454,15 +446,42 @@ export default function SettingsPanel({
 
             {/* History list */}
             {history.length > 0 && (
-              <div className="max-h-24 overflow-y-auto custom-scrollbar divide-y divide-white/5 border border-(--color-border-subtle)">
+              <div className="max-h-32 overflow-y-auto custom-scrollbar divide-y divide-white/5 border border-(--color-border-subtle)">
                 {history.map((h) => (
-                  <div key={h.name} className="flex items-center justify-between px-2 py-1 text-[9px] font-mono">
-                    <span className="text-(--color-text-secondary) truncate max-w-[120px]" title={h.name}>
+                  <div key={h.name} className="flex items-center gap-1 px-2 py-1 text-[9px] font-mono">
+                    <span className="text-(--color-text-secondary) truncate flex-1 min-w-0" title={h.name}>
                       {h.name}
                     </span>
-                    <span className="text-(--color-text-muted) shrink-0">
-                      {new Date(h.createdAt).toLocaleString()} · {(h.size / 1024).toFixed(1)} KB
+                    <span className="text-(--color-text-muted) shrink-0 whitespace-nowrap">
+                      {formatTimestamp(h.createdAt)} · {formatBytes(h.size)}
                     </span>
+                    {onRestoreSnapshot && (
+                      <button
+                        onClick={() => onRestoreSnapshot(h.name)}
+                        className="p-0.5 text-(--color-text-muted) hover:text-(--color-accent-text) cursor-pointer shrink-0"
+                        title="Restore this snapshot"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => downloadSnapshot(h.name)}
+                      className="p-0.5 text-(--color-text-muted) hover:text-(--color-accent-text) cursor-pointer shrink-0"
+                      title="Download snapshot"
+                    >
+                      <Download className="w-3 h-3" />
+                    </button>
+                    {onDeleteSnapshot && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete snapshot ${h.name}?`)) onDeleteSnapshot(h.name);
+                        }}
+                        className="p-0.5 text-(--color-text-muted) hover:text-(--color-error) cursor-pointer shrink-0"
+                        title="Delete snapshot"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -518,13 +537,13 @@ export default function SettingsPanel({
         </div>
         <div className="text-[10px] space-y-2 text-(--color-text-muted) font-sans leading-relaxed">
           <p>
-            1. **Select Pipeline**: Pick from Google Gemini, OpenAI GPT, Anthropic Claude, or DeepSeek from the top terminal navbar.
+            1. <strong className="text-(--color-text-secondary) font-bold">Select Pipeline</strong>: Pick from Google Gemini, OpenAI GPT, Anthropic Claude, DeepSeek, Cerebras or Moonshot from the top terminal navbar.
           </p>
           <p>
-            2. **Submit Directives**: Query the agent to outline structures, write files, audit scripts, or debug workspace issues.
+            2. <strong className="text-(--color-text-secondary) font-bold">Submit Directives</strong>: Query the agent to outline structures, write files, audit scripts, or debug workspace issues.
           </p>
           <p>
-            3. **Authorize Hooks**: When the LLM generates bash scripts, use the secure terminal to edit, run, or skip tasks sequentially.
+            3. <strong className="text-(--color-text-secondary) font-bold">Authorize Hooks</strong>: When the LLM generates bash scripts, use the secure terminal to edit, run, or skip tasks sequentially.
           </p>
         </div>
       </div>
@@ -532,7 +551,6 @@ export default function SettingsPanel({
       {/* Footer credits */}
       <div className="pt-2 text-center text-[8px] text-(--color-text-muted) font-mono uppercase tracking-widest">
         <p>Tell-ai GPL-3.0 License</p>
-        <p>Author: it is not savio</p>
       </div>
     </div>
   );
