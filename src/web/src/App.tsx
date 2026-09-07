@@ -1,8 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as TerminalIcon, Sparkles, PanelLeftClose, PanelLeftOpen, Maximize2 } from 'lucide-react';
+import { Terminal as TerminalIcon, Sparkles, PanelLeftClose, PanelLeftOpen, Maximize2, MessagesSquare as MessagesSquareIcon } from 'lucide-react';
 import FileExplorer from './components/FileExplorer.tsx';
 import FileViewer from './components/FileViewer.tsx';
-import Terminal, { TerminalLine, TerminalLayout } from './components/Terminal.tsx';
+import Terminal, { TerminalLine, TerminalLayout, TerminalTabMeta } from './components/Terminal.tsx';
+import AgentFeed from './components/AgentFeed.tsx';
+import ChatThreads, {
+  ChatThread,
+  loadThreads,
+  saveThreads,
+  threadTitleFromMessages,
+  duplicateThread as pureDuplicateThread,
+  forkThreadFromMessage as pureForkThread,
+  deleteThreadFromList as pureDeleteThread,
+} from './components/ChatThreads.tsx';
+import {
+  resolveSafeActiveTabId,
+  mergeRestoredTerminalLayout,
+  clampTerminalWidthCh,
+} from '../terminal-layout.ts';
 import SettingsPanel from './components/SettingsPanel.tsx';
 import ChatSection, { ChatMessage } from './components/ChatSection.tsx';
 import { useTheme } from './theme.tsx';
@@ -54,15 +69,32 @@ interface HistoryEntry {
 }
 
 export default function App() {
-  const { config, setSettingsHeight, setTerminalHeight, setSidebarCollapsed } = useTheme();
+  const {
+    config,
+    setSettingsHeight,
+    setTerminalHeight,
+    setTerminalWidthCh,
+    setSidebarCollapsed,
+    setThreadsCollapsed,
+  } = useTheme();
   const { toast } = useToast();
   // Layout resolution: presets pin sidebar/terminal; 'custom' reads user-decided config
   const sidebarSide: 'left' | 'right' =
     config.layout === 'focused' ? 'right' : config.layout === 'default' ? 'left' : config.customSidebarSide;
-  const terminalPlacement: 'bottom' | 'fullscreen' | 'hidden' =
+  const terminalPlacement: 'left' | 'right' | 'top' | 'bottom' | 'fullscreen' | 'hidden' =
     config.layout === 'focused' ? 'fullscreen' : config.layout === 'default' ? 'bottom' : config.customTerminal;
+  const agentFeedPlacement: 'top' | 'bottom' | 'left' | 'right' =
+    config.layout === 'custom' ? config.customAgentFeed : 'top';
+  const threadsSide: 'left' | 'right' | 'top' | 'bottom' =
+    config.layout === 'custom' ? config.customChatThreadsSide : 'left';
   const sidebarCollapsed = config.sidebarCollapsed;
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Chat threads (localStorage) — messages is the active thread's message list
+  const [threadsState, setThreadsState] = useState<{ threads: ChatThread[]; activeId: string }>(() => loadThreads());
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const initial = loadThreads();
+    return initial.threads.find((t) => t.id === initial.activeId)?.messages ?? [];
+  });
+  const [agentFeedOpen, setAgentFeedOpen] = useState<boolean>(true);
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [modelAlias, setModelAlias] = useState<string>('l');
@@ -100,8 +132,61 @@ export default function App() {
   const [editorWidth, setEditorWidth] = useState<number>(480);
 
   const [restoredLayout, setRestoredLayout] = useState<TerminalLayout | null>(null);
+  // Terminal tabs owned by App (never reset by view switches / Terminal remounts)
+  const [terminalTabs, setTerminalTabs] = useState<TerminalTabMeta[]>(() => {
+    try {
+      const raw = localStorage.getItem('tell-terminal-layout-v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.tabs) && parsed.tabs.length > 0) return parsed.tabs;
+      }
+    } catch {
+      /* ignore */
+    }
+    return [{ id: 'tab-1', name: '1: dev-shell', panes: [{ id: 'pane-1', title: 'bash #1' }], activePaneId: 'pane-1' }];
+  });
+  const [activeTerminalTabId, setActiveTerminalTabId] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem('tell-terminal-layout-v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed.activeTabId === 'string' && parsed.activeTabId) return parsed.activeTabId;
+      }
+    } catch {
+      /* ignore */
+    }
+    return 'tab-1';
+  });
+  const adoptedRestoredRef = useRef(false);
   const [terminalScrollback, setTerminalScrollback] = useState<Record<string, string>>({});
   const [layoutTick, setLayoutTick] = useState<number>(0);
+
+  const handleTerminalTabsChange = useCallback((tabs: TerminalTabMeta[], activeTabId: string) => {
+    const safeActive = resolveSafeActiveTabId(tabs, activeTabId);
+    setTerminalTabs(tabs);
+    setActiveTerminalTabId(safeActive);
+    layoutRef.current = { tabs, activeTabId: safeActive };
+    setLayoutTick((t) => t + 1);
+  }, []);
+
+  // Adopt the server-restored layout once (merge, never clobber user tabs)
+  useEffect(() => {
+    if (!restoredLayout || !restoredLayout.tabs.length || adoptedRestoredRef.current) return;
+    adoptedRestoredRef.current = true;
+    setTerminalTabs((prev) => {
+      const isVirgin =
+        prev.length === 1 &&
+        prev[0]?.id === 'tab-1' &&
+        prev[0]?.panes.length === 1 &&
+        prev[0]?.panes[0]?.id === 'pane-1';
+      if (isVirgin) {
+        setActiveTerminalTabId(restoredLayout.activeTabId || restoredLayout.tabs[0]?.id || 'tab-1');
+        layoutRef.current = restoredLayout;
+        return restoredLayout.tabs;
+      }
+      return mergeRestoredTerminalLayout(prev, restoredLayout);
+    });
+  }, [restoredLayout]);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [snapshotBusy, setSnapshotBusy] = useState<boolean>(false);
@@ -113,6 +198,7 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
   // Latest "console takes the main area" value, readable from async closures
   const consoleActiveRef = useRef(false);
+  const chatVisibleRefOuter = useRef(true);
 
   const collectSessionPayload = useCallback(() => {
     return {
@@ -228,14 +314,25 @@ export default function App() {
           if (s.systemPrompt) setSystemPrompt(s.systemPrompt);
           if (s.model) setModelAlias(s.model);
           if (Array.isArray(s.messages) && s.messages.length > 0) {
-            setMessages(
-              s.messages.map((m: any) => ({
-                id: crypto.randomUUID(),
-                role: m.role,
-                content: m.content,
-                thought: m.thought,
-              })),
-            );
+            const seeded = s.messages.map((m: any) => ({
+              id: crypto.randomUUID(),
+              role: m.role,
+              content: m.content,
+              thought: m.thought,
+            }));
+            // Seed the active thread only when it is still empty (fresh localStorage)
+            setMessages((prev) => (prev.length > 0 ? prev : seeded));
+            setThreadsState((prev) => {
+              const active = prev.threads.find((t) => t.id === prev.activeId);
+              if (!active || active.messages.length > 0) return prev;
+              const next = prev.threads.map((t) =>
+                t.id === prev.activeId
+                  ? { ...t, messages: seeded, title: threadTitleFromMessages(seeded), updatedAt: new Date().toISOString() }
+                  : t,
+              );
+              saveThreads(next, prev.activeId);
+              return { threads: next, activeId: prev.activeId };
+            });
           }
           if (s.terminal && Array.isArray(s.terminal.tabs) && s.terminal.tabs.length > 0) {
             setRestoredLayout({
@@ -303,6 +400,118 @@ export default function App() {
     appendAgentLine('system', 'Chain stopped by user.');
   };
 
+  // Keep the active thread in sync whenever messages change (title + persistence)
+  const syncThreadMessages = useCallback(
+    (nextMessages: ChatMessage[]) => {
+      setThreadsState((prev) => {
+        const next = prev.threads.map((t) =>
+          t.id === prev.activeId
+            ? {
+                ...t,
+                messages: nextMessages,
+                updatedAt: new Date().toISOString(),
+                title:
+                  nextMessages.length === 0 ? t.title : threadTitleFromMessages(nextMessages),
+              }
+            : t,
+        );
+        saveThreads(next, prev.activeId);
+        return { threads: next, activeId: prev.activeId };
+      });
+    },
+    [],
+  );
+
+  const setMessagesAndSync = useCallback(
+    (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+      setMessages((prev) => {
+        const next = typeof updater === 'function' ? (updater as (p: ChatMessage[]) => ChatMessage[])(prev) : updater;
+        queueMicrotask(() => syncThreadMessages(next));
+        return next;
+      });
+    },
+    [syncThreadMessages],
+  );
+
+  // Thread actions (localStorage)
+  const handleSelectThread = useCallback((id: string) => {
+    setThreadsState((prev) => {
+      const target = prev.threads.find((t) => t.id === id);
+      if (!target) return prev;
+      saveThreads(prev.threads, id);
+      setMessages(target.messages);
+      return { threads: prev.threads, activeId: id };
+    });
+    chainDepthRef.current = 0;
+    setPendingCommand(null);
+  }, []);
+
+  const handleNewThread = useCallback(() => {
+    const now = new Date().toISOString();
+    const t: ChatThread = { id: crypto.randomUUID(), title: 'Nova conversa', createdAt: now, updatedAt: now, messages: [] };
+    setThreadsState((prev) => {
+      const next = [...prev.threads, t];
+      saveThreads(next, t.id);
+      return { threads: next, activeId: t.id };
+    });
+    setMessages([]);
+    chainDepthRef.current = 0;
+    setPendingCommand(null);
+  }, []);
+
+  const handleDuplicateThread = useCallback(() => {
+    setThreadsState((prev) => {
+      const active = prev.threads.find((t) => t.id === prev.activeId);
+      if (!active) return prev;
+      const copy = pureDuplicateThread(active, () => crypto.randomUUID(), new Date().toISOString());
+      const next = [...prev.threads, copy];
+      saveThreads(next, copy.id);
+      setMessages(copy.messages);
+      return { threads: next, activeId: copy.id };
+    });
+  }, []);
+
+  const handleForkThread = useCallback(() => {
+    handleDuplicateThread();
+    appendAgentLine('system', 'Thread forked (cópia integral).');
+  }, [handleDuplicateThread]);
+
+  const handleForkFromMessage = useCallback(
+    (id: string) => {
+      const idx = messages.findIndex((m) => m.id === id);
+      if (idx === -1) return;
+      const now = new Date().toISOString();
+      const fork = pureForkThread(
+        { id: '', title: '', createdAt: now, updatedAt: now, messages },
+        idx,
+        () => crypto.randomUUID(),
+        now,
+      );
+      if (!fork) return;
+      setThreadsState((prev) => {
+        const next = [...prev.threads, fork];
+        saveThreads(next, fork.id);
+        return { threads: next, activeId: fork.id };
+      });
+      setMessages(fork.messages);
+      appendAgentLine('system', 'Thread forked a partir da mensagem selecionada.');
+    },
+    [messages],
+  );
+
+  const handleDeleteThread = useCallback(
+    (id: string) => {
+      setThreadsState((prev) => {
+        const next = pureDeleteThread(prev, id, () => crypto.randomUUID(), new Date().toISOString());
+        saveThreads(next.threads, next.activeId);
+        const activeMsgs = next.threads.find((t) => t.id === next.activeId)?.messages ?? [];
+        setMessages(activeMsgs);
+        return next;
+      });
+    },
+    [],
+  );
+
   // Clear the whole chat: messages + agent feed + any in-flight chain.
   const handleClearChat = () => {
     if (loading) {
@@ -312,7 +521,7 @@ export default function App() {
     }
     chainDepthRef.current = 0;
     setPendingCommand(null);
-    setMessages([]);
+    setMessagesAndSync([]);
     setTerminalLines([]);
   };
 
@@ -323,10 +532,22 @@ export default function App() {
     if (idx === -1 || !messages[idx]) return;
     const edited: ChatMessage = { ...messages[idx], content };
     const updated = [...messages.slice(0, idx), edited];
-    setMessages(updated);
+    setMessagesAndSync(updated);
     appendAgentLine('system', 'Message edited — resending from this point.');
     chainDepthRef.current = 0;
     await runAiTurn(updated);
+  };
+
+  // Retry an assistant message: drop it (and everything after) and regenerate.
+  const handleRetryMessage = async (id: string) => {
+    if (loading) return;
+    const idx = messages.findIndex((m) => m.id === id);
+    if (idx === -1) return;
+    const base = messages.slice(0, idx);
+    setMessagesAndSync(base);
+    appendAgentLine('system', 'Retrying from the selected assistant message.');
+    chainDepthRef.current = 0;
+    await runAiTurn(base);
   };
 
   // Helper: run AI text generation step
@@ -370,7 +591,7 @@ export default function App() {
       };
 
       const updatedMessages = [...currentMessages, assistantMessage];
-      setMessages(updatedMessages);
+      setMessagesAndSync(updatedMessages);
 
       const scripts = extractRunScripts(text);
       if (scripts.length > 0) {
@@ -435,7 +656,7 @@ export default function App() {
     };
 
     const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
+    setMessagesAndSync(updatedMessages);
 
     appendAgentLine('system', `Prompt received: "${userPrompt}"`);
     await runAiTurn(updatedMessages);
@@ -460,7 +681,7 @@ export default function App() {
       const data = await res.json();
       const output = data.output || '';
       appendAgentLine('output', output);
-      if (!consoleActiveRef.current) toast('success', 'Command executed — output in Agent Feed');
+      if (!chatVisibleRefOuter.current) toast('success', 'Command executed — output in Agent Feed');
 
       setRefreshFileTreeTrigger((prev) => prev + 1);
 
@@ -477,7 +698,7 @@ export default function App() {
           content: feedback,
         };
         const updated = [...currentMessages, feedbackMessage];
-        setMessages(updated);
+        setMessagesAndSync(updated);
         await runAiTurn(updated);
       } else {
         setLoading(false);
@@ -514,7 +735,7 @@ export default function App() {
       const data = await res.json();
       const output = data.output || '';
       appendAgentLine('output', output);
-      if (!consoleActiveRef.current) toast('success', 'Command executed — output in Agent Feed');
+      if (!chatVisibleRefOuter.current) toast('success', 'Command executed — output in Agent Feed');
 
       setRefreshFileTreeTrigger((prev) => prev + 1);
 
@@ -526,7 +747,7 @@ export default function App() {
           content: feedback,
         };
         const updated = [...messages, feedbackMessage];
-        setMessages(updated);
+        setMessagesAndSync(updated);
         await runAiTurn(updated);
       } else {
         setLoading(false);
@@ -559,7 +780,7 @@ export default function App() {
         content: feedback,
       };
       const updated = [...messages, feedbackMessage];
-      setMessages(updated);
+      setMessagesAndSync(updated);
       await runAiTurn(updated);
     }
   };
@@ -636,53 +857,95 @@ export default function App() {
     }
   };
 
-  type DragKind = 'settings' | 'terminal' | 'editor';
+  type DragKind = 'settings' | 'terminalV' | 'terminalH' | 'editor';
   const dragStateRef = useRef<{ kind: DragKind; y: number; x: number; h: number; w: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const pendingPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  const onDragMove = useCallback(
-    (e: MouseEvent) => {
-      const st = dragStateRef.current;
-      if (!st) return;
-      if (st.kind === 'editor') {
-        const next = st.w + (st.x - e.clientX);
-        setEditorWidth(Math.min(Math.max(next, 240), Math.floor(window.innerWidth * 0.6)));
-        return;
-      }
-      const next = st.h + (st.y - e.clientY);
-      if (st.kind === 'terminal') {
-        setTerminalHeight(Math.min(Math.max(next, 120), Math.floor(window.innerHeight * 0.6)));
-      } else {
-        setSettingsHeight(Math.min(Math.max(next, 140), window.innerHeight - 120));
-      }
+  // Approx char width for the terminal mono font (12px * scale * 0.6)
+  const termChPx = Math.max(5, Math.round(12 * config.scale * 0.6));
+
+  const applyDragPos = useCallback(() => {
+    const st = dragStateRef.current;
+    const pos = pendingPosRef.current;
+    rafRef.current = null;
+    if (!st || !pos) return;
+    if (st.kind === 'editor') {
+      const next = st.w + (st.x - pos.x);
+      setEditorWidth(Math.min(Math.max(next, 240), Math.floor(window.innerWidth * 0.6)));
+      return;
+    }
+    if (st.kind === 'terminalH') {
+      // Horizontal dock in char units (60–200): left grows dragging right, right grows dragging left
+      const isLeft = terminalPlacement === 'left';
+      const deltaPx = isLeft ? pos.x - st.x : st.x - pos.x;
+      const next = st.w + deltaPx / termChPx;
+      setTerminalWidthCh(clampTerminalWidthCh(next));
+      return;
+    }
+    if (st.kind === 'terminalV') {
+      // Vertical dock: top dock grows dragging down, bottom dock grows dragging up
+      const isTop = terminalPlacement === 'top';
+      const delta = isTop ? pos.y - st.y : st.y - pos.y;
+      const next = st.h + delta;
+      setTerminalHeight(Math.min(Math.max(next, 120), Math.floor(window.innerHeight * 0.8)));
+      return;
+    }
+    const next = st.h + (st.y - pos.y);
+    setSettingsHeight(Math.min(Math.max(next, 140), window.innerHeight - 120));
+  }, [setSettingsHeight, setTerminalHeight, setTerminalWidthCh, termChPx, terminalPlacement]);
+
+  const onPointerMove = useCallback(
+    (e: PointerEvent) => {
+      if (!dragStateRef.current) return;
+      e.preventDefault();
+      pendingPosRef.current = { x: e.clientX, y: e.clientY };
+      if (rafRef.current == null) rafRef.current = requestAnimationFrame(applyDragPos);
     },
-    [setSettingsHeight, setTerminalHeight],
+    [applyDragPos],
   );
 
-  const onDragEnd = useCallback(() => {
+  const endDrag = useCallback(() => {
     dragStateRef.current = null;
-    document.removeEventListener('mousemove', onDragMove);
-    document.removeEventListener('mouseup', onDragEnd);
+    pendingPosRef.current = null;
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', endDrag);
+    document.removeEventListener('pointercancel', endDrag);
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
-  }, [onDragMove]);
+  }, [onPointerMove]);
 
   const startDrag = useCallback(
-    (kind: DragKind, e: React.MouseEvent) => {
+    (kind: DragKind, e: React.PointerEvent | React.MouseEvent) => {
       e.preventDefault();
+      try {
+        (e.target as HTMLElement).setPointerCapture?.((e as React.PointerEvent).pointerId);
+      } catch {
+        /* ignore (mouse fallback has no pointerId) */
+      }
       dragStateRef.current = {
         kind,
         y: e.clientY,
         x: e.clientX,
-        h: kind === 'terminal' ? config.terminalHeight : config.settingsHeight,
-        w: editorWidth,
+        h: kind === 'terminalV' ? config.terminalHeight : config.settingsHeight,
+        w: kind === 'terminalH' ? config.terminalWidthCh : editorWidth,
       };
       document.body.style.userSelect = 'none';
-      document.body.style.cursor = kind === 'editor' ? 'col-resize' : 'row-resize';
-      document.addEventListener('mousemove', onDragMove);
-      document.addEventListener('mouseup', onDragEnd);
+      document.body.style.cursor = kind === 'editor' || kind === 'terminalH' ? 'col-resize' : 'row-resize';
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', endDrag);
+      document.addEventListener('pointercancel', endDrag);
     },
-    [config.terminalHeight, config.settingsHeight, editorWidth, onDragMove, onDragEnd],
+    [config.terminalHeight, config.terminalWidthCh, config.settingsHeight, editorWidth, onPointerMove, endDrag],
   );
+
+  // Legacy mouse fallback (older handlers pass MouseEvent) — delegates to pointer logic
+  const onDragMove = useCallback(() => {}, []);
+  const onDragEnd = useCallback(() => {}, []);
 
   const onSettingsKeyDown = (e: React.KeyboardEvent) => {
     const step = 16;
@@ -692,33 +955,71 @@ export default function App() {
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setSettingsHeight(Math.max(config.settingsHeight - step, 140));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      setSettingsHeight(140);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      setSettingsHeight(window.innerHeight - 120);
     }
   };
 
+  const onTerminalKeyDown = (e: React.KeyboardEvent) => {
+    const step = 16;
+    const stepCh = 4;
+    const isHorizontal = terminalPlacement === 'left' || terminalPlacement === 'right';
+    if (isHorizontal) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const dir = terminalPlacement === 'left' ? 1 : -1;
+        const delta = (e.key === 'ArrowRight' ? 1 : -1) * dir * stepCh;
+        setTerminalWidthCh(clampTerminalWidthCh(config.terminalWidthCh + delta));
+      }
+    } else {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const dir = terminalPlacement === 'top' ? -1 : 1;
+        const delta = (e.key === 'ArrowUp' ? 1 : -1) * dir * step;
+        setTerminalHeight(
+          Math.min(Math.max(config.terminalHeight + delta, 120), Math.floor(window.innerHeight * 0.8)),
+        );
+      }
+    }
+    if (e.key === 'Home') {
+      e.preventDefault();
+      if (isHorizontal) setTerminalWidthCh(60);
+      else setTerminalHeight(120);
+    }
+  };
+
+  const resetSettingsSize = useCallback(() => setSettingsHeight(320), [setSettingsHeight]);
+  const resetTerminalSize = useCallback(() => {
+    setTerminalHeight(280);
+    setTerminalWidthCh(80);
+  }, [setTerminalHeight, setTerminalWidthCh]);
+
   useEffect(() => {
     return () => {
-      document.removeEventListener('mousemove', onDragMove);
-      document.removeEventListener('mouseup', onDragEnd);
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', endDrag);
+      document.removeEventListener('pointercancel', endDrag);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     };
-  }, [onDragMove, onDragEnd]);
+  }, [onPointerMove, endDrag]);
+  void onDragMove;
+  void onDragEnd;
 
   const renderSidebar = (borderSide: 'left' | 'right') => {
     const borderCls = borderSide === 'left' ? 'md:border-r' : 'md:border-l';
     if (sidebarCollapsed) {
+      // Collapsed sidebar is just a thin border (reopen via the navbar toggle).
       return (
         <div
-          className={`${borderCls} border-(--color-border-subtle) w-full md:w-8 shrink-0 h-8 md:h-full flex md:flex-col items-center justify-center bg-(--color-bg-primary) select-none`}
-        >
-          <button
-            onClick={() => setSidebarCollapsed(false)}
-            className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
-            title="Abrir Explorer"
-          >
-            <PanelLeftOpen className="w-4 h-4" />
-          </button>
-        </div>
+          aria-hidden="true"
+          className={`${borderCls} border-(--color-border-subtle) w-full md:w-1 shrink-0 h-1 md:h-full bg-(--color-bg-primary) select-none`}
+        />
       );
     }
     return (
@@ -742,10 +1043,14 @@ export default function App() {
           aria-valuemax={900}
           tabIndex={0}
           onKeyDown={onSettingsKeyDown}
+          onPointerDown={(e) => startDrag('settings', e)}
           onMouseDown={(e) => startDrag('settings', e)}
-          className="shrink-0 h-2 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent)"
-          title="Arraste para redimensionar o painel de Settings"
-        />
+          onDoubleClick={resetSettingsSize}
+          className="relative shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
+          title="Arraste para redimensionar o painel de Settings (duplo-clique reseta)"
+        >
+          <div className="absolute -top-[5px] left-0 right-0 h-[12px] cursor-row-resize" />
+        </div>
 
         <div className="shrink-0 overflow-hidden" style={{ height: config.settingsHeight }}>
           <SettingsPanel
@@ -769,28 +1074,46 @@ export default function App() {
 
   // Terminal visibility model:
   // - terminalVisible: console takes the main area (fullscreen view or chat minimized)
-  // - bottomTerminal: docked console below the chat (bottom placement, chat view)
+  // - isDocked: 4-side dock (left/right/top/bottom) alongside the chat
   // The <Terminal> is rendered exactly once, always mounted — switching views only
-  // changes classes, so closed tabs / cleared panes never resurrect on remount.
+  // changes classes, so closing tabs/clearing panes survives switches.
   const terminalVisible = view === 'terminal' || chatMinimized;
   const chatVisible = !terminalVisible;
-  const bottomTerminal = terminalPlacement === 'bottom' && chatVisible && !terminalMinimized;
-  const chatActive = chatVisible && !terminalMinimized;
-  const consoleActive = terminalVisible || terminalMinimized;
+  const isHorizontalDock =
+    (terminalPlacement === 'left' || terminalPlacement === 'right') && chatVisible && !terminalMinimized;
+  const isVerticalDock =
+    (terminalPlacement === 'top' || terminalPlacement === 'bottom') && chatVisible && !terminalMinimized;
+  const isDocked = isHorizontalDock || isVerticalDock;
+  const isHiddenTerminal = terminalPlacement === 'hidden' && chatVisible;
+  void isHiddenTerminal;
+  const chatActive = chatVisible;
+  const consoleVisible = terminalVisible || isDocked;
+  const consoleActive = consoleVisible || terminalMinimized;
   consoleActiveRef.current = consoleActive;
+  chatVisibleRefOuter.current = chatVisible;
 
   // Badge feedback outside the pane: pending auth + Agent Feed errors
   const agentFeedErrorCount = terminalLines.filter((l) => l.type === 'error').length;
+  const handleAgentFeedToggle = useCallback((open: boolean) => setAgentFeedOpen(open), []);
+
+  const threadsCollapsed = config.threadsCollapsed;
+  const toggleThreadsCollapsed = useCallback(() => setThreadsCollapsed(!threadsCollapsed), [setThreadsCollapsed, threadsCollapsed]);
 
   const navBar = (
     <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
       <div className="flex items-center gap-1.5">
         <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          title={sidebarCollapsed ? 'Abrir Explorer' : 'Minimizar Explorer'}
-          className="p-1.5 border transition-all cursor-pointer bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10"
+          onClick={toggleThreadsCollapsed}
+          title={threadsCollapsed ? 'Mostrar conversas' : 'Esconder conversas'}
+          aria-label={threadsCollapsed ? 'Mostrar conversas' : 'Esconder conversas'}
+          aria-expanded={!threadsCollapsed}
+          className={`p-1.5 border transition-all cursor-pointer ${
+            threadsCollapsed
+              ? 'bg-white/5 border-(--color-border-subtle) text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10'
+              : 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary)'
+          }`}
         >
-          {sidebarCollapsed ? <PanelLeftOpen className="w-3.5 h-3.5" /> : <PanelLeftClose className="w-3.5 h-3.5" />}
+          <MessagesSquareIcon className="w-3.5 h-3.5" />
         </button>
 
         <button
@@ -822,7 +1145,7 @@ export default function App() {
         >
           <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
           <span>Terminal</span>
-          {!consoleActive && (pendingCommand || agentFeedErrorCount > 0) && (
+          {!consoleVisible && (pendingCommand || agentFeedErrorCount > 0) && (
             <span
               title={pendingCommand ? 'Command awaiting authorization' : `${agentFeedErrorCount} Agent Feed error(s)`}
               className="flex items-center justify-center min-w-[14px] h-[14px] px-1 bg-(--color-error) text-white text-[8px] font-black font-mono"
@@ -839,52 +1162,127 @@ export default function App() {
           <span className="w-2 h-2 rounded-full bg-(--color-success) animate-pulse" />
           <strong className="text-(--color-success)">Sandbox Ready</strong>
         </span>
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          title={sidebarCollapsed ? 'Abrir Explorer' : 'Minimizar Explorer'}
+          aria-label={sidebarCollapsed ? 'Abrir Explorer' : 'Minimizar Explorer'}
+          aria-expanded={!sidebarCollapsed}
+          className="p-1.5 border transition-all cursor-pointer shrink-0 bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10"
+        >
+          {sidebarCollapsed ? <PanelLeftOpen className="w-3.5 h-3.5" /> : <PanelLeftClose className="w-3.5 h-3.5" />}
+        </button>
       </div>
     </div>
   );
 
-  const chatAndViewer = (
-    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-      {/* Chat box */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <ChatSection
-          messages={messages}
-          inputPrompt={inputPrompt}
-          onInputChange={(val) => setInputPrompt(val)}
-          onSubmit={handleChatSubmit}
-          onStop={handleStop}
-          loading={loading}
-          modelAlias={modelAlias}
-          onModelAliasChange={(alias) => setModelAlias(alias)}
-          models={models}
-          chainMode={chainMode}
-          onChainModeChange={(val) => setChainMode(val)}
-          autoExecute={autoExecute}
-          onAutoExecuteChange={(val) => setAutoExecute(val)}
-          onSelectSample={(prompt) => {
-            setInputPrompt(prompt);
-          }}
-          cwd={cwd}
-          keysStatus={keysStatus}
-          onMinimize={() => {
-            setView('terminal');
-            setChatMinimized(true);
-          }}
-          onClearChat={handleClearChat}
-          onEditMessage={handleEditMessage}
-        />
-      </div>
+  const agentFeedPanel = (
+    <AgentFeed
+      lines={terminalLines}
+      open={agentFeedOpen}
+      onToggle={handleAgentFeedToggle}
+      onClear={() => setTerminalLines([])}
+      pendingCommand={pendingCommand}
+    />
+  );
 
-      {/* Code Viewer & Editor (collapsible if none selected) */}
-      <div className={`${selectedFilePath ? 'flex-1 lg:max-w-xl' : 'w-0 lg:max-w-0'} flex flex-col shrink-0 transition-all duration-300 overflow-hidden`}>
-        <FileViewer
-          filePath={selectedFilePath}
-          onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
-          onCloseFile={() => setSelectedFilePath(null)}
-        />
-      </div>
+  const threadsPanel = (layout: 'vertical' | 'horizontal') => (
+    <ChatThreads
+      threads={threadsState.threads}
+      activeId={threadsState.activeId}
+      onSelect={handleSelectThread}
+      onNew={handleNewThread}
+      onDuplicate={handleDuplicateThread}
+      onFork={handleForkThread}
+      onDelete={handleDeleteThread}
+      layout={layout}
+      collapsed={threadsCollapsed}
+    />
+  );
+
+  const chatBox = (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <ChatSection
+        messages={messages}
+        inputPrompt={inputPrompt}
+        onInputChange={(val) => setInputPrompt(val)}
+        onSubmit={handleChatSubmit}
+        onStop={handleStop}
+        loading={loading}
+        modelAlias={modelAlias}
+        onModelAliasChange={(alias) => setModelAlias(alias)}
+        models={models}
+        chainMode={chainMode}
+        onChainModeChange={(val) => setChainMode(val)}
+        autoExecute={autoExecute}
+        onAutoExecuteChange={(val) => setAutoExecute(val)}
+        onSelectSample={(prompt) => {
+          setInputPrompt(prompt);
+        }}
+        cwd={cwd}
+        keysStatus={keysStatus}
+        onMinimize={() => {
+          setView('terminal');
+          setChatMinimized(true);
+        }}
+        onClearChat={handleClearChat}
+        onEditMessage={handleEditMessage}
+        onRetryMessage={handleRetryMessage}
+        onForkFromMessage={handleForkFromMessage}
+      />
     </div>
   );
+
+  // Chat column with threads + Agent Feed in their configured positions
+  const chatPane = (
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+      {agentFeedPlacement === 'top' && agentFeedPanel}
+      {threadsSide === 'top' && threadsPanel('horizontal')}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {threadsSide === 'left' && !threadsCollapsed && (
+          <div className="w-56 shrink-0 min-h-0 hidden md:flex">{threadsPanel('vertical')}</div>
+        )}
+        {threadsSide === 'left' && threadsCollapsed && (
+          <div className="shrink-0 min-h-0 hidden md:flex">{threadsPanel('vertical')}</div>
+        )}
+        {agentFeedPlacement === 'left' && (
+          <div className="w-80 shrink-0 min-h-0 hidden lg:flex flex-col border-r border-(--color-border-subtle) overflow-hidden">
+            {agentFeedPanel}
+          </div>
+        )}
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-w-0">
+          {chatBox}
+          {/* Code Viewer & Editor (collapsible if none selected) */}
+          <div className={`${selectedFilePath ? 'flex-1 lg:max-w-xl' : 'w-0 lg:max-w-0'} flex flex-col shrink-0 transition-all duration-300 overflow-hidden`}>
+            <FileViewer
+              filePath={selectedFilePath}
+              onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
+              onCloseFile={() => setSelectedFilePath(null)}
+            />
+          </div>
+        </div>
+        {agentFeedPlacement === 'right' && (
+          <div className="w-80 shrink-0 min-h-0 hidden lg:flex flex-col border-l border-(--color-border-subtle) overflow-hidden">
+            {agentFeedPanel}
+          </div>
+        )}
+        {threadsSide === 'right' && !threadsCollapsed && (
+          <div className="w-56 shrink-0 min-h-0 hidden md:flex">{threadsPanel('vertical')}</div>
+        )}
+        {threadsSide === 'right' && threadsCollapsed && (
+          <div className="shrink-0 min-h-0 hidden md:flex">{threadsPanel('vertical')}</div>
+        )}
+      </div>
+      {/* Mobile fallbacks: threads/feed left-right collapse to top */}
+      <div className="md:hidden">{(threadsSide === 'left' || threadsSide === 'right') && threadsPanel('horizontal')}</div>
+      <div className="lg:hidden">
+        {(agentFeedPlacement === 'left' || agentFeedPlacement === 'right') && agentFeedPanel}
+      </div>
+      {threadsSide === 'bottom' && threadsPanel('horizontal')}
+      {agentFeedPlacement === 'bottom' && agentFeedPanel}
+    </div>
+  );
+
+  const chatAndViewer = chatPane;
 
   // Slim bar shown while the chat is minimized — restores it with one click
   const minimizedChatBar = (
@@ -924,81 +1322,158 @@ export default function App() {
     </div>
   );
 
+  // Console — tabs owned by App (controlled), so Agent↔Terminal switches never reset them.
+  // The <Terminal> element instance is shared between fullscreen and docked wrappers;
+  // state survives because tabs/active live in App + localStorage, not in Terminal remounts.
+  const terminalPane = (
+    <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
+      <Terminal
+        pendingCommand={pendingCommand}
+        onConfirmPending={handleConfirmPending}
+        onSkipPending={handleSkipPending}
+        isExpanded={terminalVisible}
+        onToggleExpand={() => {
+          if (terminalVisible) {
+            setView('chat');
+            setChatMinimized(false);
+          } else {
+            setView('terminal');
+          }
+        }}
+        onHide={isDocked ? () => setTerminalMinimized(true) : undefined}
+        initialLayout={restoredLayout || undefined}
+        initialScrollback={terminalScrollback}
+        tabs={terminalTabs}
+        activeTabId={activeTerminalTabId}
+        onTabsChange={handleTerminalTabsChange}
+        compact={isHorizontalDock}
+        minimalStatus={isHorizontalDock}
+        onLayoutChange={(layout) => {
+          layoutRef.current = layout;
+          setLayoutTick((t) => t + 1);
+        }}
+        cwd={cwd}
+      />
+    </div>
+  );
+
+  const terminalResizeHandleV = isVerticalDock ? (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Redimensionar terminal"
+      aria-valuenow={Math.round(config.terminalHeight)}
+      aria-valuemin={120}
+      aria-valuemax={900}
+      tabIndex={0}
+      onKeyDown={onTerminalKeyDown}
+      onPointerDown={(e) => startDrag('terminalV', e)}
+      onMouseDown={(e) => startDrag('terminalV', e)}
+      onDoubleClick={resetTerminalSize}
+      className="relative shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
+      title="Arraste para redimensionar o terminal (duplo-clique reseta)"
+    >
+      <div className="absolute -top-[5px] left-0 right-0 h-[12px] cursor-row-resize" />
+    </div>
+  ) : null;
+
+  const terminalResizeHandleH = isHorizontalDock ? (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar terminal (60 a 200 caracteres)"
+      aria-valuenow={Math.round(config.terminalWidthCh)}
+      aria-valuemin={60}
+      aria-valuemax={200}
+      tabIndex={0}
+      onKeyDown={onTerminalKeyDown}
+      onPointerDown={(e) => startDrag('terminalH', e)}
+      onMouseDown={(e) => startDrag('terminalH', e)}
+      onDoubleClick={resetTerminalSize}
+      className="relative shrink-0 w-1.5 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
+      title={`Largura ${config.terminalWidthCh}ch — arraste (60–200ch, duplo-clique reseta)`}
+    >
+      <div className="absolute top-0 bottom-0 -left-[5px] w-[12px] cursor-col-resize" />
+    </div>
+  ) : null;
+
+  const dockedTerminalContainer =
+    terminalPlacement === 'left' ? (
+      <div className="shrink-0 flex overflow-hidden border-r border-(--color-border-subtle)" style={{ width: `${config.terminalWidthCh}ch` }}>
+        {terminalPane}
+        {terminalResizeHandleH}
+      </div>
+    ) : terminalPlacement === 'right' ? (
+      <div className="shrink-0 flex overflow-hidden border-l border-(--color-border-subtle)" style={{ width: `${config.terminalWidthCh}ch` }}>
+        {terminalResizeHandleH}
+        {terminalPane}
+      </div>
+    ) : terminalPlacement === 'top' ? (
+      <div className="shrink-0 flex flex-col overflow-hidden border-b border-(--color-border-subtle)" style={{ height: config.terminalHeight }}>
+        {terminalPane}
+        {terminalResizeHandleV}
+      </div>
+    ) : (
+      <div className="shrink-0 flex flex-col overflow-hidden border-t border-(--color-border-subtle)" style={{ height: config.terminalHeight }}>
+        {terminalResizeHandleV}
+        {terminalPane}
+      </div>
+    );
+
   const centerContent = (
     <>
-      {/* Chat area — hidden (kept mounted) while the console takes the main area */}
-      <div className={chatVisible ? 'flex-1 min-h-0 flex overflow-hidden' : 'hidden'}>
-        {chatAndViewer}
-      </div>
-
-      {/* Docked console resize handle (chat view, bottom placement) */}
-      {bottomTerminal && (
-        <div
-          onMouseDown={(e) => startDrag('terminal', e)}
-          className="shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors"
-          title="Arraste para redimensionar o terminal"
-        />
-      )}
-
       {chatMinimized && minimizedChatBar}
       {!terminalVisible && terminalMinimized && consoleMinimizedBar}
 
-      {/* Console — single stable mount; view switching only changes classes */}
-      <div
-        className={
-          terminalVisible
-            ? 'flex-1 min-h-0 flex overflow-hidden border-t border-(--color-border-subtle)'
-            : bottomTerminal
-            ? 'shrink-0 flex border-t border-(--color-border-subtle)'
-            : 'hidden'
-        }
-        style={bottomTerminal ? { height: config.terminalHeight } : undefined}
-      >
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <Terminal
-            pendingCommand={pendingCommand}
-            onConfirmPending={handleConfirmPending}
-            onSkipPending={handleSkipPending}
-            isExpanded={terminalVisible}
-            onToggleExpand={() => {
-              if (terminalVisible) {
-                setView('chat');
-                setChatMinimized(false);
-              } else {
-                setView('terminal');
-              }
-            }}
-            onHide={bottomTerminal ? () => setTerminalMinimized(true) : undefined}
-            agentLines={terminalLines}
-            onAgentLinesClear={() => setTerminalLines([])}
-            initialLayout={restoredLayout || undefined}
-            initialScrollback={terminalScrollback}
-            onLayoutChange={(layout) => {
-              layoutRef.current = layout;
-              setLayoutTick((t) => t + 1);
-            }}
-            cwd={cwd}
-          />
+      {/* Fullscreen console */}
+      {terminalVisible && (
+        <div className="flex-1 min-h-0 flex overflow-hidden border-t border-(--color-border-subtle)">
+          {terminalPane}
+          {/* Editor panel next to the maximized console */}
+          {selectedFilePath && (
+            <>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Redimensionar editor"
+                tabIndex={0}
+                onPointerDown={(e) => startDrag('editor', e)}
+                onMouseDown={(e) => startDrag('editor', e)}
+                className="relative w-1.5 shrink-0 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors touch-none"
+                title="Arraste para redimensionar o editor"
+              >
+                <div className="absolute top-0 bottom-0 -left-[5px] w-[12px] cursor-col-resize" />
+              </div>
+              <div className="h-full shrink-0 overflow-hidden" style={{ width: editorWidth }}>
+                <FileViewer
+                  filePath={selectedFilePath}
+                  onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
+                  onCloseFile={() => setSelectedFilePath(null)}
+                />
+              </div>
+            </>
+          )}
         </div>
+      )}
 
-        {/* Editor panel next to the maximized console */}
-        {terminalVisible && selectedFilePath && (
-          <>
-            <div
-              onMouseDown={(e) => startDrag('editor', e)}
-              className="w-1.5 shrink-0 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors"
-              title="Arraste para redimensionar o editor"
-            />
-            <div className="h-full shrink-0 overflow-hidden" style={{ width: editorWidth }}>
-              <FileViewer
-                filePath={selectedFilePath}
-                onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
-                onCloseFile={() => setSelectedFilePath(null)}
-              />
+      {/* Chat + docked terminal */}
+      {chatVisible && (
+        <>
+          {isHorizontalDock ? (
+            <div className="flex-1 min-h-0 flex overflow-hidden">
+              {terminalPlacement === 'left' && isDocked && dockedTerminalContainer}
+              <div className="flex-1 min-w-0 flex overflow-hidden">{chatAndViewer}</div>
+              {terminalPlacement === 'right' && isDocked && dockedTerminalContainer}
             </div>
-          </>
-        )}
-      </div>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {terminalPlacement === 'top' && isDocked && dockedTerminalContainer}
+              <div className="flex-1 min-h-0 flex overflow-hidden">{chatAndViewer}</div>
+              {terminalPlacement === 'bottom' && isDocked && dockedTerminalContainer}
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 
