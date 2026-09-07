@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, PanelRight, PanelBottom, Maximize2, EyeOff, Focus, RotateCcw, Download, Trash2 } from 'lucide-react';
-import { useTheme, getFontFamily, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
+import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, PanelRight, PanelTop, PanelBottom, Focus, RotateCcw, Download, Trash2, MessagesSquare, ArrowUp, ArrowDown } from 'lucide-react';
+import { useTheme, getFontFamily, AccentPalette, FontChoice, ScaleLevel, LayoutMode, TerminalPlacement, AgentFeedPlacement, ChatThreadsSide } from '../theme.tsx';
 import { apiFetch } from '../api.ts';
 
 interface SessionInfo {
@@ -102,7 +102,7 @@ export default function SettingsPanel({
   const [showSession, setShowSession] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
 
-  const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, setLayout, setCustomSidebarSide, setCustomTerminal, setCustomFont, resetTheme } = useTheme();
+  const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, setLayout, setCustomSidebarSide, setCustomTerminal, setCustomAgentFeed, setCustomChatThreadsSide, setCustomChatWrap, setCustomFont, setTerminalWidthCh, resetTheme } = useTheme();
 
   const downloadSnapshot = async (name: string) => {
     try {
@@ -269,7 +269,7 @@ export default function SettingsPanel({
             {config.layout === 'custom' && (
               <div className="space-y-3 border border-(--color-border-subtle) bg-(--color-bg-primary) p-2.5">
                 <p className="text-[8.5px] text-(--color-text-muted) font-sans leading-snug">
-                  You decide everything: sidebar side, terminal placement. Sizes by drag (settings, terminal, editor) are persisted.
+                  You decide everything: sidebar, terminal, Agent Feed, threads, chat width. Sizes by drag (settings, terminal, editor) are persisted.
                 </p>
                 <div>
                   <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Sidebar</span>
@@ -298,38 +298,129 @@ export default function SettingsPanel({
                 </div>
                 <div>
                   <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Terminal</span>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[9px] font-mono text-(--color-text-muted) shrink-0">
+                      Lateral {config.terminalWidthCh}ch
+                    </span>
+                    <input
+                      type="range"
+                      min={60}
+                      max={200}
+                      step={4}
+                      value={config.terminalWidthCh}
+                      onChange={(e) => setTerminalWidthCh(Number(e.target.value))}
+                      aria-label="Largura do terminal lateral em caracteres (60 a 200)"
+                      title="Largura do terminal lateral (60–200ch)"
+                      className="flex-1 accent-(--color-accent) cursor-pointer"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(
+                      [
+                        { id: 'top', label: 'Top', Icon: PanelTop },
+                        { id: 'bottom', label: 'Bottom', Icon: PanelBottom },
+                        { id: 'left', label: 'Left', Icon: PanelLeft },
+                        { id: 'right', label: 'Right', Icon: PanelRight },
+                      ] as { id: TerminalPlacement; label: string; Icon: typeof PanelLeft }[]
+                    ).map(({ id, label, Icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => setCustomTerminal(id)}
+                        className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                          config.customTerminal === id
+                            ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                            : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                        }`}
+                      >
+                        <Icon className="w-3 h-3" /> {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Agent Feed</span>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(
+                      [
+                        { id: 'top', label: 'Top', Icon: ArrowUp },
+                        { id: 'bottom', label: 'Bottom', Icon: ArrowDown },
+                        { id: 'left', label: 'Left', Icon: PanelLeft },
+                        { id: 'right', label: 'Right', Icon: PanelRight },
+                      ] as { id: AgentFeedPlacement; label: string; Icon: typeof PanelLeft }[]
+                    ).map(({ id, label, Icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => setCustomAgentFeed(id)}
+                        className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                          config.customAgentFeed === id
+                            ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                            : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                        }`}
+                      >
+                        <Icon className="w-3 h-3" /> {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Chat threads</span>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(
+                      [
+                        { id: 'top', label: 'Top', Icon: PanelTop },
+                        { id: 'bottom', label: 'Bottom', Icon: PanelBottom },
+                        { id: 'left', label: 'Left', Icon: PanelLeft },
+                        { id: 'right', label: 'Right', Icon: PanelRight },
+                      ] as { id: ChatThreadsSide; label: string; Icon: typeof PanelLeft }[]
+                    ).map(({ id, label, Icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => setCustomChatThreadsSide(id)}
+                        className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                          config.customChatThreadsSide === id
+                            ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                            : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                        }`}
+                      >
+                        <Icon className="w-3 h-3" /> {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">
+                    Chat — largura da linha (padrão 80)
+                  </span>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[9px] font-mono text-(--color-text-muted) shrink-0">
+                      {config.customChatWrap === 'max' ? 'MAX' : `${config.customChatWrap}ch`}
+                    </span>
+                    <input
+                      type="range"
+                      min={60}
+                      max={200}
+                      step={1}
+                      value={config.customChatWrap === 'max' ? 200 : config.customChatWrap}
+                      onChange={(e) => setCustomChatWrap(Number(e.target.value))}
+                      aria-label="Largura da linha do chat em caracteres (60 a 200)"
+                      title="Largura da linha do chat (60–200ch)"
+                      className="flex-1 accent-(--color-accent) cursor-pointer"
+                    />
                     <button
-                      onClick={() => setCustomTerminal('bottom')}
-                      className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
-                        config.customTerminal === 'bottom'
+                      onClick={() => setCustomChatWrap('max')}
+                      title="Usar todo o espaço livre"
+                      className={`shrink-0 flex items-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                        config.customChatWrap === 'max'
                           ? 'bg-(--color-accent) border-(--color-accent) text-white'
                           : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
                       }`}
                     >
-                      <PanelBottom className="w-3 h-3" /> Bottom
-                    </button>
-                    <button
-                      onClick={() => setCustomTerminal('fullscreen')}
-                      className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
-                        config.customTerminal === 'fullscreen'
-                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
-                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
-                      }`}
-                    >
-                      <Maximize2 className="w-3 h-3" /> Full
-                    </button>
-                    <button
-                      onClick={() => setCustomTerminal('hidden')}
-                      className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
-                        config.customTerminal === 'hidden'
-                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
-                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
-                      }`}
-                    >
-                      <EyeOff className="w-3 h-3" /> Hidden
+                      <MessagesSquare className="w-3 h-3" /> Max
                     </button>
                   </div>
+                  <p className="mt-1 text-[8.5px] text-(--color-text-muted) font-sans leading-snug">
+                    60–200 caracteres · MAX ocupa o espaço livre.
+                  </p>
                 </div>
               </div>
             )}
@@ -653,9 +744,9 @@ function FontPicker({
   const monoAsUi = value === 'JetBrains Mono' && label !== 'Code Font';
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold">
+    <div className="space-y-1 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <span className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold min-w-0">
           <span
             className="inline-flex items-center justify-center w-7 h-7 shrink-0 border border-(--color-border-subtle) bg-(--color-bg-primary) text-(--color-accent) text-sm"
             style={{ fontFamily: previewFamily }}
@@ -663,9 +754,9 @@ function FontPicker({
           >
             Aa
           </span>
-          {label}
+          <span className="truncate">{label}</span>
         </span>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1 justify-end">
           {FONT_OPTIONS.map((f) => (
             <button
               key={f}
@@ -682,7 +773,7 @@ function FontPicker({
         </div>
       </div>
       {monoAsUi && (
-        <p className="text-[8.5px] text-(--color-text-muted) font-sans leading-snug pl-9">
+        <p className="text-[8.5px] text-(--color-text-muted) font-sans leading-snug break-words">
           ⚠ JetBrains Mono is a code font — as UI/display font it hurts reading. Prefer Inter or Space Grotesk.
         </p>
       )}

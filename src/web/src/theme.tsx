@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { clampTerminalWidthCh } from '../terminal-layout.ts';
 
 export type ThemeMode = 'dark' | 'light';
 export type AccentPalette = 'rose' | 'blue' | 'emerald' | 'amber' | 'violet' | 'cyan';
@@ -6,7 +7,10 @@ export type FontChoice = 'Inter' | 'Space Grotesk' | 'JetBrains Mono' | 'Custom'
 export type ScaleLevel = 0.85 | 0.92 | 1.0 | 1.08 | 1.15;
 export type LayoutMode = 'default' | 'focused' | 'custom';
 export type SidebarSide = 'left' | 'right';
-export type TerminalPlacement = 'bottom' | 'fullscreen' | 'hidden';
+export type TerminalPlacement = 'left' | 'right' | 'top' | 'bottom' | 'fullscreen' | 'hidden';
+export type AgentFeedPlacement = 'top' | 'bottom' | 'left' | 'right';
+export type ChatThreadsSide = 'left' | 'right' | 'top' | 'bottom';
+export type ChatWrap = number | 'max';
 
 export interface CustomFonts {
   sans: string;
@@ -24,9 +28,15 @@ export interface ThemeConfig {
   layout: LayoutMode;
   settingsHeight: number;
   terminalHeight: number;
+  terminalWidth: number;
+  terminalWidthCh: number;
   sidebarCollapsed: boolean;
+  threadsCollapsed: boolean;
   customSidebarSide: SidebarSide;
   customTerminal: TerminalPlacement;
+  customAgentFeed: AgentFeedPlacement;
+  customChatThreadsSide: ChatThreadsSide;
+  customChatWrap: ChatWrap;
   customFonts: CustomFonts;
 }
 
@@ -48,9 +58,15 @@ const DEFAULT_THEME: ThemeConfig = {
   layout: 'focused',
   settingsHeight: 320,
   terminalHeight: 280,
+  terminalWidth: 420,
+  terminalWidthCh: 80,
   sidebarCollapsed: false,
+  threadsCollapsed: false,
   customSidebarSide: 'left',
   customTerminal: 'bottom',
+  customAgentFeed: 'top',
+  customChatThreadsSide: 'left',
+  customChatWrap: 80,
   customFonts: DEFAULT_CUSTOM_FONTS,
 };
 
@@ -138,9 +154,15 @@ interface ThemeContextValue {
   setLayout: (l: LayoutMode) => void;
   setSettingsHeight: (h: number) => void;
   setTerminalHeight: (h: number) => void;
+  setTerminalWidth: (w: number) => void;
+  setTerminalWidthCh: (w: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
+  setThreadsCollapsed: (v: boolean) => void;
   setCustomSidebarSide: (v: SidebarSide) => void;
   setCustomTerminal: (v: TerminalPlacement) => void;
+  setCustomAgentFeed: (v: AgentFeedPlacement) => void;
+  setCustomChatThreadsSide: (v: ChatThreadsSide) => void;
+  setCustomChatWrap: (v: ChatWrap) => void;
   setCustomFont: (slot: keyof CustomFonts, value: string) => void;
   resetTheme: () => void;
 }
@@ -156,9 +178,15 @@ const ThemeContext = createContext<ThemeContextValue>({
   setLayout: () => {},
   setSettingsHeight: () => {},
   setTerminalHeight: () => {},
+  setTerminalWidth: () => {},
+  setTerminalWidthCh: () => {},
   setSidebarCollapsed: () => {},
+  setThreadsCollapsed: () => {},
   setCustomSidebarSide: () => {},
   setCustomTerminal: () => {},
+  setCustomAgentFeed: () => {},
+  setCustomChatThreadsSide: () => {},
+  setCustomChatWrap: () => {},
   setCustomFont: () => {},
   resetTheme: () => {},
 });
@@ -219,9 +247,26 @@ function normalizeConfig(raw: any): ThemeConfig {
     if (typeof raw.terminalHeight === 'number' && !Number.isNaN(raw.terminalHeight)) {
       c.terminalHeight = Math.min(Math.max(raw.terminalHeight, 120), 1200);
     }
+    if (typeof raw.terminalWidth === 'number' && !Number.isNaN(raw.terminalWidth)) {
+      c.terminalWidth = Math.min(Math.max(raw.terminalWidth, 240), 1200);
+    }
+    if (typeof raw.terminalWidthCh === 'number' && !Number.isNaN(raw.terminalWidthCh)) {
+      c.terminalWidthCh = clampTerminalWidthCh(raw.terminalWidthCh);
+    } else if (typeof raw.terminalWidth === 'number' && !Number.isNaN(raw.terminalWidth) && raw.terminalWidthCh === undefined) {
+      // Migrate legacy px width to char width (JetBrains Mono ~7px per char at 12px)
+      c.terminalWidthCh = clampTerminalWidthCh(raw.terminalWidth / 7);
+    }
     if (typeof raw.sidebarCollapsed === 'boolean') c.sidebarCollapsed = raw.sidebarCollapsed;
+    if (typeof raw.threadsCollapsed === 'boolean') c.threadsCollapsed = raw.threadsCollapsed;
     if (raw.customSidebarSide === 'left' || raw.customSidebarSide === 'right') c.customSidebarSide = raw.customSidebarSide;
-    if (['bottom', 'fullscreen', 'hidden'].includes(raw.customTerminal)) c.customTerminal = raw.customTerminal;
+    if (['left', 'right', 'top', 'bottom', 'fullscreen', 'hidden'].includes(raw.customTerminal)) c.customTerminal = raw.customTerminal;
+    if (['top', 'bottom', 'left', 'right'].includes(raw.customAgentFeed)) c.customAgentFeed = raw.customAgentFeed;
+    if (['left', 'right', 'top', 'bottom'].includes(raw.customChatThreadsSide)) c.customChatThreadsSide = raw.customChatThreadsSide;
+    if (raw.customChatWrap === 'max') {
+      c.customChatWrap = 'max';
+    } else if (typeof raw.customChatWrap === 'number' && !Number.isNaN(raw.customChatWrap)) {
+      c.customChatWrap = Math.min(Math.max(Math.round(raw.customChatWrap), 60), 200);
+    }
     if (raw.customFonts && typeof raw.customFonts === 'object') {
       c.customFonts.sans = sanitizeCustomFontValue(raw.customFonts.sans, DEFAULT_CUSTOM_FONTS.sans);
       c.customFonts.display = sanitizeCustomFontValue(raw.customFonts.display, DEFAULT_CUSTOM_FONTS.display);
@@ -300,9 +345,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setLayout: (layout) => update({ layout }),
       setSettingsHeight: (settingsHeight) => update({ settingsHeight }),
       setTerminalHeight: (terminalHeight) => update({ terminalHeight }),
+      setTerminalWidth: (terminalWidth) => update({ terminalWidth }),
+      setTerminalWidthCh: (terminalWidthCh) => update({ terminalWidthCh: clampTerminalWidthCh(terminalWidthCh) }),
       setSidebarCollapsed: (sidebarCollapsed) => update({ sidebarCollapsed }),
+      setThreadsCollapsed: (threadsCollapsed) => update({ threadsCollapsed }),
       setCustomSidebarSide: (customSidebarSide) => update({ customSidebarSide }),
       setCustomTerminal: (customTerminal) => update({ customTerminal }),
+      setCustomAgentFeed: (customAgentFeed) => update({ customAgentFeed }),
+      setCustomChatThreadsSide: (customChatThreadsSide) => update({ customChatThreadsSide }),
+      setCustomChatWrap: (customChatWrap) => update({ customChatWrap }),
       setCustomFont: (slot, value) =>
         setConfig((prev) => ({ ...prev, customFonts: { ...prev.customFonts, [slot]: sanitizeFontFamily(value) } })),
       resetTheme: () => setConfig({ ...DEFAULT_THEME, customFonts: { ...DEFAULT_CUSTOM_FONTS } }),
