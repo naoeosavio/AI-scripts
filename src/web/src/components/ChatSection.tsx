@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown, Minimize2 } from 'lucide-react';
+import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown, Minimize2, Pencil, Trash2 } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;
@@ -34,6 +34,9 @@ interface ChatSectionProps {
   onAutoExecuteChange: (val: boolean) => void;
   onSelectSample: (prompt: string) => void;
   onMinimize?: () => void;
+  cwd?: string;
+  onClearChat?: () => void;
+  onEditMessage?: (id: string, content: string) => void;
 }
 
 const SAMPLE_PROMPTS = [
@@ -42,6 +45,13 @@ const SAMPLE_PROMPTS = [
   { label: '🧪 Lint Workspace', prompt: 'run the workspace linter command and report if there are any issues' },
   { label: '🛠️ Sys Information', prompt: 'create a script to print system info and run it' },
 ];
+
+// Project name shown in the empty state (last path segment of cwd)
+export function projectBasename(cwd: string): string {
+  if (!cwd) return 'workspace';
+  const parts = cwd.split('/').filter(Boolean);
+  return parts[parts.length - 1] || 'workspace';
+}
 
 // Vendors that require an API key (vast/local are keyless endpoints)
 const KEYED_VENDORS = new Set(['openai', 'anthropic', 'google', 'xai', 'deepseek', 'fireworks', 'openrouter', 'moonshotai', 'cerebras']);
@@ -73,12 +83,17 @@ export default function ChatSection({
   onAutoExecuteChange,
   onSelectSample,
   onMinimize,
+  cwd,
+  onClearChat,
+  onEditMessage,
 }: ChatSectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -108,6 +123,18 @@ export default function ChatSection({
     } catch {
       /* clipboard unavailable */
     }
+  };
+
+  const handleSaveEdit = (id: string) => {
+    const next = editingValue.trim();
+    if (!next || loading) return;
+    onEditMessage?.(id, next);
+    setEditingId(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingValue('');
   };
 
   // Helper to strip <RUN> tags (case-insensitive) from text response so they don't pollute the visual bubble
@@ -160,7 +187,7 @@ export default function ChatSection({
         <div className="flex flex-wrap items-center gap-4 text-xs">
           {/* Model Selector */}
           <div className="flex items-center gap-2">
-            <span className="text-(--color-text-muted) uppercase tracking-widest text-[9px] font-bold">Model:</span>
+            <span className="text-(--color-text-muted) uppercase tracking-widest text-[10px] font-bold">Model:</span>
             <select
               value={modelAlias}
               onChange={(e) => onModelAliasChange(e.target.value)}
@@ -199,7 +226,7 @@ export default function ChatSection({
               onChange={(e) => onChainModeChange(e.target.checked)}
               className="accent-(--color-accent) rounded-none bg-(--color-bg-secondary) border-(--color-border-medium) focus:ring-0 cursor-pointer w-3.5 h-3.5"
             />
-            <span className="font-bold tracking-wider text-[9px] uppercase">Chain Loop</span>
+            <span className="font-bold tracking-wider text-[10px] uppercase">Chain Loop</span>
           </label>
 
           {/* Yes Auto Execute Toggle */}
@@ -210,13 +237,24 @@ export default function ChatSection({
               onChange={(e) => onAutoExecuteChange(e.target.checked)}
               className="accent-(--color-accent) rounded-none bg-(--color-bg-secondary) border-(--color-border-medium) focus:ring-0 cursor-pointer w-3.5 h-3.5"
             />
-            <span className="font-bold tracking-wider text-[9px] uppercase">Auto-Run (-y)</span>
+            <span className="font-bold tracking-wider text-[10px] uppercase">Auto-Run (-y)</span>
           </label>
 
+          {onClearChat && messages.length > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm('Clear the whole chat? This cannot be undone.')) onClearChat();
+              }}
+              title="Clear chat — apaga todas as mensagens (reintroduzir)"
+              className="p-1.5 border border-(--color-border-subtle) hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-error) transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
           {onMinimize && (
             <button
               onClick={onMinimize}
-              title="Minimizar chat — mostrar console"
+              title="Minimize chat — show terminal"
               className="p-1.5 border border-(--color-border-subtle) hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
             >
               <Minimize2 className="w-3.5 h-3.5" />
@@ -241,31 +279,31 @@ export default function ChatSection({
         </div>
 
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col justify-center max-w-xl mx-auto space-y-8 pt-8 relative z-10">
-            {/* Elegant Top Annotation */}
-            <div className="text-[10px] font-bold tracking-[0.5em] text-(--color-text-muted) uppercase">
-              [ Sandbox Assistant v1.2 ]
+          <div className="h-full flex flex-col justify-center max-w-xl mx-auto space-y-6 pt-6 relative z-10">
+            {/* Project annotation — real workspace name */}
+            <div className="text-[10px] font-bold tracking-[0.3em] text-(--color-text-muted) uppercase truncate" title={cwd}>
+              [ Tell Web — {projectBasename(cwd || '')} ]
             </div>
 
-            {/* Massive Displays Slogan from Design HTML */}
+            {/* Compact hero — stays above the fold on mobile */}
             <div className="space-y-2 select-none">
-              <h1 className="text-7xl sm:text-8xl font-black leading-[0.85] uppercase tracking-tighter -ml-1 text-(--color-text-primary)">
-                Speak<br/>Deeply.
+              <h1 className="text-5xl sm:text-7xl font-black leading-[0.85] uppercase tracking-tighter -ml-1 text-(--color-text-primary)">
+                Tell<br/>Web.
               </h1>
-              <div className="mt-4 flex gap-4 items-center">
-                <div className="h-[1px] w-12 bg-(--color-border-medium)"></div>
-                <p className="text-sm font-light leading-relaxed tracking-tight text-(--color-text-secondary) italic">
-                  Tell your story. The engine is mapping your terminal directives to a synthetic reality in real-time.
+              <div className="mt-3 flex gap-4 items-center">
+                <div className="h-[1px] w-12 bg-(--color-border-medium) shrink-0"></div>
+                <p className="text-sm font-light leading-relaxed tracking-tight text-(--color-text-secondary)">
+                  Ask the agent to run commands, edit files and inspect this workspace. Scripts require your confirmation before executing.
                 </p>
               </div>
             </div>
 
-            {/* Quick Actions / Sample Accelerator styled exactly like the synthesis badges in the design */}
+            {/* Suggested tasks */}
             <div className="space-y-2">
-              <div className="text-[9px] uppercase font-bold tracking-[0.2em] text-(--color-text-muted)">
-                Synthesis Anchors
+              <div className="text-[10px] uppercase font-bold tracking-[0.2em] text-(--color-text-muted)">
+                Suggested tasks
               </div>
-              <div className="grid grid-cols-2 gap-3 pt-1 select-none">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 select-none">
                 {SAMPLE_PROMPTS.map((sample, idx) => (
                   <button
                     key={idx}
@@ -291,7 +329,7 @@ export default function ChatSection({
             return (
               <div
                 key={m.id}
-                className={`flex gap-3 max-w-3xl mx-auto relative z-10 ${isUser ? 'justify-end' : 'justify-start'}`}
+                className={`group/msg flex gap-3 max-w-3xl mx-auto relative z-10 ${isUser ? 'justify-end' : 'justify-start'}`}
               >
                 {/* Assistant Avatar */}
                 {!isUser && (
@@ -319,36 +357,95 @@ export default function ChatSection({
                     </div>
                   )}
 
-                  {cleanContent && (
-                    <div
-                      className={`p-4 rounded-none text-xs leading-relaxed group ${
-                        isUser
-                          ? 'bg-white/5 text-(--color-text-primary) border border-(--color-border-medium) selection:bg-(--color-accent-subtle)'
-                          : 'bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle)'
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap leading-relaxed select-text font-sans">
-                        {isFeedback && m.content.length > FEEDBACK_COLLAPSE_CHARS ? renderFeedbackBody(m.content) : cleanContent}
-                      </div>
-
-                      {/* Run tag notification inside chat bubble */}
-                      {containsRuns && (
-                        <div className="mt-3 flex items-center gap-2 text-[10px] bg-(--color-accent-subtle) text-(--color-accent-text) border border-(--color-accent)/25 px-2.5 py-1.5 rounded-none font-mono tracking-wide select-none">
-                          <Terminal className="w-3.5 h-3.5 shrink-0" />
-                          <span className="uppercase font-bold">SCRIPT GENERATED IN TERMINAL PIPELINE</span>
-                        </div>
-                      )}
-
-                      {/* Copy assistant answers */}
-                      {!isUser && (
+                  {/* Edit mode (user messages, ChatGPT-style) */}
+                  {isUser && editingId === m.id ? (
+                    <div className="bg-white/5 border border-(--color-accent)/60 p-3 space-y-2">
+                      <textarea
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            handleCancelEdit();
+                          }
+                        }}
+                        autoFocus
+                        rows={Math.min(12, Math.max(2, editingValue.split('\n').length + 1))}
+                        className="w-full bg-transparent border-none text-xs text-(--color-text-primary) focus:outline-none leading-relaxed font-sans select-text resize-y custom-scrollbar"
+                      />
+                      <div className="flex items-center justify-end gap-2 select-none">
                         <button
-                          onClick={() => handleCopy(m.id, cleanContent)}
-                          title="Copy answer"
-                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-(--color-text-muted) hover:text-(--color-text-primary) cursor-pointer"
+                          onClick={handleCancelEdit}
+                          className="px-3 py-1 border border-(--color-border-medium) text-[10px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                         >
-                          {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                          Cancel
                         </button>
-                      )}
+                        <button
+                          onClick={() => handleSaveEdit(m.id)}
+                          disabled={!editingValue.trim() || loading}
+                          className="flex items-center gap-1.5 px-3 py-1 bg-(--color-text-primary) hover:bg-(--color-accent) text-(--color-bg-primary) hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer"
+                        >
+                          <Send className="w-3 h-3" />
+                          Save & Resend
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    cleanContent && (
+                      <div
+                        className={`p-4 rounded-none text-xs leading-relaxed group ${
+                          isUser
+                            ? 'bg-white/5 text-(--color-text-primary) border border-(--color-border-medium) selection:bg-(--color-accent-subtle)'
+                            : 'bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle)'
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap leading-relaxed select-text font-sans">
+                          {isFeedback && m.content.length > FEEDBACK_COLLAPSE_CHARS ? renderFeedbackBody(m.content) : cleanContent}
+                        </div>
+
+                        {/* Run tag notification inside chat bubble */}
+                        {containsRuns && (
+                          <div className="mt-3 flex items-center gap-2 text-[10px] bg-(--color-accent-subtle) text-(--color-accent-text) border border-(--color-accent)/25 px-2.5 py-1.5 rounded-none font-mono tracking-wide select-none">
+                            <Terminal className="w-3.5 h-3.5 shrink-0" />
+                            <span className="uppercase font-bold">SCRIPT GENERATED IN TERMINAL PIPELINE</span>
+                          </div>
+                        )}
+
+                        {/* Copy assistant answers */}
+                        {!isUser && (
+                          <button
+                            onClick={() => handleCopy(m.id, cleanContent)}
+                            title="Copy answer"
+                            className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-(--color-text-muted) hover:text-(--color-text-primary) cursor-pointer"
+                          >
+                            {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        )}
+                      </div>
+                    )
+                  )}
+
+                  {/* User message actions (copy / edit, ChatGPT-style hover row) */}
+                  {isUser && !isFeedback && onEditMessage && editingId !== m.id && (
+                    <div className="flex justify-end gap-1 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100 transition-opacity select-none">
+                      <button
+                        onClick={() => handleCopy(m.id, m.content)}
+                        title="Copy message"
+                        className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                      >
+                        {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingId(m.id);
+                          setEditingValue(m.content);
+                        }}
+                        disabled={loading}
+                        title="Edit message — resends the conversation from this point"
+                        className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -394,8 +491,8 @@ export default function ChatSection({
             disabled={loading}
             rows={1}
             maxLength={MAX_INPUT_CHARS}
-            placeholder={loading ? "PROCESSOR EXECUTING LOOP..." : "PROMPT CONSOLE FOR DIRECTIVES... (Shift+Enter = newline)"}
-            className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-white/35 focus:outline-none leading-relaxed font-sans select-text tracking-wide resize-none max-h-32 overflow-y-auto custom-scrollbar"
+            placeholder={loading ? 'Executing… (Stop button cancels the chain)' : 'Ask the agent… (Shift+Enter = newline)'}
+            className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-(--color-text-secondary) focus:outline-none leading-relaxed font-sans select-text resize-none max-h-32 overflow-y-auto custom-scrollbar"
           />
           {inputPrompt.length > 0 && (
             <span className="text-[8px] font-mono text-(--color-text-muted) pb-2 shrink-0 select-none">

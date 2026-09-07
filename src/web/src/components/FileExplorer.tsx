@@ -177,14 +177,14 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
         <div className="flex items-center gap-2">
           <Folder className="w-4 h-4 text-(--color-accent)" />
           <span className="text-[10px] font-display font-black tracking-[0.25em] uppercase text-(--color-text-secondary)">
-            Explorer Nodes
+            Files
           </span>
         </div>
         <button
           onClick={fetchFiles}
           disabled={loading}
           className="p-1 rounded-none text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/5 disabled:opacity-50 transition-colors cursor-pointer"
-          title="Sync Node Directory"
+          title="Sync files"
         >
           {loading ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-(--color-accent)" />
@@ -202,7 +202,7 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter nodes..."
+            placeholder="Filter files..."
             className="w-full bg-transparent border-none py-0.5 text-[10px] text-(--color-text-primary) placeholder-white/30 focus:outline-none font-mono"
           />
           {query && (

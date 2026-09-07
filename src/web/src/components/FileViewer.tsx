@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Save, AlertCircle, CheckCircle, Edit3, X, Loader2, Download, RefreshCw, FileWarning } from 'lucide-react';
 import { apiFetch } from '../api.ts';
+import { useToast } from './Toast.tsx';
 
 interface FileViewerProps {
   filePath: string | null;
@@ -12,6 +13,7 @@ interface FileViewerProps {
 const PREVIEW_CHAR_LIMIT = 500 * 1024;
 
 export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: FileViewerProps) {
+  const { toast } = useToast();
   const [content, setContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [mtime, setMtime] = useState<number | null>(null);
@@ -101,17 +103,21 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
         setIsEditing(false);
         setConflict(false);
         setMessage({ text: 'File saved successfully!', type: 'success' });
+        toast('success', `File saved: ${filePath}`);
         onSaveCompleted();
         setTimeout(() => setMessage(null), 3000);
       } else if (res.status === 409) {
         if (typeof data.mtime === 'number') setMtime(data.mtime);
         setConflict(true);
         setMessage({ text: data.error || 'File changed externally. Reload before saving.', type: 'error' });
+        toast('error', data.error || 'File changed externally — reload before saving.');
       } else {
         setMessage({ text: data.error || 'Failed to save file', type: 'error' });
+        toast('error', data.error || 'Failed to save file');
       }
     } catch (error: any) {
       setMessage({ text: error.message || 'Error saving file', type: 'error' });
+      toast('error', error.message || 'Error saving file');
     } finally {
       setSaving(false);
     }
@@ -143,7 +149,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-(--color-bg-primary) text-(--color-text-muted) border-l border-(--color-border-subtle) select-none">
         <Edit3 className="w-8 h-8 opacity-20 mb-3 text-(--color-accent)" />
         <p className="text-[10px] font-display font-bold tracking-[0.2em] uppercase text-center max-w-xs">
-          Select a node from explorer to modify workspace stream
+          Select a file to edit
         </p>
       </div>
     );
@@ -161,7 +167,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
           </span>
           {isEditing && (
             <span className="text-[9px] bg-(--color-accent) text-white px-2 py-0.5 font-bold uppercase tracking-widest">
-              Live Write
+              Unsaved changes
             </span>
           )}
         </div>

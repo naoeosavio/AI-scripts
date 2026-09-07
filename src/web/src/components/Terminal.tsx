@@ -21,6 +21,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useTheme, xtermThemeFromConfig } from '../theme.tsx';
+import { useToast } from './Toast.tsx';
 
 export interface TerminalLine {
   type: 'input' | 'output' | 'error' | 'system' | 'request';
@@ -90,6 +91,7 @@ function XtermPane({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstConnectRef = useRef(true);
   const { config } = useTheme();
+  const { toast } = useToast();
 
   useEffect(() => {
     const el = containerRef.current;
@@ -102,7 +104,7 @@ function XtermPane({
 
     const term = new Xterm({
       cursorBlink: true,
-      fontSize: 12,
+      fontSize: Math.round(12 * config.scale),
       fontFamily: '"JetBrains Mono", "Fira Code", Menlo, Consolas, monospace',
       scrollback: 5000,
       allowProposedApi: true,
@@ -176,6 +178,8 @@ function XtermPane({
         if (retryAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
           retryAttemptsRef.current += 1;
           retryTimerRef.current = setTimeout(connect, 1000 * retryAttemptsRef.current);
+        } else {
+          toast('error', `Terminal disconnected (pane "${pane.title}") — reconnection failed. Switch tabs to retry.`);
         }
       };
       ws.onerror = () => {
@@ -294,10 +298,21 @@ function XtermPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane.id]);
 
-  // Update the xterm color theme live when the user changes appearance prefs
+  // Update the xterm color theme / font size live when the user changes appearance prefs
   useEffect(() => {
     try {
-      if (termRef.current) termRef.current.options.theme = xtermThemeFromConfig(config);
+      if (termRef.current) {
+        termRef.current.options.theme = xtermThemeFromConfig(config);
+        const nextSize = Math.round(12 * config.scale);
+        if (termRef.current.options.fontSize !== nextSize) {
+          termRef.current.options.fontSize = nextSize;
+          try {
+            fitRef.current?.fit();
+          } catch {
+            /* ignore */
+          }
+        }
+      }
     } catch (err) {
       console.error('[terminal] failed to update xterm theme:', err);
     }
@@ -381,6 +396,19 @@ export default function Terminal({
   const handleConnectionChange = useCallback((paneId: string, connected: boolean) => {
     setPaneConn((prev) => (prev[paneId] === connected ? prev : { ...prev, [paneId]: connected }));
   }, []);
+
+  // Auto-open the Agent Feed when something needs attention:
+  // a pending command authorization or a freshly arrived error line.
+  const lastErrorCountRef = useRef(0);
+  useEffect(() => {
+    const errors = agentLines.filter((l) => l.type === 'error').length;
+    if (errors > lastErrorCountRef.current) setAgentFeedOpen(true);
+    lastErrorCountRef.current = errors;
+  }, [agentLines]);
+
+  useEffect(() => {
+    if (pendingCommand) setAgentFeedOpen(true);
+  }, [pendingCommand]);
 
   // Adopt a restored session layout when it arrives. Merge by id so it works
   // even if the user already touched the layout (added tabs/panes) before the
@@ -612,7 +640,7 @@ export default function Terminal({
         <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pr-2">
           <div className="flex items-center gap-1.5 font-display font-black text-[10px] tracking-widest uppercase text-(--color-text-secondary) shrink-0 pr-1 select-none">
             <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent) animate-pulse" />
-            <span className="inline font-bold text-(--color-text-secondary)">Console Interface</span>
+            <span className="inline font-bold text-(--color-text-secondary)">Terminal</span>
             {isExpanded && (
               <span className="text-(--color-text-secondary) bg-white/10 px-1.5 py-0.5 text-[9px] font-bold tracking-wider">
                 Maximized
@@ -623,15 +651,33 @@ export default function Terminal({
             </span>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div role="tablist" aria-label="Terminal sessions" className="flex items-center gap-1">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
               const isRenaming = renamingTabId === tab.id;
               return (
                 <div
                   key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
+                  tabIndex={isActive ? 0 : -1}
+                  data-tab-id={tab.id}
                   onClick={() => setActiveTabId(tab.id)}
                   onDoubleClick={(e) => handleStartRenameTab(tab, e)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const idx = tabs.findIndex((t) => t.id === tab.id);
+                      const next = e.key === 'ArrowRight' ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
+                      const nextTab = tabs[next];
+                      if (!nextTab) return;
+                      setActiveTabId(nextTab.id);
+                      requestAnimationFrame(() => {
+                        document.querySelector<HTMLElement>(`[data-tab-id="${nextTab.id}"]`)?.focus();
+                      });
+                    }
+                  }}
                   className={`flex items-center gap-1.5 px-3 py-1 text-[10px] border font-mono transition-all cursor-pointer ${
                     isActive
                       ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) font-bold shadow-sm'

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, PanelRight, PanelBottom, Maximize2, EyeOff, Focus, RotateCcw, Download, Trash2 } from 'lucide-react';
-import { useTheme, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
+import { useTheme, getFontFamily, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
 import { apiFetch } from '../api.ts';
 
 interface SessionInfo {
@@ -70,12 +70,12 @@ const ACCENT_OPTIONS: { id: AccentPalette; label: string; color: string }[] = [
 ];
 
 const FONT_OPTIONS: FontChoice[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Custom'];
-const SCALE_OPTIONS: { label: string; value: ScaleLevel }[] = [
-  { label: '0.85', value: 0.85 },
-  { label: '0.92', value: 0.92 },
-  { label: '1.0',  value: 1.0 },
-  { label: '1.08', value: 1.08 },
-  { label: '1.15', value: 1.15 },
+const SCALE_OPTIONS: { short: string; label: string; value: ScaleLevel }[] = [
+  { short: 'XS', label: '0.85', value: 0.85 },
+  { short: 'S',  label: '0.92', value: 0.92 },
+  { short: 'M',  label: '1.0',  value: 1.0 },
+  { short: 'L',  label: '1.08', value: 1.08 },
+  { short: 'XL', label: '1.15', value: 1.15 },
 ];
 const LAYOUT_OPTIONS: { id: LayoutMode; label: string; desc: string }[] = [
   { id: 'default', label: 'Classic', desc: 'Explorer left · bottom terminal' },
@@ -225,13 +225,17 @@ export default function SettingsPanel({
                   <button
                     key={s.value}
                     onClick={() => setScale(s.value)}
-                    className={`flex-1 px-2 py-1 text-[9px] font-mono border cursor-pointer transition-colors ${
+                    title={`Scale ${s.label}x`}
+                    className={`flex-1 px-1 py-1 border cursor-pointer transition-colors ${
                       config.scale === s.value
                         ? 'bg-(--color-accent) border-(--color-accent) text-white font-bold'
                         : 'bg-(--color-bg-primary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
                     }`}
                   >
-                    {s.label}
+                    <span className="flex flex-col items-center leading-none gap-0.5">
+                      <span className="text-[9px] font-display font-black uppercase">{s.short}</span>
+                      <span className="text-[8px] font-mono opacity-70">{s.label}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -645,10 +649,22 @@ function FontPicker({
   customValue: string;
   onCustomChange: (v: string) => void;
 }) {
+  const previewFamily = getFontFamily(value, customValue);
+  const monoAsUi = value === 'JetBrains Mono' && label !== 'Code Font';
+
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold">{label}</span>
+        <span className="flex items-center gap-2 text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold">
+          <span
+            className="inline-flex items-center justify-center w-7 h-7 shrink-0 border border-(--color-border-subtle) bg-(--color-bg-primary) text-(--color-accent) text-sm"
+            style={{ fontFamily: previewFamily }}
+            title={previewFamily}
+          >
+            Aa
+          </span>
+          {label}
+        </span>
         <div className="flex gap-1">
           {FONT_OPTIONS.map((f) => (
             <button
@@ -665,6 +681,11 @@ function FontPicker({
           ))}
         </div>
       </div>
+      {monoAsUi && (
+        <p className="text-[8.5px] text-(--color-text-muted) font-sans leading-snug pl-9">
+          ⚠ JetBrains Mono is a code font — as UI/display font it hurts reading. Prefer Inter or Space Grotesk.
+        </p>
+      )}
       {value === 'Custom' && (
         <input
           type="text"
