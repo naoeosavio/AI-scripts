@@ -80,7 +80,7 @@ export default function App() {
   const { toast } = useToast();
   // Layout resolution: presets pin sidebar/terminal; 'custom' reads user-decided config
   const sidebarSide: 'left' | 'right' =
-    config.layout === 'focused' ? 'right' : config.layout === 'default' ? 'left' : config.customSidebarSide;
+    config.layout === 'focused' ? 'right' : config.layout === 'default' ? 'right' : config.customSidebarSide;
   const terminalPlacement: 'left' | 'right' | 'top' | 'bottom' | 'fullscreen' | 'hidden' =
     config.layout === 'focused' ? 'fullscreen' : config.layout === 'default' ? 'bottom' : config.customTerminal;
   const agentFeedPlacement: 'top' | 'bottom' | 'left' | 'right' =

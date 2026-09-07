@@ -200,12 +200,12 @@ export default function ChatSection({
               value={modelAlias}
               onChange={(e) => onModelAliasChange(e.target.value)}
               title={selectedModel && !hasKey(selectedModel.vendor) ? 'sem chave' : undefined}
-              className="bg-(--color-bg-secondary) border border-(--color-border-medium) rounded-none px-2.5 py-1 text-(--color-text-primary) font-mono text-[10px] focus:outline-none focus:border-(--color-text-primary) transition-colors cursor-pointer uppercase"
+              className="bg-(--color-bg-secondary) border border-(--color-border-medium) rounded-none px-2.5 py-1 text-(--color-text-primary) font-mono text-[10px] focus:outline-none focus:border-(--color-text-primary) transition-colors cursor-pointer"
             >
               {models.map((m) => (
                 <option key={m.alias} value={m.alias} disabled={!hasKey(m.vendor)} className="bg-(--color-bg-primary)">
-                  {m.alias} : {m.vendor.toUpperCase()}
-                  {!hasKey(m.vendor) ? ' (sem chave)' : m.fast ? ' · fast' : m.thinking && m.thinking !== 'none' ? ` · ${m.thinking}` : ''}
+                  {m.alias} : {m.model}
+                  {!hasKey(m.vendor) ? ' (sem chave)' : m.fast ? ' · fast' : m.thinking && m.thinking !== 'none' ? ` · ${m.thinking}` : ' · none'}
                 </option>
               ))}
             </select>

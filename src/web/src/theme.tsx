@@ -40,7 +40,7 @@ export interface ThemeConfig {
   customFonts: CustomFonts;
 }
 
-const STORAGE_KEY = 'theme-config-v2';
+const STORAGE_KEY = 'theme-config-v3';
 
 const DEFAULT_CUSTOM_FONTS: CustomFonts = {
   sans: 'Inter',
@@ -55,16 +55,16 @@ const DEFAULT_THEME: ThemeConfig = {
   fontDisplay: 'Space Grotesk',
   fontMono: 'JetBrains Mono',
   scale: 1.0,
-  layout: 'focused',
+  layout: 'default',
   settingsHeight: 320,
   terminalHeight: 280,
   terminalWidth: 420,
   terminalWidthCh: 80,
   sidebarCollapsed: false,
   threadsCollapsed: false,
-  customSidebarSide: 'left',
+  customSidebarSide: 'right',
   customTerminal: 'bottom',
-  customAgentFeed: 'top',
+  customAgentFeed: 'bottom',
   customChatThreadsSide: 'left',
   customChatWrap: 80,
   customFonts: DEFAULT_CUSTOM_FONTS,
@@ -259,9 +259,9 @@ function normalizeConfig(raw: any): ThemeConfig {
     if (typeof raw.sidebarCollapsed === 'boolean') c.sidebarCollapsed = raw.sidebarCollapsed;
     if (typeof raw.threadsCollapsed === 'boolean') c.threadsCollapsed = raw.threadsCollapsed;
     if (raw.customSidebarSide === 'left' || raw.customSidebarSide === 'right') c.customSidebarSide = raw.customSidebarSide;
-    if (['left', 'right', 'top', 'bottom', 'fullscreen', 'hidden'].includes(raw.customTerminal)) c.customTerminal = raw.customTerminal;
+    if (['top', 'bottom', 'left', 'right', 'fullscreen', 'hidden'].includes(raw.customTerminal)) c.customTerminal = raw.customTerminal;
     if (['top', 'bottom', 'left', 'right'].includes(raw.customAgentFeed)) c.customAgentFeed = raw.customAgentFeed;
-    if (['left', 'right', 'top', 'bottom'].includes(raw.customChatThreadsSide)) c.customChatThreadsSide = raw.customChatThreadsSide;
+    if (['top', 'bottom', 'left', 'right'].includes(raw.customChatThreadsSide)) c.customChatThreadsSide = raw.customChatThreadsSide;
     if (raw.customChatWrap === 'max') {
       c.customChatWrap = 'max';
     } else if (typeof raw.customChatWrap === 'number' && !Number.isNaN(raw.customChatWrap)) {

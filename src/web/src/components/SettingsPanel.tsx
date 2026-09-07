@@ -78,7 +78,7 @@ const SCALE_OPTIONS: { short: string; label: string; value: ScaleLevel }[] = [
   { short: 'XL', label: '1.15', value: 1.15 },
 ];
 const LAYOUT_OPTIONS: { id: LayoutMode; label: string; desc: string }[] = [
-  { id: 'default', label: 'Classic', desc: 'Explorer left · bottom terminal' },
+  { id: 'default', label: 'Classic', desc: 'Explorer right · bottom terminal' },
   { id: 'focused', label: 'Focused', desc: 'Explorer right · fullscreen terminal · chat maximized' },
   { id: 'custom', label: 'Custom', desc: 'You decide: sidebar side · terminal placement' },
 ];
@@ -438,42 +438,6 @@ export default function SettingsPanel({
         )}
       </div>
 
-      {/* Model Keys Status */}
-      <div className="bg-(--color-bg-secondary) p-4 rounded-none border border-(--color-border-subtle) space-y-3.5">
-        <div className="flex items-center gap-2 font-display font-black text-[10px] tracking-widest text-(--color-text-primary) uppercase">
-          <Key className="w-3.5 h-3.5 text-(--color-accent)" />
-          <span>Vendor Credentials</span>
-        </div>
-
-        <p className="text-[10px] text-(--color-text-muted) leading-relaxed font-sans">
-          To activate auxiliary APIs, set the provider keys in your local{' '}
-          <span className="text-(--color-text-secondary) font-mono">.env</span> file (e.g.{' '}
-          <span className="text-(--color-text-secondary) font-mono">OPENAI_API_KEY=...</span>) and restart the server.
-        </p>
-
-        <div className="grid grid-cols-2 gap-2 text-[10px]">
-          {Object.entries(keysStatus).map(([vendor, active]) => (
-            <div
-              key={vendor}
-              className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono"
-            >
-              <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">
-                {VENDOR_LABELS[vendor] || vendor}
-              </span>
-              {active ? (
-                <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
-                  Active
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
-                  Missing
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* System Prompt Customizer */}
       <div className="bg-(--color-bg-secondary) rounded-none border border-(--color-border-subtle)">
         <button
@@ -698,6 +662,42 @@ export default function SettingsPanel({
             </table>
           </div>
         )}
+      </div>
+      
+      {/* Model Keys Status */}
+      <div className="bg-(--color-bg-secondary) p-4 rounded-none border border-(--color-border-subtle) space-y-3.5">
+        <div className="flex items-center gap-2 font-display font-black text-[10px] tracking-widest text-(--color-text-primary) uppercase">
+          <Key className="w-3.5 h-3.5 text-(--color-accent)" />
+          <span>Vendor Credentials</span>
+        </div>
+
+        <p className="text-[10px] text-(--color-text-muted) leading-relaxed font-sans">
+          To activate auxiliary APIs, set the provider keys in your local{' '}
+          <span className="text-(--color-text-secondary) font-mono">.env</span> file (e.g.{' '}
+          <span className="text-(--color-text-secondary) font-mono">OPENAI_API_KEY=...</span>) and restart the server.
+        </p>
+
+        <div className="grid grid-cols-2 gap-2 text-[10px]">
+          {Object.entries(keysStatus).map(([vendor, active]) => (
+            <div
+              key={vendor}
+              className="flex items-center justify-between p-2.5 rounded-none bg-(--color-bg-primary) border border-(--color-border-subtle) font-mono"
+            >
+              <span className="font-bold uppercase tracking-wider text-(--color-text-secondary)">
+                {VENDOR_LABELS[vendor] || vendor}
+              </span>
+              {active ? (
+                <span className="flex items-center gap-1 text-(--color-accent) font-bold text-[9px] uppercase tracking-wider">
+                  Active
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-(--color-text-muted) text-[9px] uppercase tracking-wider">
+                  Missing
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Quick Guide */}
