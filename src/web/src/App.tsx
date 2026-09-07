@@ -573,6 +573,35 @@ export default function App() {
     }
   };
 
+  const handleRestoreSnapshot = async (name: string) => {
+    try {
+      const res = await apiFetch(`/api/session/history/${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (!data.session) throw new Error(data.error || 'Snapshot not found');
+      const put = await apiFetch('/api/session', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: data.session }),
+      });
+      if (!put.ok) throw new Error('Restore failed');
+      appendAgentLine('system', `Snapshot restored: ${name} — reloading.`);
+      window.location.reload();
+    } catch (error: any) {
+      appendAgentLine('error', `Restore failed: ${error.message}`);
+    }
+  };
+
+  const handleDeleteSnapshot = async (name: string) => {
+    try {
+      const res = await apiFetch(`/api/session/history/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (Array.isArray(data.history)) setHistory(data.history);
+      else appendAgentLine('error', data.error || 'Delete failed');
+    } catch (error: any) {
+      appendAgentLine('error', `Delete failed: ${error.message}`);
+    }
+  };
+
   const onDragMove = useCallback((e: MouseEvent) => {
     if (!dragStartRef.current) return;
     const delta = dragStartRef.current.y - e.clientY;
@@ -635,6 +664,8 @@ export default function App() {
           snapshotBusy={snapshotBusy}
           history={history}
           onRefreshHistory={refreshHistory}
+          onRestoreSnapshot={handleRestoreSnapshot}
+          onDeleteSnapshot={handleDeleteSnapshot}
         />
       </div>
     </div>
@@ -702,6 +733,7 @@ export default function App() {
           onSelectSample={(prompt) => {
             setInputPrompt(prompt);
           }}
+          keysStatus={keysStatus}
         />
       </div>
 

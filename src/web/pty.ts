@@ -213,6 +213,27 @@ export function attachTerminalServer(server: http.Server, opts: TerminalServerOp
         } catch {
           /* ignore */
         }
+      } else if (msg.type === 'destroy') {
+        // Client closed the pane/tab on purpose: kill the PTY immediately
+        // instead of waiting for the 5min GC.
+        if (session.timer) clearTimeout(session.timer);
+        sessions.delete(session.paneId);
+        for (const client of session.clients) {
+          if (client !== ws && client.readyState === client.OPEN) {
+            client.close(4404, 'pane destroyed');
+          }
+        }
+        session.clients.clear();
+        try {
+          session.pty.kill();
+        } catch {
+          /* already dead */
+        }
+        try {
+          ws.close(4404, 'pane destroyed');
+        } catch {
+          /* ignore */
+        }
       }
     });
 

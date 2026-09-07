@@ -24,6 +24,7 @@ import {
   saveSession,
   createSnapshot,
   listHistory,
+  historyDir,
   listGitChanges,
   type TellSession,
 } from './session';
@@ -221,7 +222,7 @@ app.get('/api/status', (req, res) => {
   }
 });
 
-// API: Read file content
+// API: Read file content (returns mtime for optimistic-concurrency save checks)
 app.get('/api/file', (req, res) => {
   const filePath = req.query.path as string;
   if (!filePath) {
@@ -240,16 +241,45 @@ app.get('/api/file', (req, res) => {
     if (!fs.existsSync(resolvedPath)) {
       return res.status(404).json({ error: 'File not found' });
     }
+    const stat = fs.statSync(resolvedPath);
+    if (stat.size > 10 * 1024 * 1024) {
+      return res.status(413).json({ error: 'File too large to preview (>10MB). Use download instead.' });
+    }
     const content = fs.readFileSync(resolvedPath, 'utf8');
-    res.json({ content });
+    res.json({ content, mtime: stat.mtimeMs, size: stat.size });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// API: Save file content
+// API: Download raw file bytes (used for binary/large files)
+app.get('/api/file/raw', (req, res) => {
+  const filePath = req.query.path as string;
+  if (!filePath) {
+    return res.status(400).json({ error: 'File path is required' });
+  }
+
+  const resolvedPath = resolveWithin(CWD, filePath);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: Directory traversal blocked' });
+  }
+  if (isSensitiveRelPath(path.relative(CWD, resolvedPath))) {
+    return res.status(403).json({ error: 'Access denied: Sensitive file' });
+  }
+
+  try {
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    res.download(resolvedPath);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Save file content (409 when the file changed on disk since it was loaded)
 app.post('/api/save-file', (req, res) => {
-  const { path: filePath, content } = req.body;
+  const { path: filePath, content, expectedMtime } = req.body;
   if (!filePath || content === undefined) {
     return res.status(400).json({ error: 'Path and content are required' });
   }
@@ -263,10 +293,20 @@ app.post('/api/save-file', (req, res) => {
   }
 
   try {
+    if (expectedMtime != null && fs.existsSync(resolvedPath)) {
+      const stat = fs.statSync(resolvedPath);
+      if (stat.mtimeMs !== Number(expectedMtime)) {
+        return res.status(409).json({
+          error: 'File was modified externally since it was loaded. Reload before saving.',
+          mtime: stat.mtimeMs,
+        });
+      }
+    }
     fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
     fs.writeFileSync(resolvedPath, content, 'utf8');
     serverState.filesChanged.add(filePath);
-    res.json({ success: true });
+    const stat = fs.statSync(resolvedPath);
+    res.json({ success: true, mtime: stat.mtimeMs });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -343,6 +383,8 @@ app.get('/api/models', (req, res) => {
     xai: !!process.env.XAI_API_KEY,
     deepseek: !!process.env.DEEPSEEK_API_KEY,
     fireworks: !!process.env.FIREWORKS_API_KEY,
+    cerebras: !!process.env.CEREBRAS_API_KEY,
+    moonshotai: !!process.env.MOONSHOTAI_API_KEY,
     openrouter: !!process.env.OPENROUTER_API_KEY,
   };
 
@@ -486,6 +528,42 @@ app.put('/api/session', (req, res) => {
 // API: List session history snapshots
 app.get('/api/session/history', (req, res) => {
   res.json({ history: listHistory(CWD) });
+});
+
+// API: Read a single snapshot (used for restore and download)
+app.get('/api/session/history/:name', (req, res) => {
+  const name = path.basename(String(req.params.name || ''));
+  if (!name.endsWith('.json')) {
+    return res.status(400).json({ error: 'Invalid snapshot name' });
+  }
+  const full = path.join(historyDir(CWD), name);
+  if (!fs.existsSync(full)) {
+    return res.status(404).json({ error: 'Snapshot not found' });
+  }
+  try {
+    const session = JSON.parse(fs.readFileSync(full, 'utf8'));
+    res.json({ name, session });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Delete a snapshot
+app.delete('/api/session/history/:name', (req, res) => {
+  const name = path.basename(String(req.params.name || ''));
+  if (!name.endsWith('.json')) {
+    return res.status(400).json({ error: 'Invalid snapshot name' });
+  }
+  const full = path.join(historyDir(CWD), name);
+  if (!fs.existsSync(full)) {
+    return res.status(404).json({ error: 'Snapshot not found' });
+  }
+  try {
+    fs.unlinkSync(full);
+    res.json({ success: true, history: listHistory(CWD) });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // API: Force a snapshot (and refresh git changes before persisting)
