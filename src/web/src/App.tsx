@@ -30,6 +30,13 @@ Prompt-injection policy:
 IMPORTANT: Be CONCISE and DIRECT in your answers.
 `.trim();
 
+// Max <RUN> chain iterations per user prompt before the loop stops itself.
+const MAX_CHAIN_ITERATIONS = 8;
+// Output tail (bytes, roughly) fed back to the LLM in "Executed command" feedback messages.
+const FEEDBACK_OUTPUT_LIMIT = 4 * 1024;
+// beforeunload keepalive body budget: browsers reject keepalive bodies > 64KB.
+const UNLOAD_BODY_LIMIT = 60 * 1024;
+
 interface SessionInfo {
   keysUsed: string[];
   filesChanged: string[];
@@ -50,7 +57,9 @@ export default function App() {
   const [inputPrompt, setInputPrompt] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [modelAlias, setModelAlias] = useState<string>('l');
-  const [models, setModels] = useState<Array<{ alias: string; spec: string; vendor: string; model: string }>>([]);
+  const [models, setModels] = useState<
+    Array<{ alias: string; spec: string; vendor: string; model: string; thinking: string; fast: boolean }>
+  >([]);
   const [keysStatus, setKeysStatus] = useState({
     google: false,
     openai: false,
@@ -83,6 +92,8 @@ export default function App() {
 
   const layoutRef = useRef<TerminalLayout | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chainDepthRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const collectSessionPayload = useCallback(() => {
     return {
@@ -115,15 +126,30 @@ export default function App() {
     };
   }, [persistSession, sessionReady, messages, systemPrompt, modelAlias, layoutTick]);
 
-  // Best-effort final save on page unload
+  // Best-effort final save on page unload. Trim the payload until it fits the
+  // keepalive body budget (drop old messages first, then all of them); skip if still oversized.
   useEffect(() => {
     const handler = () => {
       try {
+        const payload = collectSessionPayload();
+        let body: string | null = null;
+        for (const keep of [Infinity, 20, 10, 4, 0]) {
+          const candidate =
+            keep === Infinity
+              ? payload
+              : { ...payload, session: { ...payload.session, messages: payload.session.messages.slice(-keep) } };
+          const json = JSON.stringify(candidate);
+          if (new Blob([json]).size <= UNLOAD_BODY_LIMIT) {
+            body = json;
+            break;
+          }
+        }
+        if (!body) return;
         apiFetch('/api/session', {
           method: 'PUT',
           keepalive: true,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(collectSessionPayload()),
+          body,
         });
       } catch {
         /* ignore */
@@ -181,8 +207,8 @@ export default function App() {
           if (s.model) setModelAlias(s.model);
           if (Array.isArray(s.messages) && s.messages.length > 0) {
             setMessages(
-              s.messages.map((m: any, i: number) => ({
-                id: `restored-${i}-${Date.now()}`,
+              s.messages.map((m: any) => ({
+                id: crypto.randomUUID(),
                 role: m.role,
                 content: m.content,
                 thought: m.thought,
@@ -236,19 +262,42 @@ export default function App() {
     setTerminalLines((prev) => [...prev.slice(-199), { type, text }]);
   };
 
-  // Helper: extract runs from model response
+  // Helper: extract runs from model response (case-insensitive: <RUN>, <run>, <Run>...)
   const extractRunScripts = (text: string): string[] => {
     const sanitized = text.replace(/```[\s\S]*?```/g, '');
-    return [...sanitized.matchAll(/<RUN>([\s\S]*?)<\/RUN>/g)].map((m) => m[1]?.trim()).filter(Boolean);
+    return [...sanitized.matchAll(/<run>([\s\S]*?)<\/run>/gi)].map((m) => m[1]?.trim()).filter(Boolean);
+  };
+
+  const isAbortError = (error: unknown): boolean =>
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError') ||
+    !!abortRef.current?.signal.aborted;
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    chainDepthRef.current = 0;
+    setLoading(false);
+    appendAgentLine('system', 'Chain stopped by user.');
   };
 
   // Helper: run AI text generation step
   const runAiTurn = async (currentMessages: ChatMessage[]) => {
+    if (chainDepthRef.current >= MAX_CHAIN_ITERATIONS) {
+      chainDepthRef.current = 0;
+      setLoading(false);
+      appendAgentLine('system', `Chain stopped: max iterations (${MAX_CHAIN_ITERATIONS}) reached.`);
+      return;
+    }
+    chainDepthRef.current += 1;
     setLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const res = await apiFetch('/api/tell', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           messages: currentMessages.map((m) => ({ role: m.role, content: m.content })),
           modelAlias,
@@ -266,7 +315,7 @@ export default function App() {
       const thought = data.reasoning || null;
 
       const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
+        id: crypto.randomUUID(),
         role: 'assistant',
         content: text,
         thought: thought,
@@ -277,9 +326,16 @@ export default function App() {
 
       const scripts = extractRunScripts(text);
       if (scripts.length > 0) {
+        if (scripts.length > 1) {
+          appendAgentLine('system', `+${scripts.length - 1} additional script(s) ignored (only the first one runs).`);
+        }
         const script = scripts[0];
         appendAgentLine('system', `Agent requested script execution:\n${script}`);
 
+        if (controller.signal.aborted) {
+          setLoading(false);
+          return;
+        }
         if (autoExecute) {
           await executeAndContinue(script, updatedMessages);
         } else {
@@ -290,9 +346,16 @@ export default function App() {
         setLoading(false);
       }
     } catch (error: any) {
+      if (isAbortError(error)) {
+        appendAgentLine('system', 'Generation stopped by user.');
+        setLoading(false);
+        return;
+      }
       console.error(error);
       appendAgentLine('error', `AI Generation Error: ${error.message}`);
       setLoading(false);
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
   };
 
@@ -302,9 +365,10 @@ export default function App() {
 
     const userPrompt = inputPrompt;
     setInputPrompt('');
+    chainDepthRef.current = 0;
 
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: crypto.randomUUID(),
       role: 'user',
       content: userPrompt,
     };
@@ -343,13 +407,20 @@ export default function App() {
     }
   };
 
+  // Output tail fed back to the LLM (keeps huge outputs from exploding the context)
+  const truncateOutputTail = (text: string): string =>
+    text.length > FEEDBACK_OUTPUT_LIMIT ? `…[truncated]\n${text.slice(-FEEDBACK_OUTPUT_LIMIT)}` : text;
+
   // Execute and continue chain loop (Auto mode)
   const executeAndContinue = async (script: string, currentMessages: ChatMessage[]) => {
+    const controller = abortRef.current ?? new AbortController();
+    abortRef.current = controller;
     appendAgentLine('input', script);
     try {
       const res = await apiFetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ command: script }),
       });
       const data = await res.json();
@@ -358,10 +429,15 @@ export default function App() {
 
       setRefreshFileTreeTrigger((prev) => prev + 1);
 
+      if (controller.signal.aborted) {
+        setLoading(false);
+        return;
+      }
+
       if (chainMode) {
-        const feedback = `Executed command:\n${script}\nOutput:\n${output}`;
+        const feedback = `Executed command:\n${script}\nOutput:\n${truncateOutputTail(output)}`;
         const feedbackMessage: ChatMessage = {
-          id: `feedback-${Date.now()}`,
+          id: crypto.randomUUID(),
           role: 'user',
           content: feedback,
         };
@@ -372,8 +448,15 @@ export default function App() {
         setLoading(false);
       }
     } catch (error: any) {
+      if (isAbortError(error)) {
+        appendAgentLine('system', 'Execution stopped by user.');
+        setLoading(false);
+        return;
+      }
       appendAgentLine('error', `Execution failure: ${error.message}`);
       setLoading(false);
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
   };
 
@@ -381,12 +464,15 @@ export default function App() {
     const command = editedCommand.trim() || pendingCommand || '';
     setPendingCommand(null);
     setLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     appendAgentLine('input', command);
     try {
       const res = await apiFetch('/api/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ command }),
       });
       const data = await res.json();
@@ -396,9 +482,9 @@ export default function App() {
       setRefreshFileTreeTrigger((prev) => prev + 1);
 
       if (chainMode) {
-        const feedback = `Executed command:\n${command}\nOutput:\n${output}`;
+        const feedback = `Executed command:\n${command}\nOutput:\n${truncateOutputTail(output)}`;
         const feedbackMessage: ChatMessage = {
-          id: `feedback-${Date.now()}`,
+          id: crypto.randomUUID(),
           role: 'user',
           content: feedback,
         };
@@ -409,8 +495,15 @@ export default function App() {
         setLoading(false);
       }
     } catch (error: any) {
+      if (isAbortError(error)) {
+        appendAgentLine('system', 'Execution stopped by user.');
+        setLoading(false);
+        return;
+      }
       appendAgentLine('error', `Execution failure: ${error.message}`);
       setLoading(false);
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
   };
 
@@ -423,7 +516,7 @@ export default function App() {
       setLoading(true);
       const feedback = `Skipped by user:\n${cmd}`;
       const feedbackMessage: ChatMessage = {
-        id: `feedback-${Date.now()}`,
+        id: crypto.randomUUID(),
         role: 'user',
         content: feedback,
       };
@@ -434,6 +527,9 @@ export default function App() {
   };
 
   const handleClearChat = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    chainDepthRef.current = 0;
     setMessages([]);
     setPendingCommand(null);
     setLoading(false);
@@ -594,6 +690,7 @@ export default function App() {
           inputPrompt={inputPrompt}
           onInputChange={(val) => setInputPrompt(val)}
           onSubmit={handleChatSubmit}
+          onStop={handleStop}
           loading={loading}
           modelAlias={modelAlias}
           onModelAliasChange={(alias) => setModelAlias(alias)}
