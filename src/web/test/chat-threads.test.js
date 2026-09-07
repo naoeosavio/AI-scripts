@@ -41,16 +41,16 @@ describe('threadTitleFromMessages', () => {
 
   it('truncates long prompts and falls back for empties', () => {
     assert.ok(threadTitleFromMessages([msg('user', 'x'.repeat(100))]).endsWith('…'));
-    assert.strictEqual(threadTitleFromMessages([]), 'Nova conversa');
+    assert.strictEqual(threadTitleFromMessages([]), 'New conversation');
   });
 });
 
 describe('duplicateThread', () => {
-  it('copies messages with fresh ids and a (cópia) title', () => {
+  it('copies messages with fresh ids and a (copy) title', () => {
     const src = thread('topic', [msg('user', 'hi', 'm1')]);
     const copy = duplicateThread(src, rid, NOW);
     assert.notStrictEqual(copy.id, src.id);
-    assert.strictEqual(copy.title, 'topic (cópia)');
+    assert.strictEqual(copy.title, 'topic (copy)');
     assert.strictEqual(copy.messages.length, 1);
     assert.notStrictEqual(copy.messages[0].id, 'm1');
     assert.strictEqual(copy.messages[0].content, 'hi');

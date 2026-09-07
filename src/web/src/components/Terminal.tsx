@@ -671,8 +671,8 @@ export default function Terminal({
               <select
                 value={activeTabId}
                 onChange={(e) => setActiveTabIdEffective(e.target.value)}
-                aria-label="Selecionar sessão do terminal"
-                title="Selecionar sessão do terminal"
+                aria-label="Select terminal session"
+                title="Select terminal session"
                 className="min-w-0 max-w-[160px] truncate bg-(--color-bg-elevated) border border-(--color-accent)/60 text-(--color-text-primary) font-mono text-[10px] px-1.5 py-1 focus:outline-none cursor-pointer"
               >
                 {tabs.map((tab, idx) => (
@@ -750,18 +750,18 @@ export default function Terminal({
                       }}
                       autoFocus
                       onFocus={(e) => e.target.select()}
-                      aria-label="Nome da TAB do terminal"
+                      aria-label="Terminal TAB name"
                       className="bg-(--color-bg-primary) text-(--color-text-primary) px-1 py-0.5 border border-(--color-accent) text-[10px] w-24 focus:outline-none"
                     />
                   ) : (
                     <>
-                      <span className="truncate max-w-[100px]" title="Duplo-clique ou lápis para renomear">
+                      <span className="truncate max-w-[100px]" title="Double-click or pencil to rename">
                         {tab.name}
                       </span>
                       <button
                         onClick={(e) => handleStartRenameTab(tab, e)}
-                        title="Renomear TAB"
-                        aria-label={`Renomear TAB ${tab.name}`}
+                        title="Rename TAB"
+                        aria-label={`Rename TAB ${tab.name}`}
                         className={`p-0.5 transition-colors cursor-pointer ${
                           isActive
                             ? 'text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10'
@@ -815,7 +815,7 @@ export default function Terminal({
           {!compact && (
             <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-(--color-border-subtle) p-0.5">
               <span className="hidden md:inline px-2 py-0.5 text-[10px] text-(--color-text-muted) uppercase font-bold tracking-wider select-none">
-                1 sessão = 1 tab
+                1 session = 1 tab
               </span>
             </div>
           )}
@@ -840,7 +840,7 @@ export default function Terminal({
             <button
               onClick={onHide}
               className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
-              title="Minimizar console (esconder)"
+              title="Minimize console (hide)"
             >
               <Minus className="w-3.5 h-3.5" />
             </button>

@@ -199,13 +199,13 @@ export default function ChatSection({
             <select
               value={modelAlias}
               onChange={(e) => onModelAliasChange(e.target.value)}
-              title={selectedModel && !hasKey(selectedModel.vendor) ? 'sem chave' : undefined}
+              title={selectedModel && !hasKey(selectedModel.vendor) ? 'no key' : undefined}
               className="bg-(--color-bg-secondary) border border-(--color-border-medium) rounded-none px-2.5 py-1 text-(--color-text-primary) font-mono text-[10px] focus:outline-none focus:border-(--color-text-primary) transition-colors cursor-pointer"
             >
               {models.map((m) => (
                 <option key={m.alias} value={m.alias} disabled={!hasKey(m.vendor)} className="bg-(--color-bg-primary)">
                   {m.alias} : {m.model}
-                  {!hasKey(m.vendor) ? ' (sem chave)' : m.fast ? ' · fast' : m.thinking && m.thinking !== 'none' ? ` · ${m.thinking}` : ' · none'}
+                  {!hasKey(m.vendor) ? ' (no key)' : m.fast ? ' · fast' : m.thinking && m.thinking !== 'none' ? ` · ${m.thinking}` : ' · none'}
                 </option>
               ))}
             </select>
@@ -253,7 +253,7 @@ export default function ChatSection({
               onClick={() => {
                 if (window.confirm('Clear the whole chat? This cannot be undone.')) onClearChat();
               }}
-              title="Clear chat — apaga todas as mensagens (reintroduzir)"
+              title="Clear chat — deletes all messages"
               className="p-1.5 border border-(--color-border-subtle) hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-error) transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -362,7 +362,7 @@ export default function ChatSection({
                       <button
                         onClick={() => setFeedbackOpen((prev) => ({ ...prev, [m.id]: !open }))}
                         aria-expanded={open}
-                        title={open ? 'Esconder resultado' : 'Expandir resultado'}
+                        title={open ? 'Hide result' : 'Expand result'}
                         className="w-full flex items-center gap-1.5 p-4 text-[10px] font-bold uppercase tracking-wider text-(--color-accent-text) cursor-pointer hover:bg-white/5 transition-colors select-none"
                       >
                         <Terminal className="w-3.5 h-3.5 shrink-0" />
@@ -386,16 +386,16 @@ export default function ChatSection({
                             {parsed.output}
                           </pre>
                         ) : (
-                          <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">(sem output)</p>
+                          <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">(no output)</p>
                         )
                       ) : (
-                        <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">Comando ignorado pelo usuário.</p>
+                        <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">Command skipped by user.</p>
                       )}
                       <div className="mt-2 flex justify-end gap-1.5 select-none">
                         {parsed && parsed.command && (
                           <button
                             onClick={() => handleCopy(`${m.id}-cmd`, parsed.command)}
-                            title="Copiar comando"
+                            title="Copy command"
                             className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                           >
                             {copiedId === `${m.id}-cmd` ? (
@@ -403,13 +403,13 @@ export default function ChatSection({
                             ) : (
                               <Copy className="w-3 h-3" />
                             )}
-                            {copiedId === `${m.id}-cmd` ? 'Copiado' : 'Cmd'}
+                            {copiedId === `${m.id}-cmd` ? 'Copied' : 'Cmd'}
                           </button>
                         )}
                         {parsed?.kind === 'executed' && parsed.output && (
                           <button
                             onClick={() => handleCopy(`${m.id}-out`, parsed.output)}
-                            title="Copiar resultado"
+                            title="Copy result"
                             className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                           >
                             {copiedId === `${m.id}-out` ? (
@@ -417,7 +417,7 @@ export default function ChatSection({
                             ) : (
                               <Copy className="w-3 h-3" />
                             )}
-                            {copiedId === `${m.id}-out` ? 'Copiado' : 'Output'}
+                            {copiedId === `${m.id}-out` ? 'Copied' : 'Output'}
                           </button>
                         )}
                       </div>
@@ -516,7 +516,7 @@ export default function ChatSection({
                             <button
                               onClick={() => setExpandedScriptId(scriptExpanded ? null : m.id)}
                               aria-expanded={scriptExpanded}
-                              title={scriptExpanded ? 'Minimizar script' : 'Expandir para ver o script e o resultado'}
+                              title={scriptExpanded ? 'Minimize script' : 'Expand to view the script and result'}
                               className="w-full flex items-center gap-2 text-[10px] text-(--color-accent-text) px-2.5 py-1.5 font-mono tracking-wide cursor-pointer hover:bg-white/5 transition-colors"
                             >
                               <Terminal className="w-3.5 h-3.5 shrink-0" />
@@ -544,7 +544,7 @@ export default function ChatSection({
                                     <div className="flex justify-end">
                                       <button
                                         onClick={() => handleCopy(`${m.id}-script-${idx}`, script)}
-                                        title="Copiar script"
+                                        title="Copy script"
                                         className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                                       >
                                         {copiedId === `${m.id}-script-${idx}` ? (
@@ -552,14 +552,14 @@ export default function ChatSection({
                                         ) : (
                                           <Copy className="w-3 h-3" />
                                         )}
-                                        {copiedId === `${m.id}-script-${idx}` ? 'Copiado' : 'Copiar'}
+                                        {copiedId === `${m.id}-script-${idx}` ? 'Copied' : 'Copy'}
                                       </button>
                                     </div>
                                   </div>
                                 ))}
                                 <div className="space-y-1.5 border-t border-(--color-accent)/25 pt-2">
                                   <div className="text-[9px] font-bold uppercase tracking-wider text-(--color-text-muted)">
-                                    Resultado do comando
+                                    Command result
                                   </div>
                                   {linkedFeedback?.kind === 'executed' ? (
                                     linkedFeedback.output ? (
@@ -570,7 +570,7 @@ export default function ChatSection({
                                         <div className="flex justify-end">
                                           <button
                                             onClick={() => handleCopy(`${m.id}-output`, linkedFeedback.output)}
-                                            title="Copiar resultado"
+                                            title="Copy result"
                                             className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                                           >
                                             {copiedId === `${m.id}-output` ? (
@@ -578,18 +578,18 @@ export default function ChatSection({
                                             ) : (
                                               <Copy className="w-3 h-3" />
                                             )}
-                                            {copiedId === `${m.id}-output` ? 'Copiado' : 'Copiar resultado'}
+                                            {copiedId === `${m.id}-output` ? 'Copied' : 'Copy result'}
                                           </button>
                                         </div>
                                       </>
                                     ) : (
-                                      <p className="text-[10px] text-(--color-text-muted) font-sans">(sem output)</p>
+                                      <p className="text-[10px] text-(--color-text-muted) font-sans">(no output)</p>
                                     )
                                   ) : linkedFeedback?.kind === 'skipped' ? (
-                                    <p className="text-[10px] text-(--color-text-muted) font-sans">Comando ignorado pelo usuário.</p>
+                                    <p className="text-[10px] text-(--color-text-muted) font-sans">Command skipped by user.</p>
                                   ) : (
                                     <p className="text-[10px] text-(--color-text-muted) font-sans">
-                                      Aguardando execução — o output aparece aqui após autorizar e rodar o comando.
+                                      Waiting for execution — output will appear here after you authorize and run the command.
                                     </p>
                                   )}
                                 </div>                              </div>
@@ -605,7 +605,7 @@ export default function ChatSection({
                     <div className="flex justify-start gap-1 opacity-100 md:opacity-0 md:group-hover/msg:opacity-100 focus-within:opacity-100 transition-opacity select-none">
                       <button
                         onClick={() => handleCopy(m.id, cleanContent)}
-                        title="Copiar resposta"
+                        title="Copy response"
                         className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                       >
                         {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
@@ -614,7 +614,7 @@ export default function ChatSection({
                         <button
                           onClick={() => onRetryMessage(m.id)}
                           disabled={loading}
-                          title="Tentar de novo — regenera a partir desta resposta"
+                          title="Retry — regenerate from this response"
                           className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
                         >
                           <RotateCcw className="w-3 h-3" />
@@ -623,7 +623,7 @@ export default function ChatSection({
                       {onForkFromMessage && (
                         <button
                           onClick={() => onForkFromMessage(m.id)}
-                          title="Fork a partir desta mensagem"
+                          title="Fork from this message"
                           className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                         >
                           <GitFork className="w-3 h-3" />
@@ -680,7 +680,7 @@ export default function ChatSection({
           className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 bg-(--color-accent) text-white text-[9px] font-black uppercase tracking-widest shadow-lg cursor-pointer hover:bg-(--color-accent-hover) transition-colors"
         >
           <ArrowDown className="w-3 h-3" />
-          novo
+          new
         </button>
       )}
 

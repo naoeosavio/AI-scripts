@@ -7,5 +7,5 @@ test/.tmp/
 *.log
 .env*
 !.env.example
-# Sessão local do sandbox (nunca versionar: contém scrollbacks e histórico)
+# Local sandbox session (never commit: contains scrollbacks and history)
 .tell/

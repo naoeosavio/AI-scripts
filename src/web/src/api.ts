@@ -24,7 +24,7 @@ export function wsAuthQuery(): string {
 }
 
 async function requestToken(): Promise<string> {
-  const entered = window.prompt('Tell Web: informe o token de acesso (TELL_TOKEN)');
+  const entered = window.prompt('Tell Web: enter the access token (TELL_TOKEN)');
   const token = (entered || '').trim();
   setStoredToken(token);
   return token;

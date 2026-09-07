@@ -49,7 +49,7 @@ export default function AgentFeed({ lines, open, onToggle, onClear, pendingComma
         <button
           onClick={() => onToggle(!open)}
           aria-expanded={open}
-          title={open ? 'Minimizar Agent Feed' : 'Expandir Agent Feed'}
+          title={open ? 'Minimize Agent Feed' : 'Expand Agent Feed'}
           className="flex items-center gap-1.5 text-[9px] font-display font-black uppercase tracking-widest text-(--color-accent) cursor-pointer"
         >
           {open ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
@@ -97,13 +97,13 @@ export default function AgentFeed({ lines, open, onToggle, onClear, pendingComma
                       onClick={() => setExpandedIdx(expanded ? null : i)}
                       className="mt-0.5 text-[9px] uppercase tracking-wider text-(--color-accent-text) hover:text-(--color-accent) cursor-pointer"
                     >
-                      {expanded ? 'minimizar' : 'expandir'}
+                      {expanded ? 'collapse' : 'expand'}
                     </button>
                   )}
                 </div>
                 <button
                   onClick={() => handleCopy(i, line.text)}
-                  title="Copiar linha do feed"
+                  title="Copy feed line"
                   className="shrink-0 p-1 text-(--color-text-muted) hover:text-(--color-text-primary) opacity-0 group-hover/feed:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
                 >
                   {copiedIdx === i ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}

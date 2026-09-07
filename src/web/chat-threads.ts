@@ -19,8 +19,8 @@ export function isChainFeedbackContent(content: string): boolean {
 
 export function threadTitleFromMessages(messages: ChatMessage[]): string {
   const firstUser = messages.find((m) => m.role === 'user' && !isChainFeedbackContent(m.content));
-  const raw = (firstUser?.content ?? messages[0]?.content ?? 'Nova conversa').trim().replace(/\s+/g, ' ');
-  return raw.length > THREAD_TITLE_MAX ? `${raw.slice(0, THREAD_TITLE_MAX)}…` : raw || 'Nova conversa';
+  const raw = (firstUser?.content ?? messages[0]?.content ?? 'New conversation').trim().replace(/\s+/g, ' ');
+  return raw.length > THREAD_TITLE_MAX ? `${raw.slice(0, THREAD_TITLE_MAX)}…` : raw || 'New conversation';
 }
 
 export function cloneMessagesWithIds(messages: ChatMessage[], randomId: () => string): ChatMessage[] {
@@ -44,7 +44,7 @@ export function duplicateThread(
 ): ChatThread {
   return makeThread(
     cloneMessagesWithIds(active.messages, randomId),
-    `${active.title} (cópia)`,
+    `${active.title} (copy)`,
     randomId,
     nowIso,
   );
@@ -79,7 +79,7 @@ export function deleteThreadFromList(
 ): ThreadList {
   const filtered = list.threads.filter((t) => t.id !== id);
   if (filtered.length === 0) {
-    const fresh = makeThread([], 'Nova conversa', randomId, nowIso);
+    const fresh = makeThread([], 'New conversation', randomId, nowIso);
     return { threads: [fresh], activeId: fresh.id };
   }
   const activeId = list.activeId === id ? (filtered[0]?.id ?? '') : list.activeId;

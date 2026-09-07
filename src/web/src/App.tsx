@@ -448,7 +448,7 @@ export default function App() {
 
   const handleNewThread = useCallback(() => {
     const now = new Date().toISOString();
-    const t: ChatThread = { id: crypto.randomUUID(), title: 'Nova conversa', createdAt: now, updatedAt: now, messages: [] };
+    const t: ChatThread = { id: crypto.randomUUID(), title: 'New conversation', createdAt: now, updatedAt: now, messages: [] };
     setThreadsState((prev) => {
       const next = [...prev.threads, t];
       saveThreads(next, t.id);
@@ -473,7 +473,7 @@ export default function App() {
 
   const handleForkThread = useCallback(() => {
     handleDuplicateThread();
-    appendAgentLine('system', 'Thread forked (cópia integral).');
+    appendAgentLine('system', 'Thread forked (full copy).');
   }, [handleDuplicateThread]);
 
   const handleForkFromMessage = useCallback(
@@ -494,7 +494,7 @@ export default function App() {
         return { threads: next, activeId: fork.id };
       });
       setMessages(fork.messages);
-      appendAgentLine('system', 'Thread forked a partir da mensagem selecionada.');
+      appendAgentLine('system', 'Thread forked from the selected message.');
     },
     [messages],
   );
@@ -1037,7 +1037,7 @@ export default function App() {
         <div
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Redimensionar painel de Settings"
+          aria-label="Resize Settings panel"
           aria-valuenow={Math.round(config.settingsHeight)}
           aria-valuemin={140}
           aria-valuemax={900}
@@ -1047,7 +1047,7 @@ export default function App() {
           onMouseDown={(e) => startDrag('settings', e)}
           onDoubleClick={resetSettingsSize}
           className="relative shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
-          title="Arraste para redimensionar o painel de Settings (duplo-clique reseta)"
+          title="Drag to resize the Settings panel (double-click resets)"
         >
           <div className="absolute -top-[5px] left-0 right-0 h-[12px] cursor-row-resize" />
         </div>
@@ -1104,8 +1104,8 @@ export default function App() {
       <div className="flex items-center gap-1.5">
         <button
           onClick={toggleThreadsCollapsed}
-          title={threadsCollapsed ? 'Mostrar conversas' : 'Esconder conversas'}
-          aria-label={threadsCollapsed ? 'Mostrar conversas' : 'Esconder conversas'}
+          title={threadsCollapsed ? 'Show conversations' : 'Hide conversations'}
+          aria-label={threadsCollapsed ? 'Show conversations' : 'Hide conversations'}
           aria-expanded={!threadsCollapsed}
           className={`p-1.5 border transition-all cursor-pointer ${
             threadsCollapsed
@@ -1164,8 +1164,8 @@ export default function App() {
         </span>
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          title={sidebarCollapsed ? 'Abrir Explorer' : 'Minimizar Explorer'}
-          aria-label={sidebarCollapsed ? 'Abrir Explorer' : 'Minimizar Explorer'}
+          title={sidebarCollapsed ? 'Open Explorer' : 'Minimize Explorer'}
+          aria-label={sidebarCollapsed ? 'Open Explorer' : 'Minimize Explorer'}
           aria-expanded={!sidebarCollapsed}
           className="p-1.5 border transition-all cursor-pointer shrink-0 bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10"
         >
@@ -1289,7 +1289,7 @@ export default function App() {
     <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) select-none">
       <div className="flex items-center gap-2 text-[10px] font-display font-black uppercase tracking-widest text-(--color-text-secondary)">
         <Sparkles className="w-3.5 h-3.5 text-(--color-accent)" />
-        <span>Agent — minimizado</span>
+        <span>Agent — minimized</span>
         <span className="text-(--color-text-muted) font-mono tracking-normal">({messages.length} msg)</span>
       </div>
       <button
@@ -1297,7 +1297,7 @@ export default function App() {
           setView('chat');
           setChatMinimized(false);
         }}
-        title="Restaurar chat"
+        title="Restore chat"
         className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
       >
         <Maximize2 className="w-3.5 h-3.5" />
@@ -1310,11 +1310,11 @@ export default function App() {
     <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) select-none">
       <div className="flex items-center gap-2 text-[10px] font-display font-black uppercase tracking-widest text-(--color-text-secondary)">
         <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent)" />
-        <span>Console — minimizado</span>
+        <span>Console — minimized</span>
       </div>
       <button
         onClick={() => setTerminalMinimized(false)}
-        title="Restaurar console"
+        title="Restore console"
         className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
       >
         <Maximize2 className="w-3.5 h-3.5" />
@@ -1361,7 +1361,7 @@ export default function App() {
     <div
       role="separator"
       aria-orientation="horizontal"
-      aria-label="Redimensionar terminal"
+      aria-label="Resize terminal"
       aria-valuenow={Math.round(config.terminalHeight)}
       aria-valuemin={120}
       aria-valuemax={900}
@@ -1371,7 +1371,7 @@ export default function App() {
       onMouseDown={(e) => startDrag('terminalV', e)}
       onDoubleClick={resetTerminalSize}
       className="relative shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
-      title="Arraste para redimensionar o terminal (duplo-clique reseta)"
+      title="Drag to resize the terminal (double-click resets)"
     >
       <div className="absolute -top-[5px] left-0 right-0 h-[12px] cursor-row-resize" />
     </div>
@@ -1381,7 +1381,7 @@ export default function App() {
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label="Redimensionar terminal (60 a 200 caracteres)"
+      aria-label="Resize terminal (60 to 200 characters)"
       aria-valuenow={Math.round(config.terminalWidthCh)}
       aria-valuemin={60}
       aria-valuemax={200}
@@ -1391,7 +1391,7 @@ export default function App() {
       onMouseDown={(e) => startDrag('terminalH', e)}
       onDoubleClick={resetTerminalSize}
       className="relative shrink-0 w-1.5 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
-      title={`Largura ${config.terminalWidthCh}ch — arraste (60–200ch, duplo-clique reseta)`}
+      title={`Width ${config.terminalWidthCh}ch — drag (60–200ch, double-click resets)`}
     >
       <div className="absolute top-0 bottom-0 -left-[5px] w-[12px] cursor-col-resize" />
     </div>
@@ -1435,12 +1435,12 @@ export default function App() {
               <div
                 role="separator"
                 aria-orientation="vertical"
-                aria-label="Redimensionar editor"
+                aria-label="Resize editor"
                 tabIndex={0}
                 onPointerDown={(e) => startDrag('editor', e)}
                 onMouseDown={(e) => startDrag('editor', e)}
                 className="relative w-1.5 shrink-0 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors touch-none"
-                title="Arraste para redimensionar o editor"
+                title="Drag to resize the editor"
               >
                 <div className="absolute top-0 bottom-0 -left-[5px] w-[12px] cursor-col-resize" />
               </div>

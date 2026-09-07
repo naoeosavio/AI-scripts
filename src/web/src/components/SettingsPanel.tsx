@@ -57,7 +57,7 @@ function formatBytes(bytes: number): string {
 
 function formatTimestamp(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('pt-BR');
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString('en-US');
 }
 
 const ACCENT_OPTIONS: { id: AccentPalette; label: string; color: string }[] = [
@@ -300,7 +300,7 @@ export default function SettingsPanel({
                   <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Terminal</span>
                   <div className="mb-1.5 flex items-center gap-2">
                     <span className="text-[9px] font-mono text-(--color-text-muted) shrink-0">
-                      Lateral {config.terminalWidthCh}ch
+                      Width {config.terminalWidthCh}ch
                     </span>
                     <input
                       type="range"
@@ -309,8 +309,8 @@ export default function SettingsPanel({
                       step={4}
                       value={config.terminalWidthCh}
                       onChange={(e) => setTerminalWidthCh(Number(e.target.value))}
-                      aria-label="Largura do terminal lateral em caracteres (60 a 200)"
-                      title="Largura do terminal lateral (60–200ch)"
+                      aria-label="Lateral terminal width in characters (60 to 200)"
+                      title="Lateral terminal width (60–200ch)"
                       className="flex-1 accent-(--color-accent) cursor-pointer"
                     />
                   </div>
@@ -389,7 +389,7 @@ export default function SettingsPanel({
                 </div>
                 <div>
                   <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">
-                    Chat — largura da linha (padrão 80)
+                    Chat — line width (default 80)
                   </span>
                   <div className="mb-1.5 flex items-center gap-2">
                     <span className="text-[9px] font-mono text-(--color-text-muted) shrink-0">
@@ -402,13 +402,13 @@ export default function SettingsPanel({
                       step={1}
                       value={config.customChatWrap === 'max' ? 200 : config.customChatWrap}
                       onChange={(e) => setCustomChatWrap(Number(e.target.value))}
-                      aria-label="Largura da linha do chat em caracteres (60 a 200)"
-                      title="Largura da linha do chat (60–200ch)"
+                      aria-label="Chat line width in characters (60 to 200)"
+                      title="Chat line width (60–200ch)"
                       className="flex-1 accent-(--color-accent) cursor-pointer"
                     />
                     <button
                       onClick={() => setCustomChatWrap('max')}
-                      title="Usar todo o espaço livre"
+                      title="Use all free space"
                       className={`shrink-0 flex items-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
                         config.customChatWrap === 'max'
                           ? 'bg-(--color-accent) border-(--color-accent) text-white'
@@ -419,7 +419,7 @@ export default function SettingsPanel({
                     </button>
                   </div>
                   <p className="mt-1 text-[8.5px] text-(--color-text-muted) font-sans leading-snug">
-                    60–200 caracteres · MAX ocupa o espaço livre.
+                    60–200 characters · MAX fills free space.
                   </p>
                 </div>
               </div>
@@ -782,7 +782,7 @@ function FontPicker({
           type="text"
           value={customValue}
           onChange={(e) => onCustomChange(e.target.value)}
-          placeholder="Font family (ex: Fira Code, monospace)"
+          placeholder="Font family (e.g.: Fira Code, monospace)"
           className="w-full bg-(--color-bg-primary) border border-(--color-border-medium) px-2 py-1 text-[9px] font-mono text-(--color-text-primary) focus:outline-none focus:border-(--color-accent)"
           spellCheck={false}
         />
