@@ -356,7 +356,7 @@ export default function Terminal({
   const fitFnsRef = useRef(new Map<string, () => void>());
   const controlFnsRef = useRef(new Map<string, PaneControl>());
 
-  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? DEFAULT_TAB;
 
   // Stable registration callbacks (avoid re-mounting xterm panes)
   const registerClear = useCallback((paneId: string, fn: (() => void) | null) => {
@@ -387,9 +387,9 @@ export default function Terminal({
     setTabs((prev) => {
       const isVirgin =
         prev.length === 1 &&
-        prev[0].id === DEFAULT_TAB.id &&
-        prev[0].panes.length === 1 &&
-        prev[0].panes[0].id === DEFAULT_TAB.panes[0].id;
+        prev[0]?.id === DEFAULT_TAB.id &&
+        prev[0]?.panes.length === 1 &&
+        prev[0]?.panes[0]?.id === DEFAULT_TAB.panes[0]?.id;
       if (isVirgin) return initialLayout.tabs;
 
       const restoredIds = new Set(initialLayout.tabs.map((t) => t.id));
@@ -489,7 +489,7 @@ export default function Terminal({
     const filtered = tabs.filter((t) => t.id !== tabId);
     setTabs(filtered);
     if (activeTabId === tabId) {
-      setActiveTabId(filtered[0].id);
+      setActiveTabId(filtered[0]?.id ?? 'tab-1');
     }
   };
 
@@ -509,7 +509,7 @@ export default function Terminal({
     if (activeTab.panes.length <= 1) return;
     destroyPanes([paneId]);
     const remaining = activeTab.panes.filter((p) => p.id !== paneId);
-    const newActive = activeTab.activePaneId === paneId ? remaining[0].id : activeTab.activePaneId;
+    const newActive = activeTab.activePaneId === paneId ? (remaining[0]?.id ?? activeTab.activePaneId) : activeTab.activePaneId;
     updateTab((tab) => ({ ...tab, panes: remaining, activePaneId: newActive }));
   };
 
@@ -520,7 +520,8 @@ export default function Terminal({
   // Refit every pane of the newly active tab (they were hidden -> 0-size while inactive)
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      const tab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+      const tab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+      if (!tab) return;
       for (const pane of tab.panes) {
         fitFnsRef.current.get(pane.id)?.();
       }

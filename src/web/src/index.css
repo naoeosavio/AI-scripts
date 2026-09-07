@@ -1,5 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700;900&family=JetBrains+Mono:wght@300;400;500;700;800&family=Inter:wght@300;400;500;600;700;900&display=swap');
 @import "tailwindcss";
+
+/* Fonts: system-first stacks (offline-safe). The previous Google Fonts
+ * @import blocked first paint without network. If you want the exact
+ * Inter/Space Grotesk/JetBrains Mono faces, self-host them (e.g.
+ * @fontsource packages) with font-display:swap and keep these fallbacks. */
 
 @theme {
   --font-sans: "Inter", system-ui, sans-serif;

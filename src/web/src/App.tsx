@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as TerminalIcon, Sparkles, Code, FolderClosed } from 'lucide-react';
+import { Terminal as TerminalIcon, Sparkles } from 'lucide-react';
 import FileExplorer from './components/FileExplorer.tsx';
 import FileViewer from './components/FileViewer.tsx';
 import Terminal, { TerminalLine, TerminalLayout } from './components/Terminal.tsx';
@@ -192,7 +192,10 @@ export default function App() {
           setGeneratedSystemPrompt(data.systemPrompt);
           setSystemPrompt(data.systemPrompt);
         }
-        if (data.cwd) setCwd(data.cwd);
+        if (data.cwd) {
+          setCwd(data.cwd);
+          document.title = `Tell Web — ${data.cwd}`;
+        }
       } catch (error) {
         console.error('Error fetching project context:', error);
       }
@@ -265,7 +268,7 @@ export default function App() {
   // Helper: extract runs from model response (case-insensitive: <RUN>, <run>, <Run>...)
   const extractRunScripts = (text: string): string[] => {
     const sanitized = text.replace(/```[\s\S]*?```/g, '');
-    return [...sanitized.matchAll(/<run>([\s\S]*?)<\/run>/gi)].map((m) => m[1]?.trim()).filter(Boolean);
+    return [...sanitized.matchAll(/<run>([\s\S]*?)<\/run>/gi)].map((m) => m[1]?.trim()).filter((s): s is string => !!s);
   };
 
   const isAbortError = (error: unknown): boolean =>
@@ -330,6 +333,10 @@ export default function App() {
           appendAgentLine('system', `+${scripts.length - 1} additional script(s) ignored (only the first one runs).`);
         }
         const script = scripts[0];
+        if (!script) {
+          setLoading(false);
+          return;
+        }
         appendAgentLine('system', `Agent requested script execution:\n${script}`);
 
         if (controller.signal.aborted) {
@@ -378,33 +385,6 @@ export default function App() {
 
     appendAgentLine('system', `Prompt received: "${userPrompt}"`);
     await runAiTurn(updatedMessages);
-  };
-
-  // Execute a command through the sandbox bridge (used by the AI <RUN> path)
-  const executeShellCommandManual = async (command: string, skipGlobalAppend = false): Promise<string> => {
-    if (!skipGlobalAppend) {
-      appendAgentLine('input', command);
-    }
-    try {
-      const res = await apiFetch('/api/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command }),
-      });
-      const data = await res.json();
-      const output = data.output || '';
-      if (!skipGlobalAppend) {
-        appendAgentLine('output', output);
-      }
-      setRefreshFileTreeTrigger((prev) => prev + 1);
-      return output;
-    } catch (error: any) {
-      const errMsg = error.message || 'Execution error';
-      if (!skipGlobalAppend) {
-        appendAgentLine('error', errMsg);
-      }
-      return errMsg;
-    }
   };
 
   // Output tail fed back to the LLM (keeps huge outputs from exploding the context)
@@ -524,16 +504,6 @@ export default function App() {
       setMessages(updated);
       await runAiTurn(updated);
     }
-  };
-
-  const handleClearChat = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    chainDepthRef.current = 0;
-    setMessages([]);
-    setPendingCommand(null);
-    setLoading(false);
-    setTerminalLines([]);
   };
 
   const handleSnapshot = async () => {

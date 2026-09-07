@@ -16,10 +16,12 @@ export function isSensitiveRelPath(relPath: string): boolean {
   if (normalized.startsWith('/') || normalized.includes('\0')) return true;
   const segments = normalized.split('/');
   for (const segment of segments) {
+    // `.env.example` is a committed template, not a secret — never block it.
+    if (segment === '.env.example') continue;
     if (segment === '.env' || segment.startsWith('.env.')) return true;
     if (segment === '.tell' || segment === '.git') return true;
   }
-  const base = segments[segments.length - 1];
+  const base = segments[segments.length - 1] ?? '';
   if (base.endsWith('.key') || base.endsWith('.pem')) return true;
   return false;
 }

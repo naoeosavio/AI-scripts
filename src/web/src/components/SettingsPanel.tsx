@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, Focus, RotateCcw, Download, Trash2 } from 'lucide-react';
 import { useTheme, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
 import { apiFetch } from '../api.ts';

@@ -6,9 +6,9 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import { isValidPaneId, clampTerminalSize } from './guards';
 
-const MAX_SCROLLBACK_CHARS = 50 * 1024;
-const GC_AFTER_MS = 5 * 60 * 1000;
-const MAX_SESSIONS = 12;
+export const MAX_SCROLLBACK_CHARS = 50 * 1024;
+export const GC_AFTER_MS = 5 * 60 * 1000;
+export const MAX_SESSIONS = 12;
 
 export interface TerminalServerOptions {
   cwd: string;
@@ -29,7 +29,13 @@ interface PaneSession {
 
 const sessions = new Map<string, PaneSession>();
 
-function pushScrollback(session: PaneSession, data: string): void {
+/** Minimal shape needed by the scrollback buffer (exported for unit tests). */
+export interface ScrollbackBuffer {
+  scrollback: string[];
+  scrollbackChars: number;
+}
+
+export function pushScrollback(session: ScrollbackBuffer, data: string): void {
   session.scrollback.push(data);
   session.scrollbackChars += data.length;
   while (session.scrollbackChars > MAX_SCROLLBACK_CHARS && session.scrollback.length > 0) {
@@ -48,11 +54,35 @@ export function activePaneIds(): string[] {
   return [...sessions.keys()];
 }
 
-function scheduleGc(paneId: string, session: PaneSession): void {
+/** Minimal shape needed by the GC timer (exported for unit tests). */
+export interface GcTimerState {
+  timer: NodeJS.Timeout | null;
+  lastDisconnect: number | null;
+}
+
+/** Arm the GC timer; fires `onExpire` after `delayMs` unless cancelled. */
+export function scheduleGcTimer(
+  state: GcTimerState,
+  onExpire: () => void,
+  delayMs: number = GC_AFTER_MS,
+): void {
+  cancelGcTimer(state);
+  state.lastDisconnect = Date.now();
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    onExpire();
+  }, delayMs);
+}
+
+/** Disarm a pending GC timer (e.g. client reconnected). */
+export function cancelGcTimer(state: GcTimerState): void {
+  if (state.timer) clearTimeout(state.timer);
+  state.timer = null;
+}
+
+function scheduleGc(paneId: string, session: PaneSession, delayMs: number = GC_AFTER_MS): void {
   if (session.clients.size > 0) return;
-  if (session.timer) clearTimeout(session.timer);
-  session.lastDisconnect = Date.now();
-  session.timer = setTimeout(() => {
+  scheduleGcTimer(session, () => {
     const s = sessions.get(paneId);
     if (s && s.clients.size === 0) {
       try {
@@ -62,7 +92,7 @@ function scheduleGc(paneId: string, session: PaneSession): void {
       }
       sessions.delete(paneId);
     }
-  }, GC_AFTER_MS);
+  }, delayMs);
 }
 
 function ensureSession(paneId: string, opts: TerminalServerOptions): PaneSession {
@@ -114,10 +144,7 @@ function ensureSession(paneId: string, opts: TerminalServerOptions): PaneSession
 function attachClient(session: PaneSession, ws: WebSocket, replay: boolean): void {
   session.clients.add(ws);
   if (replay) ws.send(JSON.stringify({ type: 'data', data: session.scrollback.join('') }));
-  if (session.timer) {
-    clearTimeout(session.timer);
-    session.timer = null;
-  }
+  cancelGcTimer(session);
   session.lastDisconnect = null;
 }
 
@@ -216,7 +243,7 @@ export function attachTerminalServer(server: http.Server, opts: TerminalServerOp
       } else if (msg.type === 'destroy') {
         // Client closed the pane/tab on purpose: kill the PTY immediately
         // instead of waiting for the 5min GC.
-        if (session.timer) clearTimeout(session.timer);
+        cancelGcTimer(session);
         sessions.delete(session.paneId);
         for (const client of session.clients) {
           if (client !== ws && client.readyState === client.OPEN) {

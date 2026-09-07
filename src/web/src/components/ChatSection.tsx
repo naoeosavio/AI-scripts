@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Send, Sparkles, BrainCircuit, User, Terminal, Check, Copy, Square, ArrowDown } from 'lucide-react';
+import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;

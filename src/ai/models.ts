@@ -269,14 +269,14 @@ function parseModelSpecRaw(spec: string): ResolvedModelSpec {
   }
 
   const parts = trimmed.split(':');
-  if (parts.length > 1 && parts[parts.length - 1].trim().toLowerCase() === 'fast') {
+  if (parts.length > 1 && (parts[parts.length - 1] ?? '').trim().toLowerCase() === 'fast') {
     fast = true;
     parts.pop();
   }
 
   if (parts.length === 1) return resolveSinglePart(trimmed, fast);
 
-  const firstPart = parts[0].trim().toLowerCase();
+  const firstPart = (parts[0] ?? '').trim().toLowerCase();
   if (!SUPPORTED_VENDORS.has(firstPart)) return resolveSinglePart(trimmed, fast);
 
   if (parts.length < 2 || parts.length > 3) {
