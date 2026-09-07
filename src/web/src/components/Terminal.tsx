@@ -15,12 +15,12 @@ import {
   Minimize2,
   Minus,
   Square,
-  ChevronUp,
-  ChevronDown,
+  Pencil,
   Wifi,
   WifiOff,
 } from 'lucide-react';
 import { useTheme, xtermThemeFromConfig } from '../theme.tsx';
+import { mergeRestoredTerminalLayout, resolveSafeActiveTabId } from '../../terminal-layout.ts';
 import { useToast } from './Toast.tsx';
 
 export interface TerminalLine {
@@ -328,12 +328,42 @@ interface TerminalProps {
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   onHide?: () => void;
-  agentLines?: TerminalLine[];
-  onAgentLinesClear?: () => void;
   initialLayout?: TerminalLayout;
   initialScrollback?: Record<string, string>;
   onLayoutChange?: (layout: TerminalLayout) => void;
   cwd?: string;
+  /** Controlled mode (owned by App so view switches never reset tabs). */
+  tabs?: TerminalTabMeta[];
+  activeTabId?: string;
+  onTabsChange?: (tabs: TerminalTabMeta[], activeTabId: string) => void;
+  /** Compact lateral mode: cascade select, icon-only New Tab, reduced header. */
+  compact?: boolean;
+  /** Minimal status bar (used together with compact). */
+  minimalStatus?: boolean;
+}
+
+const TERMINAL_LAYOUT_KEY = 'tell-terminal-layout-v1';
+
+function loadPersistedLayout(): TerminalLayout | null {
+  try {
+    const raw = localStorage.getItem(TERMINAL_LAYOUT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && Array.isArray(parsed.tabs) && parsed.tabs.length > 0 && typeof parsed.activeTabId === 'string') {
+      return parsed as TerminalLayout;
+    }
+  } catch {
+    /* corrupted -> ignore */
+  }
+  return null;
+}
+
+function persistLayoutLocal(layout: TerminalLayout) {
+  try {
+    localStorage.setItem(TERMINAL_LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    /* storage blocked */
+  }
 }
 
 const DEFAULT_TAB: TerminalTabMeta = {
@@ -356,18 +386,60 @@ export default function Terminal({
   isExpanded = false,
   onToggleExpand,
   onHide,
-  agentLines = [],
-  onAgentLinesClear,
   initialLayout,
   initialScrollback = {},
   onLayoutChange,
   cwd,
+  tabs: controlledTabs,
+  activeTabId: controlledActiveTabId,
+  onTabsChange,
+  compact = false,
+  minimalStatus = false,
 }: TerminalProps) {
-  const [tabs, setTabs] = useState<TerminalTabMeta[]>([DEFAULT_TAB]);
-  const [activeTabId, setActiveTabId] = useState<string>('tab-1');
+  const [internalTabs, setInternalTabs] = useState<TerminalTabMeta[]>(() => loadPersistedLayout()?.tabs ?? [DEFAULT_TAB]);
+  const [internalActiveTabId, setInternalActiveTabId] = useState<string>(
+    () => loadPersistedLayout()?.activeTabId ?? 'tab-1',
+  );
+  const isControlled = controlledTabs !== undefined && controlledActiveTabId !== undefined && onTabsChange !== undefined;
+  const tabs = isControlled ? (controlledTabs as TerminalTabMeta[]) : internalTabs;
+  const activeTabId = isControlled ? (controlledActiveTabId as string) : internalActiveTabId;
+  const setTabsEffective = useCallback(
+    (updater: TerminalTabMeta[] | ((prev: TerminalTabMeta[]) => TerminalTabMeta[])) => {
+      const prev = isControlled ? (controlledTabs as TerminalTabMeta[]) : internalTabs;
+      const next = typeof updater === 'function' ? (updater as (p: TerminalTabMeta[]) => TerminalTabMeta[])(prev) : updater;
+      if (isControlled) {
+        onTabsChange?.(next, (controlledActiveTabId as string) ?? next[0]?.id ?? 'tab-1');
+      } else {
+        setInternalTabs(next);
+      }
+    },
+    [isControlled, controlledTabs, controlledActiveTabId, internalTabs, onTabsChange],
+  );
+  const setActiveTabIdEffective = useCallback(
+    (id: string) => {
+      if (isControlled) {
+        onTabsChange?.((controlledTabs as TerminalTabMeta[]) ?? [], id);
+      } else {
+        setInternalActiveTabId(id);
+      }
+    },
+    [isControlled, controlledTabs, onTabsChange],
+  );
+  // Atomic update (single onTabsChange) — avoids the race where a second call
+  // with stale controlled tabs would drop a just-added tab.
+  const setTabsAndActive = useCallback(
+    (nextTabs: TerminalTabMeta[], nextActiveId: string) => {
+      if (isControlled) {
+        onTabsChange?.(nextTabs, nextActiveId);
+      } else {
+        setInternalTabs(nextTabs);
+        setInternalActiveTabId(nextActiveId);
+      }
+    },
+    [isControlled, onTabsChange],
+  );
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renamingName, setRenamingName] = useState<string>('');
-  const [agentFeedOpen, setAgentFeedOpen] = useState(false);
   const [paneConn, setPaneConn] = useState<Record<string, boolean>>({});
 
   const adoptedInitialRef = useRef(false);
@@ -375,7 +447,8 @@ export default function Terminal({
   const fitFnsRef = useRef(new Map<string, () => void>());
   const controlFnsRef = useRef(new Map<string, PaneControl>());
 
-  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0] ?? DEFAULT_TAB;
+  const safeActiveTabId = resolveSafeActiveTabId(tabs, activeTabId);
+  const activeTab = tabs.find((t) => t.id === safeActiveTabId) ?? tabs[0] ?? DEFAULT_TAB;
 
   // Stable registration callbacks (avoid re-mounting xterm panes)
   const registerClear = useCallback((paneId: string, fn: (() => void) | null) => {
@@ -397,51 +470,37 @@ export default function Terminal({
     setPaneConn((prev) => (prev[paneId] === connected ? prev : { ...prev, [paneId]: connected }));
   }, []);
 
-  // Auto-open the Agent Feed when something needs attention:
-  // a pending command authorization or a freshly arrived error line.
-  const lastErrorCountRef = useRef(0);
+  // Monotonic tab counter (survives renames to non-numeric names)
+  const tabSeqRef = useRef<number>(0);
   useEffect(() => {
-    const errors = agentLines.filter((l) => l.type === 'error').length;
-    if (errors > lastErrorCountRef.current) setAgentFeedOpen(true);
-    lastErrorCountRef.current = errors;
-  }, [agentLines]);
-
-  useEffect(() => {
-    if (pendingCommand) setAgentFeedOpen(true);
-  }, [pendingCommand]);
+    const maxNum = tabs.reduce((max, t) => Math.max(max, parseInt(t.name, 10) || 0), 0);
+    tabSeqRef.current = Math.max(tabSeqRef.current, maxNum, tabs.length);
+  }, [tabs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Adopt a restored session layout when it arrives. Merge by id so it works
   // even if the user already touched the layout (added tabs/panes) before the
   // session fetch resolved; an untouched default tab is replaced outright.
+  // In controlled mode App owns adoption — skip here to avoid double-adopt on remount.
   useEffect(() => {
+    if (isControlled) return;
     if (!initialLayout || !initialLayout.tabs.length || adoptedInitialRef.current) return;
     adoptedInitialRef.current = true;
-    setTabs((prev) => {
-      const isVirgin =
-        prev.length === 1 &&
-        prev[0]?.id === DEFAULT_TAB.id &&
-        prev[0]?.panes.length === 1 &&
-        prev[0]?.panes[0]?.id === DEFAULT_TAB.panes[0]?.id;
-      if (isVirgin) return initialLayout.tabs;
+    setTabsEffective((prev) => mergeRestoredTerminalLayout(prev, initialLayout));
+    setActiveTabIdEffective(initialLayout.activeTabId || initialLayout.tabs[0]?.id || 'tab-1');
+  }, [initialLayout, isControlled, setTabsEffective, setActiveTabIdEffective]);
 
-      const restoredIds = new Set(initialLayout.tabs.map((t) => t.id));
-      const merged = initialLayout.tabs.map((rt) => {
-        const existing = prev.find((t) => t.id === rt.id);
-        if (!existing) return rt;
-        const restoredPaneIds = new Set(rt.panes.map((p) => p.id));
-        const userOnlyPanes = existing.panes.filter((p) => !restoredPaneIds.has(p.id));
-        return { ...rt, panes: [...rt.panes, ...userOnlyPanes] };
-      });
-      const userOnlyTabs = prev.filter((t) => !restoredIds.has(t.id));
-      return [...merged, ...userOnlyTabs];
-    });
-    setActiveTabId(initialLayout.activeTabId || initialLayout.tabs[0]?.id || 'tab-1');
-  }, [initialLayout]);
-
-  // Notify parent about layout changes (for session persistence)
+  // Notify parent about layout changes (for session persistence).
+  // Skip the first mount so a remount never persists the default over user tabs.
+  const firstLayoutEmitRef = useRef(true);
   useEffect(() => {
-    onLayoutChange?.({ tabs, activeTabId });
-  }, [tabs, activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+    const layout = { tabs, activeTabId: safeActiveTabId };
+    persistLayoutLocal(layout);
+    if (firstLayoutEmitRef.current) {
+      firstLayoutEmitRef.current = false;
+      return;
+    }
+    onLayoutChange?.(layout);
+  }, [tabs, safeActiveTabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reconnect panes of the active tab; close WS of inactive tabs after a 60s idle
   // (server keeps the PTY alive for 5min without clients, so this saves resources
@@ -486,17 +545,15 @@ export default function Terminal({
   }, [pendingCommand, onSkipPending, onConfirmPending]);
 
   const updateTab = (updater: (tab: TerminalTabMeta) => TerminalTabMeta) => {
-    setTabs((prev) =>
-      prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab)),
+    setTabsEffective((prev) =>
+      prev.map((tab) => (tab.id === safeActiveTabId ? updater(tab) : tab)),
     );
   };
 
-  const nextTabNumber = (list: TerminalTabMeta[]): number =>
-    list.reduce((max, t) => Math.max(max, parseInt(t.name, 10) || 0), 0) + 1;
-
   const handleAddTab = () => {
     if (tabs.length >= MAX_TABS) return;
-    const newTabNum = nextTabNumber(tabs);
+    tabSeqRef.current += 1;
+    const newTabNum = tabSeqRef.current;
     const newPaneId = crypto.randomUUID();
     const newTabId = crypto.randomUUID();
     const newTab: TerminalTabMeta = {
@@ -505,8 +562,7 @@ export default function Terminal({
       panes: [{ id: newPaneId, title: `bash #${newTabNum}` }],
       activePaneId: newPaneId,
     };
-    setTabs((prev) => [...prev, newTab]);
-    setActiveTabId(newTabId);
+    setTabsAndActive([...tabs, newTab], newTabId);
   };
 
   const destroyPanes = (paneIds: string[]) => {
@@ -519,9 +575,10 @@ export default function Terminal({
     const target = tabs.find((t) => t.id === tabId);
     if (target) destroyPanes(target.panes.map((p) => p.id));
     const filtered = tabs.filter((t) => t.id !== tabId);
-    setTabs(filtered);
-    if (activeTabId === tabId) {
-      setActiveTabId(filtered[0]?.id ?? 'tab-1');
+    if (safeActiveTabId === tabId) {
+      setTabsAndActive(filtered, filtered[0]?.id ?? 'tab-1');
+    } else {
+      setTabsEffective(filtered);
     }
   };
 
@@ -541,14 +598,14 @@ export default function Terminal({
   // Refit every pane of the newly active tab (they were hidden -> 0-size while inactive)
   useEffect(() => {
     const id = requestAnimationFrame(() => {
-      const tab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+      const tab = tabs.find((t) => t.id === safeActiveTabId) ?? tabs[0];
       if (!tab) return;
       for (const pane of tab.panes) {
         fitFnsRef.current.get(pane.id)?.();
       }
     });
     return () => cancelAnimationFrame(id);
-  }, [activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [safeActiveTabId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClearPane = (paneId: string) => {
     clearFnsRef.current.get(paneId)?.();
@@ -561,10 +618,16 @@ export default function Terminal({
   };
 
   const handleSaveTabName = (tabId: string) => {
-    if (renamingName.trim()) {
-      setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, name: renamingName.trim() } : t)));
+    const next = renamingName.trim().slice(0, 30);
+    if (next) {
+      setTabsEffective((prev) => prev.map((t) => (t.id === tabId ? { ...t, name: next } : t)));
     }
     setRenamingTabId(null);
+  };
+
+  const handleCancelRename = () => {
+    setRenamingTabId(null);
+    setRenamingName('');
   };
 
   const getGridClasses = (count: number) => {
@@ -585,59 +648,11 @@ export default function Terminal({
 
   return (
     <div className="flex flex-col h-full bg-(--color-bg-primary) text-(--color-text-primary) font-mono text-[11px] leading-relaxed select-text overflow-hidden relative">
-      {/* Agent Feed (AI activity) */}
-      {agentLines.length > 0 && (
-        <div className="shrink-0 border-b border-(--color-accent)/20 bg-(--color-bg-primary)">
-          <div className="flex items-center justify-between px-3 py-1 select-none">
-            <button
-              onClick={() => setAgentFeedOpen(!agentFeedOpen)}
-              className="flex items-center gap-1.5 text-[9px] font-display font-black uppercase tracking-widest text-(--color-accent) cursor-pointer"
-            >
-              {agentFeedOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-              <SparkleIcon />
-              <span>Agent Feed ({agentLines.length})</span>
-            </button>
-            {onAgentLinesClear && (
-              <button
-                onClick={onAgentLinesClear}
-                className="text-(--color-text-muted) hover:text-(--color-accent-text) text-[9px] uppercase tracking-widest cursor-pointer"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          {agentFeedOpen && (
-            <div className="px-3 pb-2 space-y-1 max-h-28 overflow-y-auto custom-scrollbar">
-              {agentLines.map((line, i) => (
-                <div key={i} className="whitespace-pre-wrap break-all text-[9.5px]">
-                  {line.type === 'input' && (
-                    <div className="text-(--color-text-primary) font-semibold">
-                      <span className="text-(--color-accent) font-black">$ </span>
-                      {line.text}
-                    </div>
-                  )}
-                  {line.type === 'output' && <div className="text-(--color-text-secondary)">{line.text}</div>}
-                  {line.type === 'error' && (
-                    <div className="text-(--color-error) font-bold uppercase tracking-wide">{line.text}</div>
-                  )}
-                  {line.type === 'system' && (
-                    <div className="text-(--color-text-muted) italic font-sans">[ {line.text} ]</div>
-                  )}
-                  {line.type === 'request' && (
-                    <div className="text-(--color-accent-text) border border-(--color-accent)/20 bg-(--color-accent-subtle) p-1 font-sans text-[9.5px]">
-                      {line.text}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* Agent Feed lives outside this component now (see AgentFeed.tsx) so it
+          survives terminal hidden/fullscreen. */}
       {/* Top Header & Tabs Bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-tertiary) border-b border-(--color-border-subtle) shrink-0 select-none">
-        <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar pr-2">
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-(--color-bg-tertiary) border-b border-(--color-border-subtle) shrink-0 select-none">
+        <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pr-2 min-w-0">
           <div className="flex items-center gap-1.5 font-display font-black text-[10px] tracking-widest uppercase text-(--color-text-secondary) shrink-0 pr-1 select-none">
             <TerminalIcon className="w-3.5 h-3.5 text-(--color-accent) animate-pulse" />
             <span className="inline font-bold text-(--color-text-secondary)">Terminal</span>
@@ -651,9 +666,39 @@ export default function Terminal({
             </span>
           </div>
 
+          {compact ? (
+            <div className="flex items-center gap-1 min-w-0">
+              <select
+                value={activeTabId}
+                onChange={(e) => setActiveTabIdEffective(e.target.value)}
+                aria-label="Selecionar sessão do terminal"
+                title="Selecionar sessão do terminal"
+                className="min-w-0 max-w-[160px] truncate bg-(--color-bg-elevated) border border-(--color-accent)/60 text-(--color-text-primary) font-mono text-[10px] px-1.5 py-1 focus:outline-none cursor-pointer"
+              >
+                {tabs.map((tab, idx) => (
+                  <option key={tab.id} value={tab.id}>
+                    {idx + 1}: {tab.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAddTab}
+                disabled={tabs.length >= MAX_TABS}
+                title={tabs.length >= MAX_TABS ? `Maximum ${MAX_TABS} parallel tabs reached` : `Add new tab (${tabs.length}/${MAX_TABS})`}
+                aria-label="Add new tab"
+                className={`shrink-0 self-center p-1 border font-mono transition-all ${
+                  tabs.length >= MAX_TABS
+                    ? 'border-(--color-border-subtle) text-(--color-text-muted) cursor-not-allowed opacity-50'
+                    : 'border-(--color-border-medium) bg-white/5 text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 hover:border-(--color-border-strong) cursor-pointer'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5 text-(--color-accent)" />
+              </button>
+            </div>
+          ) : (
           <div role="tablist" aria-label="Terminal sessions" className="flex items-center gap-1">
             {tabs.map((tab) => {
-              const isActive = tab.id === activeTabId;
+              const isActive = tab.id === safeActiveTabId;
               const isRenaming = renamingTabId === tab.id;
               return (
                 <div
@@ -662,9 +707,10 @@ export default function Terminal({
                   aria-selected={isActive}
                   tabIndex={isActive ? 0 : -1}
                   data-tab-id={tab.id}
-                  onClick={() => setActiveTabId(tab.id)}
+                  onClick={() => setActiveTabIdEffective(tab.id)}
                   onDoubleClick={(e) => handleStartRenameTab(tab, e)}
                   onKeyDown={(e) => {
+                    if (renamingTabId === tab.id) return;
                     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                       e.preventDefault();
                       e.stopPropagation();
@@ -672,13 +718,17 @@ export default function Terminal({
                       const next = e.key === 'ArrowRight' ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
                       const nextTab = tabs[next];
                       if (!nextTab) return;
-                      setActiveTabId(nextTab.id);
+                      setActiveTabIdEffective(nextTab.id);
                       requestAnimationFrame(() => {
                         document.querySelector<HTMLElement>(`[data-tab-id="${nextTab.id}"]`)?.focus();
                       });
+                    } else if (e.key === 'Enter' && !isRenaming) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleStartRenameTab(tab, e as unknown as React.MouseEvent);
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-[10px] border font-mono transition-all cursor-pointer ${
+                  className={`group/tab flex items-center gap-1.5 px-3 py-1 text-[10px] border font-mono transition-all cursor-pointer ${
                     isActive
                       ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) font-bold shadow-sm'
                       : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
@@ -689,14 +739,38 @@ export default function Terminal({
                     <input
                       type="text"
                       value={renamingName}
+                      maxLength={30}
                       onChange={(e) => setRenamingName(e.target.value)}
                       onBlur={() => handleSaveTabName(tab.id)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveTabName(tab.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === 'Enter') handleSaveTabName(tab.id);
+                        else if (e.key === 'Escape') handleCancelRename();
+                      }}
                       autoFocus
-                      className="bg-(--color-bg-primary) text-(--color-text-primary) px-1 py-0.5 border border-(--color-accent) text-[10px] w-20 focus:outline-none"
+                      onFocus={(e) => e.target.select()}
+                      aria-label="Nome da TAB do terminal"
+                      className="bg-(--color-bg-primary) text-(--color-text-primary) px-1 py-0.5 border border-(--color-accent) text-[10px] w-24 focus:outline-none"
                     />
                   ) : (
-                    <span className="truncate max-w-[100px]">{tab.name}</span>
+                    <>
+                      <span className="truncate max-w-[100px]" title="Duplo-clique ou lápis para renomear">
+                        {tab.name}
+                      </span>
+                      <button
+                        onClick={(e) => handleStartRenameTab(tab, e)}
+                        title="Renomear TAB"
+                        aria-label={`Renomear TAB ${tab.name}`}
+                        className={`p-0.5 transition-colors cursor-pointer ${
+                          isActive
+                            ? 'text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10'
+                            : 'opacity-0 group-hover/tab:opacity-100 hover:text-(--color-text-primary) hover:bg-white/10'
+                        }`}
+                      >
+                        <Pencil className="w-2.5 h-2.5" />
+                      </button>
+                    </>
                   )}
                   <span className="text-[9px] text-(--color-text-muted) font-sans ml-0.5">({tab.panes.length}P)</span>
                   {tabs.length > 1 && (
@@ -715,18 +789,19 @@ export default function Terminal({
             <button
               onClick={handleAddTab}
               disabled={tabs.length >= MAX_TABS}
-              className={`flex items-center gap-1 px-2.5 py-1 text-[10px] border font-mono transition-all ${
+              className={`shrink-0 self-center flex items-center gap-1 px-2.5 py-1 text-[10px] border font-mono whitespace-nowrap transition-all ${
                 tabs.length >= MAX_TABS
                   ? 'border-(--color-border-subtle) text-(--color-text-muted) cursor-not-allowed opacity-50'
                   : 'border-(--color-border-medium) bg-white/5 text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 hover:border-(--color-border-strong) cursor-pointer'
               }`}
               title={tabs.length >= MAX_TABS ? `Maximum ${MAX_TABS} parallel tabs reached` : `Add new parallel tab (Max ${MAX_TABS})`}
             >
-              <Plus className="w-3 h-3 text-(--color-accent)" />
-              <span className="hidden sm:inline">New Tab</span>
+              <Plus className="w-3 h-3 text-(--color-accent) shrink-0" />
+              <span>New Tab</span>
               <span className="text-[9px] text-(--color-text-muted)">({tabs.length}/{MAX_TABS})</span>
             </button>
           </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
@@ -737,15 +812,19 @@ export default function Terminal({
             </span>
           )}
 
-          <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-(--color-border-subtle) p-0.5">
-            <span className="hidden md:inline px-2 py-0.5 text-[10px] text-(--color-text-muted) uppercase font-bold tracking-wider select-none">
-              1 sessão = 1 tab
-            </span>
-          </div>
+          {!compact && (
+            <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-(--color-border-subtle) p-0.5">
+              <span className="hidden md:inline px-2 py-0.5 text-[10px] text-(--color-text-muted) uppercase font-bold tracking-wider select-none">
+                1 sessão = 1 tab
+              </span>
+            </div>
+          )}
 
-          <span className="hidden md:flex items-center gap-1.5 text-[9px] bg-white/5 text-(--color-text-secondary) border border-(--color-border-medium) px-2 py-0.5 uppercase font-bold tracking-wider">
-            <ShieldCheck className="w-3 h-3 text-(--color-accent)" /> Sandbox
-          </span>
+          {!compact && (
+            <span className="hidden md:flex items-center gap-1.5 text-[9px] bg-white/5 text-(--color-text-secondary) border border-(--color-border-medium) px-2 py-0.5 uppercase font-bold tracking-wider">
+              <ShieldCheck className="w-3 h-3 text-(--color-accent)" /> Sandbox
+            </span>
+          )}
 
           {onToggleExpand && (
             <button
@@ -782,7 +861,7 @@ export default function Terminal({
         {tabs.map((tab) => (
           <div
             key={tab.id}
-            className={`absolute inset-0 grid gap-1.5 ${tab.id === activeTabId ? '' : 'hidden'} ${getGridClasses(tab.panes.length)}`}
+            className={`absolute inset-0 grid gap-1.5 ${tab.id === safeActiveTabId ? '' : 'hidden'} ${getGridClasses(tab.panes.length)}`}
           >
             {tab.panes.map((pane) => {
           const isFocused = pane.id === activeTab.activePaneId;
@@ -882,37 +961,41 @@ export default function Terminal({
         ))}
       </div>
 
-      {/* Classic PTY Bottom Status Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-(--color-bg-tertiary) border-t border-(--color-border-subtle) text-[9.5px] text-(--color-text-muted) font-mono shrink-0 select-none">
-        <div className="flex items-center gap-3">
-          <span className="text-(--color-accent) font-bold uppercase tracking-wider">[tell-ai:pty]</span>
-          <div className="flex items-center gap-1.5 text-(--color-text-secondary)">
+      {/* Classic PTY Bottom Status Bar (minimal in compact/lateral mode) */}
+      <div className="flex items-center justify-between gap-2 px-3 py-1 bg-(--color-bg-tertiary) border-t border-(--color-border-subtle) text-[9.5px] text-(--color-text-muted) font-mono shrink-0 select-none">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-(--color-accent) font-bold uppercase tracking-wider shrink-0">[pty]</span>
+          <div className="flex items-center gap-1.5 text-(--color-text-secondary) truncate">
             {tabs.map((tab, idx) => (
               <span
                 key={tab.id}
-                className={tab.id === activeTabId ? 'text-(--color-accent-text) font-bold underline' : 'text-(--color-text-muted)'}
+                className={tab.id === safeActiveTabId ? 'text-(--color-accent-text) font-bold underline' : 'text-(--color-text-muted)'}
               >
                 {idx + 1}:{tab.name.split(':')[1] || tab.name}
-                {tab.id === activeTabId ? '*' : ''}
+                {tab.id === safeActiveTabId ? '*' : ''}
               </span>
             ))}
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-3">
-          <span>
-            Tabs: <strong className="text-(--color-text-secondary)">{tabs.length}/{MAX_TABS}</strong>
-          </span>
-          <span>CLI-AI Support: <strong className="text-(--color-accent-text)">tell-ai, codex, opencode</strong></span>
-        </div>
+        {!minimalStatus && !compact && (
+          <div className="hidden md:flex items-center gap-3">
+            <span>
+              Tabs: <strong className="text-(--color-text-secondary)">{tabs.length}/{MAX_TABS}</strong>
+            </span>
+            <span>CLI-AI Support: <strong className="text-(--color-accent-text)">tell-ai, codex, opencode</strong></span>
+          </div>
+        )}
 
-        <div className="flex items-center gap-2">
-          <span className="text-(--color-text-muted) max-w-[180px] truncate" title={cwd}>
-            {cwd || 'CWD: /'}
-          </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {!minimalStatus && !compact && (
+            <span className="text-(--color-text-muted) max-w-[180px] truncate" title={cwd}>
+              {cwd || 'CWD: /'}
+            </span>
+          )}
           {onlinePanes > 0 ? (
             <span className="flex items-center gap-1 text-(--color-success) font-bold" title="PTY sessions online / total panes">
-              <Wifi className="w-3 h-3" /> PTY {onlinePanes}/{totalPanes}
+              <Wifi className="w-3 h-3" /> {onlinePanes}/{totalPanes}
             </span>
           ) : (
             <span className="flex items-center gap-1 text-(--color-text-muted)">
@@ -923,8 +1006,4 @@ export default function Terminal({
       </div>
     </div>
   );
-}
-
-function SparkleIcon() {
-  return <span className="text-(--color-accent)">✦</span>;
 }
