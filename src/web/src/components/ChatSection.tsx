@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { Send, Sparkles, BrainCircuit, User, Terminal, Check, Copy } from 'lucide-react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { Send, Sparkles, BrainCircuit, User, Terminal, Check, Copy, Square, ArrowDown } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;
@@ -8,15 +8,26 @@ export interface ChatMessage {
   thought?: string | null;
 }
 
+export interface ModelInfo {
+  alias: string;
+  spec: string;
+  vendor: string;
+  model: string;
+  thinking: string;
+  fast: boolean;
+}
+
 interface ChatSectionProps {
   messages: ChatMessage[];
   inputPrompt: string;
   onInputChange: (val: string) => void;
   onSubmit: (e: React.FormEvent) => void;
+  onStop: () => void;
   loading: boolean;
   modelAlias: string;
   onModelAliasChange: (alias: string) => void;
-  models: Array<{ alias: string; spec: string; vendor: string; model: string }>;
+  models: ModelInfo[];
+  keysStatus: Record<string, boolean>;
   chainMode: boolean;
   onChainModeChange: (val: boolean) => void;
   autoExecute: boolean;
@@ -31,15 +42,30 @@ const SAMPLE_PROMPTS = [
   { label: '🛠️ Sys Information', prompt: 'create a script to print system info and run it' },
 ];
 
+// Vendors that require an API key (vast/local are keyless endpoints)
+const KEYED_VENDORS = new Set(['openai', 'anthropic', 'google', 'xai', 'deepseek', 'fireworks', 'openrouter', 'moonshotai', 'cerebras']);
+const VENDOR_KEY_ALIASES: Record<string, string> = { google: 'google' };
+
+// Autoscroll only sticks when the user is already this close to the bottom
+const NEAR_BOTTOM_PX = 80;
+// Feedback messages longer than this render collapsed (<details>)
+const FEEDBACK_COLLAPSE_CHARS = 400;
+// Hard cap for the prompt textarea
+const MAX_INPUT_CHARS = 8000;
+
+const FEEDBACK_PREFIX_RE = /^(Executed command|Skipped by user):/;
+
 export default function ChatSection({
   messages,
   inputPrompt,
   onInputChange,
   onSubmit,
+  onStop,
   loading,
   modelAlias,
   onModelAliasChange,
   models,
+  keysStatus,
   chainMode,
   onChainModeChange,
   autoExecute,
@@ -47,22 +73,79 @@ export default function ChatSection({
   onSelectSample,
 }: ChatSectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const nearBottomRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    nearBottomRef.current = distance < NEAR_BOTTOM_PX;
+    if (nearBottomRef.current) setShowJump(false);
+  }, []);
+
+  // Stick to bottom only when already near it; otherwise offer a jump button
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (!el) return;
+    if (nearBottomRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      setShowJump(false);
+    } else {
+      setShowJump(true);
+    }
   }, [messages]);
 
-  // Helper to strip <RUN> tags from text response so they don't pollute the visual bubble
+  const handleCopy = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  // Helper to strip <RUN> tags (case-insensitive) from text response so they don't pollute the visual bubble
   const cleanResponseContent = (text: string) => {
-    return text.replace(/<RUN>[\s\S]*?<\/RUN>/g, '').trim();
+    return text.replace(/<run>[\s\S]*?<\/run>/gi, '').trim();
   };
 
   const hasRunsInMessage = (text: string) => {
-    return /<RUN>([\s\S]*?)<\/RUN>/.test(text);
+    return /<run>[\s\S]*?<\/run>/i.test(text);
+  };
+
+  const selectedModel = models.find((m) => m.alias === modelAlias);
+  const hasKey = (vendor: string) => !KEYED_VENDORS.has(vendor) || !!keysStatus[VENDOR_KEY_ALIASES[vendor] || vendor];
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      if (!loading && inputPrompt.trim()) formRef.current?.requestSubmit();
+    }
+  };
+
+  const renderFeedbackBody = (content: string) => {
+    const nl = content.indexOf('\n');
+    const header = nl >= 0 ? content.slice(0, nl) : content;
+    return (
+      <details className="w-full group">
+        <summary className="cursor-pointer select-none text-[10px] font-bold uppercase tracking-wider text-(--color-accent-text) hover:text-(--color-accent) transition-colors list-none flex items-center gap-1.5">
+          <Terminal className="w-3 h-3 shrink-0" />
+          <span className="truncate">{header}</span>
+          <span className="text-(--color-text-muted) font-normal normal-case group-open:hidden">· expand</span>
+        </summary>
+        <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text">
+          {content}
+        </pre>
+      </details>
+    );
   };
 
   return (
-    <div className="flex flex-col h-full bg-(--color-bg-primary)">
+    <div className="relative flex flex-col h-full bg-(--color-bg-primary)">
       {/* Top Navbar */}
       <div className="flex flex-wrap items-center justify-between p-4 border-b border-(--color-border-subtle) bg-(--color-bg-primary) text-(--color-text-primary) gap-3 shrink-0 select-none">
         <div className="flex items-center gap-2">
@@ -79,14 +162,31 @@ export default function ChatSection({
             <select
               value={modelAlias}
               onChange={(e) => onModelAliasChange(e.target.value)}
+              title={selectedModel && !hasKey(selectedModel.vendor) ? 'sem chave' : undefined}
               className="bg-(--color-bg-secondary) border border-(--color-border-medium) rounded-none px-2.5 py-1 text-(--color-text-primary) font-mono text-[10px] focus:outline-none focus:border-(--color-text-primary) transition-colors cursor-pointer uppercase"
             >
               {models.map((m) => (
-                <option key={m.alias} value={m.alias} className="bg-(--color-bg-primary)">
+                <option key={m.alias} value={m.alias} disabled={!hasKey(m.vendor)} className="bg-(--color-bg-primary)">
                   {m.alias} : {m.vendor.toUpperCase()}
+                  {!hasKey(m.vendor) ? ' (sem chave)' : m.fast ? ' · fast' : m.thinking && m.thinking !== 'none' ? ` · ${m.thinking}` : ''}
                 </option>
               ))}
             </select>
+            {selectedModel && (
+              <span className="flex items-center gap-1">
+                {selectedModel.fast ? (
+                  <span className="text-[8px] font-black uppercase tracking-wider px-1 py-0.2 border border-(--color-accent)/40 bg-(--color-accent-subtle) text-(--color-accent-text)">
+                    ⚡ Fast
+                  </span>
+                ) : (
+                  selectedModel.thinking && selectedModel.thinking !== 'none' && (
+                    <span className="text-[8px] font-black uppercase tracking-wider px-1 py-0.2 border border-(--color-border-medium) bg-white/5 text-(--color-text-secondary)">
+                      🧠 {selectedModel.thinking}
+                    </span>
+                  )
+                )}
+              </span>
+            )}
           </div>
 
           {/* Chain Mode Toggle */}
@@ -114,7 +214,11 @@ export default function ChatSection({
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar select-text bg-(--color-bg-primary) relative">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar select-text bg-(--color-bg-primary) relative"
+      >
         {/* Subtle grid line backdrop for premium brutalist look */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none grid grid-cols-6 h-full w-full">
           <div className="border-r border-(--color-text-primary) h-full"></div>
@@ -167,6 +271,7 @@ export default function ChatSection({
             const isUser = m.role === 'user';
             const cleanContent = isUser ? m.content : cleanResponseContent(m.content);
             const containsRuns = !isUser && hasRunsInMessage(m.content);
+            const isFeedback = isUser && FEEDBACK_PREFIX_RE.test(m.content);
 
             // Skip rendering if content is empty (e.g. intermediate thought only messages or silent system runs)
             if (!cleanContent && !m.thought) return null;
@@ -184,7 +289,7 @@ export default function ChatSection({
                 )}
 
                 {/* Message Bubble */}
-                <div className="space-y-2 max-w-[85%]">
+                <div className="space-y-2 max-w-[85%] min-w-0">
                   {/* Thought/Reasoning Panel */}
                   {m.thought && (
                     <div className="bg-(--color-bg-secondary) border-l-2 border-(--color-accent) p-3.5 text-[11px] text-(--color-text-secondary) font-mono space-y-1">
@@ -204,14 +309,14 @@ export default function ChatSection({
 
                   {cleanContent && (
                     <div
-                      className={`p-4 rounded-none text-xs leading-relaxed ${
+                      className={`p-4 rounded-none text-xs leading-relaxed group ${
                         isUser
                           ? 'bg-white/5 text-(--color-text-primary) border border-(--color-border-medium) selection:bg-(--color-accent-subtle)'
                           : 'bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle)'
                       }`}
                     >
                       <div className="whitespace-pre-wrap leading-relaxed select-text font-sans">
-                        {cleanContent}
+                        {isFeedback && m.content.length > FEEDBACK_COLLAPSE_CHARS ? renderFeedbackBody(m.content) : cleanContent}
                       </div>
 
                       {/* Run tag notification inside chat bubble */}
@@ -220,6 +325,17 @@ export default function ChatSection({
                           <Terminal className="w-3.5 h-3.5 shrink-0" />
                           <span className="uppercase font-bold">SCRIPT GENERATED IN TERMINAL PIPELINE</span>
                         </div>
+                      )}
+
+                      {/* Copy assistant answers */}
+                      {!isUser && (
+                        <button
+                          onClick={() => handleCopy(m.id, cleanContent)}
+                          title="Copy answer"
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-(--color-text-muted) hover:text-(--color-text-primary) cursor-pointer"
+                        >
+                          {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                        </button>
                       )}
                     </div>
                   )}
@@ -235,30 +351,63 @@ export default function ChatSection({
             );
           })
         )}
-        <div ref={scrollRef} />
       </div>
+
+      {/* Jump-to-new-message button */}
+      {showJump && (
+        <button
+          onClick={() => {
+            nearBottomRef.current = true;
+            setShowJump(false);
+            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+          }}
+          className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-3 py-1.5 bg-(--color-accent) text-white text-[9px] font-black uppercase tracking-widest shadow-lg cursor-pointer hover:bg-(--color-accent-hover) transition-colors"
+        >
+          <ArrowDown className="w-3 h-3" />
+          novo
+        </button>
+      )}
 
       {/* Message Input Bar */}
       <form
+        ref={formRef}
         onSubmit={onSubmit}
         className="p-4 border-t border-(--color-border-subtle) bg-(--color-bg-primary) select-none shrink-0"
       >
-        <div className="flex items-center gap-3 max-w-3xl mx-auto bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1">
-          <input
-            type="text"
+        <div className="flex items-end gap-3 max-w-3xl mx-auto bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1">
+          <textarea
             value={inputPrompt}
-            onChange={(e) => onInputChange(e.target.value)}
+            onChange={(e) => onInputChange(e.target.value.slice(0, MAX_INPUT_CHARS))}
+            onKeyDown={handleKeyDown}
             disabled={loading}
-            placeholder={loading ? "PROCESSOR EXECUTING LOOP..." : "PROMPT CONSOLE FOR DIRECTIVES..."}
-            className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-white/35 focus:outline-none leading-relaxed font-sans select-text uppercase tracking-wide"
+            rows={1}
+            maxLength={MAX_INPUT_CHARS}
+            placeholder={loading ? "PROCESSOR EXECUTING LOOP..." : "PROMPT CONSOLE FOR DIRECTIVES... (Shift+Enter = newline)"}
+            className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-white/35 focus:outline-none leading-relaxed font-sans select-text tracking-wide resize-none max-h-32 overflow-y-auto custom-scrollbar"
           />
-          <button
-            type="submit"
-            disabled={loading || !inputPrompt.trim()}
-            className="p-2 bg-(--color-text-primary) text-(--color-bg-primary) hover:bg-(--color-accent) hover:text-white disabled:bg-white/10 disabled:text-(--color-text-muted) transition-all duration-150 rounded-none shrink-0 cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-          </button>
+          {inputPrompt.length > 0 && (
+            <span className="text-[8px] font-mono text-(--color-text-muted) pb-2 shrink-0 select-none">
+              {inputPrompt.length}/{MAX_INPUT_CHARS}
+            </span>
+          )}
+          {loading ? (
+            <button
+              type="button"
+              onClick={onStop}
+              title="Stop generation / chain"
+              className="p-2 bg-(--color-error) text-white hover:opacity-80 transition-all duration-150 rounded-none shrink-0 cursor-pointer"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!inputPrompt.trim()}
+              className="p-2 bg-(--color-text-primary) text-(--color-bg-primary) hover:bg-(--color-accent) hover:text-white disabled:bg-white/10 disabled:text-(--color-text-muted) transition-all duration-150 rounded-none shrink-0 cursor-pointer"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </form>
     </div>

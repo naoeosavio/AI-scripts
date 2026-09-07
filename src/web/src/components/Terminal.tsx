@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as Xterm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -46,36 +46,60 @@ export interface TerminalLayout {
   activeTabId: string;
 }
 
+interface PaneControl {
+  /** Close the WS on purpose (inactivity) without triggering reconnect. */
+  disconnect: () => void;
+  /** Re-open the WS (tab activated again). No-op if already open/connecting. */
+  reconnect: () => void;
+  /** Ask the server to kill the PTY, then close the WS. */
+  destroy: () => void;
+}
+
 interface XtermPaneProps {
   pane: TerminalPaneMeta;
   preload: string;
   replay: boolean;
-  onConnectionChange: (connected: boolean) => void;
-  registerClear: (paneId: string, fn: () => void) => void;
-  registerFit: (paneId: string, fn: () => void) => void;
+  onConnectionChange: (paneId: string, connected: boolean) => void;
+  registerClear: (paneId: string, fn: (() => void) | null) => void;
+  registerFit: (paneId: string, fn: (() => void) | null) => void;
+  registerControl: (paneId: string, control: PaneControl | null) => void;
 }
 
 const BOOT_MESSAGE =
   '\x1b[90mInteractive Core Shell initialized (PTY mode).\x1b[0m\r\n' +
   '\x1b[90mCLI AI engines available: tell-ai, codex, opencode.\x1b[0m\r\n';
 
-function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, registerFit }: XtermPaneProps) {
+const MAX_RECONNECT_ATTEMPTS = 3;
+
+function XtermPane({
+  pane,
+  preload,
+  replay,
+  onConnectionChange,
+  registerClear,
+  registerFit,
+  registerControl,
+}: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Xterm | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
+  const disposedRef = useRef(false);
+  const intentionalCloseRef = useRef(false);
+  const retryAttemptsRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstConnectRef = useRef(true);
   const { config } = useTheme();
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    const sendData = (data: string) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'input', data }));
-      }
-    };
+    disposedRef.current = false;
+    intentionalCloseRef.current = false;
+    retryAttemptsRef.current = 0;
+    firstConnectRef.current = true;
 
     const term = new Xterm({
       cursorBlink: true,
@@ -95,19 +119,69 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
 
     if (preload) term.write(preload);
 
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${proto}://${window.location.host}/api/terminal?paneId=${encodeURIComponent(
-      pane.id,
-    )}&cols=${term.cols}&rows=${term.rows}&scrollback=${replay ? '1' : '0'}${wsAuthQuery()}`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
     const sendResize = () => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }),
         );
       }
+    };
+
+    const connect = () => {
+      if (disposedRef.current) return;
+      // Drop any previous socket silently (no reconnect cascade)
+      const old = wsRef.current;
+      if (old) {
+        old.onopen = null;
+        old.onmessage = null;
+        old.onclose = null;
+        old.onerror = null;
+        try {
+          old.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      intentionalCloseRef.current = false;
+
+      const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      // Replay server scrollback on reconnects so the gap while offline is filled
+      const useReplay = firstConnectRef.current ? replay : true;
+      const wsUrl = `${proto}://${window.location.host}/api/terminal?paneId=${encodeURIComponent(
+        pane.id,
+      )}&cols=${term.cols}&rows=${term.rows}&scrollback=${useReplay ? '1' : '0'}${wsAuthQuery()}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+      firstConnectRef.current = false;
+
+      ws.onopen = () => {
+        retryAttemptsRef.current = 0;
+        onConnectionChange(pane.id, true);
+        sendResize();
+      };
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(String(event.data));
+          if (msg.type === 'data') term.write(msg.data);
+          else if (msg.type === 'exit') {
+            term.write(`\r\n\x1b[90m[process exited with code ${msg.code}]\x1b[0m\r\n`);
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
+      ws.onclose = () => {
+        onConnectionChange(pane.id, false);
+        if (disposedRef.current || intentionalCloseRef.current) return;
+        // Reconnect with backoff: 1s, 2s, 3s
+        if (retryAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          retryAttemptsRef.current += 1;
+          retryTimerRef.current = setTimeout(connect, 1000 * retryAttemptsRef.current);
+        }
+      };
+      ws.onerror = () => {
+        /* onclose always follows an error */
+      };
     };
 
     const inputDisposable = term.onData((data) => {
@@ -117,31 +191,65 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
     });
     const resizeDisposable = term.onResize(() => sendResize());
 
+    connect();
+
     registerClear(pane.id, () => {
-      sendData('\x0c');
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data: '\x0c' }));
+      }
       term.clear();
     });
 
-    ws.onopen = () => {
-      sendResize();
-      onConnectionChange(true);
-    };
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(String(event.data));
-        if (msg.type === 'data') term.write(msg.data);
-        else if (msg.type === 'exit') {
-          term.write(`\r\n\x1b[90m[process exited with code ${msg.code}]\x1b[0m\r\n`);
+    registerFit(pane.id, () => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) {
+        try {
+          fit.fit();
+        } catch {
+          /* ignore */
         }
-      } catch {
-        /* ignore malformed frames */
       }
-    };
-    ws.onclose = () => {
-      onConnectionChange(false);
-      inputDisposable.dispose();
-      resizeDisposable.dispose();
-    };
+    });
+
+    registerControl(pane.id, {
+      disconnect: () => {
+        intentionalCloseRef.current = true;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+        try {
+          wsRef.current?.close();
+        } catch {
+          /* ignore */
+        }
+      },
+      reconnect: () => {
+        if (disposedRef.current) return;
+        const ws = wsRef.current;
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+        retryAttemptsRef.current = 0;
+        connect();
+      },
+      destroy: () => {
+        intentionalCloseRef.current = true;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+        try {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: 'destroy' }));
+          }
+        } catch {
+          /* ignore */
+        }
+        try {
+          wsRef.current?.close();
+        } catch {
+          /* ignore */
+        }
+      },
+    });
 
     const observer = new ResizeObserver(() => {
       if (el.clientWidth > 0 && el.clientHeight > 0) {
@@ -155,25 +263,35 @@ function XtermPane({ pane, preload, replay, onConnectionChange, registerClear, r
     observer.observe(el);
     observerRef.current = observer;
 
-    registerFit(pane.id, () => {
-      if (el.clientWidth > 0 && el.clientHeight > 0) {
+    return () => {
+      disposedRef.current = true;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      observer.disconnect();
+      const ws = wsRef.current;
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
         try {
-          fit.fit();
+          ws.close();
         } catch {
           /* ignore */
         }
       }
-    });
-
-    return () => {
-      observer.disconnect();
-      ws.close();
       wsRef.current = null;
       inputDisposable.dispose();
       resizeDisposable.dispose();
       term.dispose();
       termRef.current = null;
+      fitRef.current = null;
+      observerRef.current = null;
+      registerClear(pane.id, null);
+      registerFit(pane.id, null);
+      registerControl(pane.id, null);
     };
+    // preload/replay are mount-time only; the register/onConnectionChange callbacks are stable
+    // and the xterm theme is updated by a dedicated effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pane.id]);
 
@@ -210,6 +328,9 @@ const DEFAULT_TAB: TerminalTabMeta = {
   activePaneId: 'pane-1',
 };
 
+// Close WS connections of inactive tabs after this long without use (PTY survives server-side)
+const TAB_WS_IDLE_MS = 60_000;
+
 export default function Terminal({
   pendingCommand,
   onConfirmPending,
@@ -228,27 +349,109 @@ export default function Terminal({
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null);
   const [renamingName, setRenamingName] = useState<string>('');
   const [agentFeedOpen, setAgentFeedOpen] = useState(false);
-  const [connected, setConnected] = useState(false);
+  const [paneConn, setPaneConn] = useState<Record<string, boolean>>({});
 
   const adoptedInitialRef = useRef(false);
   const clearFnsRef = useRef(new Map<string, () => void>());
   const fitFnsRef = useRef(new Map<string, () => void>());
+  const controlFnsRef = useRef(new Map<string, PaneControl>());
 
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
-  // Adopt a restored session layout once (when it arrives after mount)
+  // Stable registration callbacks (avoid re-mounting xterm panes)
+  const registerClear = useCallback((paneId: string, fn: (() => void) | null) => {
+    if (fn) clearFnsRef.current.set(paneId, fn);
+    else clearFnsRef.current.delete(paneId);
+  }, []);
+
+  const registerFit = useCallback((paneId: string, fn: (() => void) | null) => {
+    if (fn) fitFnsRef.current.set(paneId, fn);
+    else fitFnsRef.current.delete(paneId);
+  }, []);
+
+  const registerControl = useCallback((paneId: string, control: PaneControl | null) => {
+    if (control) controlFnsRef.current.set(paneId, control);
+    else controlFnsRef.current.delete(paneId);
+  }, []);
+
+  const handleConnectionChange = useCallback((paneId: string, connected: boolean) => {
+    setPaneConn((prev) => (prev[paneId] === connected ? prev : { ...prev, [paneId]: connected }));
+  }, []);
+
+  // Adopt a restored session layout when it arrives. Merge by id so it works
+  // even if the user already touched the layout (added tabs/panes) before the
+  // session fetch resolved; an untouched default tab is replaced outright.
   useEffect(() => {
-    if (initialLayout && !adoptedInitialRef.current && tabs.length === 1 && tabs[0].id === 'tab-1') {
-      adoptedInitialRef.current = true;
-      setTabs(initialLayout.tabs.length ? initialLayout.tabs : [DEFAULT_TAB]);
-      setActiveTabId(initialLayout.activeTabId || initialLayout.tabs[0]?.id || 'tab-1');
-    }
-  }, [initialLayout]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!initialLayout || !initialLayout.tabs.length || adoptedInitialRef.current) return;
+    adoptedInitialRef.current = true;
+    setTabs((prev) => {
+      const isVirgin =
+        prev.length === 1 &&
+        prev[0].id === DEFAULT_TAB.id &&
+        prev[0].panes.length === 1 &&
+        prev[0].panes[0].id === DEFAULT_TAB.panes[0].id;
+      if (isVirgin) return initialLayout.tabs;
+
+      const restoredIds = new Set(initialLayout.tabs.map((t) => t.id));
+      const merged = initialLayout.tabs.map((rt) => {
+        const existing = prev.find((t) => t.id === rt.id);
+        if (!existing) return rt;
+        const restoredPaneIds = new Set(rt.panes.map((p) => p.id));
+        const userOnlyPanes = existing.panes.filter((p) => !restoredPaneIds.has(p.id));
+        return { ...rt, panes: [...rt.panes, ...userOnlyPanes] };
+      });
+      const userOnlyTabs = prev.filter((t) => !restoredIds.has(t.id));
+      return [...merged, ...userOnlyTabs];
+    });
+    setActiveTabId(initialLayout.activeTabId || initialLayout.tabs[0]?.id || 'tab-1');
+  }, [initialLayout]);
 
   // Notify parent about layout changes (for session persistence)
   useEffect(() => {
     onLayoutChange?.({ tabs, activeTabId });
   }, [tabs, activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reconnect panes of the active tab; close WS of inactive tabs after a 60s idle
+  // (server keeps the PTY alive for 5min without clients, so this saves resources
+  // without losing shells).
+  useEffect(() => {
+    const idlePanes: string[] = [];
+    for (const tab of tabs) {
+      for (const pane of tab.panes) {
+        if (tab.id === activeTabId) {
+          controlFnsRef.current.get(pane.id)?.reconnect();
+        } else {
+          idlePanes.push(pane.id);
+        }
+      }
+    }
+    const timer = setTimeout(() => {
+      for (const id of idlePanes) controlFnsRef.current.get(id)?.disconnect();
+    }, TAB_WS_IDLE_MS);
+    return () => clearTimeout(timer);
+  }, [activeTabId, tabs]);
+
+  // Global keyboard shortcuts for the pending authorization overlay
+  useEffect(() => {
+    if (!pendingCommand) return;
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const inChatInput =
+        !!target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') &&
+        !String(target.className).includes('xterm-helper-textarea');
+      if (inChatInput) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onSkipPending();
+      } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        onConfirmPending(pendingCommand);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [pendingCommand, onSkipPending, onConfirmPending]);
 
   const updateTab = (updater: (tab: TerminalTabMeta) => TerminalTabMeta) => {
     setTabs((prev) =>
@@ -256,11 +459,14 @@ export default function Terminal({
     );
   };
 
+  const nextTabNumber = (list: TerminalTabMeta[]): number =>
+    list.reduce((max, t) => Math.max(max, parseInt(t.name, 10) || 0), 0) + 1;
+
   const handleAddTab = () => {
     if (tabs.length >= 4) return;
-    const newTabNum = tabs.length + 1;
-    const newPaneId = `pane-${Date.now()}`;
-    const newTabId = `tab-${Date.now()}`;
+    const newTabNum = nextTabNumber(tabs);
+    const newPaneId = crypto.randomUUID();
+    const newTabId = crypto.randomUUID();
     const newTab: TerminalTabMeta = {
       id: newTabId,
       name: `${newTabNum}: session-${newTabNum}`,
@@ -271,9 +477,15 @@ export default function Terminal({
     setActiveTabId(newTabId);
   };
 
+  const destroyPanes = (paneIds: string[]) => {
+    for (const id of paneIds) controlFnsRef.current.get(id)?.destroy();
+  };
+
   const handleCloseTab = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (tabs.length <= 1) return;
+    const target = tabs.find((t) => t.id === tabId);
+    if (target) destroyPanes(target.panes.map((p) => p.id));
     const filtered = tabs.filter((t) => t.id !== tabId);
     setTabs(filtered);
     if (activeTabId === tabId) {
@@ -283,7 +495,7 @@ export default function Terminal({
 
   const handleSplitPane = (splitType: 'vertical' | 'horizontal') => {
     if (activeTab.panes.length >= 4) return;
-    const newPaneId = `pane-${Date.now()}`;
+    const newPaneId = crypto.randomUUID();
     const paneCount = activeTab.panes.length + 1;
     updateTab((tab) => ({
       ...tab,
@@ -295,6 +507,7 @@ export default function Terminal({
   const handleClosePane = (paneId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (activeTab.panes.length <= 1) return;
+    destroyPanes([paneId]);
     const remaining = activeTab.panes.filter((p) => p.id !== paneId);
     const newActive = activeTab.activePaneId === paneId ? remaining[0].id : activeTab.activePaneId;
     updateTab((tab) => ({ ...tab, panes: remaining, activePaneId: newActive }));
@@ -302,14 +515,6 @@ export default function Terminal({
 
   const handleSelectPane = (paneId: string) => {
     updateTab((tab) => ({ ...tab, activePaneId: paneId }));
-  };
-
-  const registerClear = (paneId: string, fn: () => void) => {
-    clearFnsRef.current.set(paneId, fn);
-  };
-
-  const registerFit = (paneId: string, fn: () => void) => {
-    fitFnsRef.current.set(paneId, fn);
   };
 
   // Refit every pane of the newly active tab (they were hidden -> 0-size while inactive)
@@ -352,6 +557,9 @@ export default function Terminal({
         return 'grid-cols-2 grid-rows-2';
     }
   };
+
+  const totalPanes = tabs.reduce((n, t) => n + t.panes.length, 0);
+  const onlinePanes = Object.values(paneConn).filter(Boolean).length;
 
   return (
     <div className="flex flex-col h-full bg-(--color-bg-primary) text-(--color-text-primary) font-mono text-[11px] leading-relaxed select-text overflow-hidden relative">
@@ -482,6 +690,13 @@ export default function Terminal({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {pendingCommand && (
+            <span className="hidden sm:flex items-center gap-1.5 text-[9px] bg-(--color-error)/15 text-(--color-error) border border-(--color-error)/40 px-2 py-0.5 font-black uppercase tracking-wider animate-pulse">
+              <AlertCircle className="w-3 h-3" />
+              Auth required · Esc skip · Ctrl+↵ run
+            </span>
+          )}
+
           <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-(--color-border-subtle) p-0.5">
             <button
               onClick={() => handleSplitPane('vertical')}
@@ -540,6 +755,7 @@ export default function Terminal({
           const isRestored = adoptedInitialRef.current;
           const preload = isRestored ? preloadScrollback : BOOT_MESSAGE;
           const replay = isRestored ? !preloadScrollback : true;
+          const paneOnline = !!paneConn[pane.id];
 
           return (
             <div
@@ -557,6 +773,10 @@ export default function Terminal({
                   <span className="font-bold text-[10px] text-(--color-text-secondary) truncate">
                     {pane.title || 'bash'}
                   </span>
+                  <span
+                    title={paneOnline ? 'PTY Online' : 'PTY Offline'}
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneOnline ? 'bg-(--color-success)' : 'bg-(--color-error)/60 animate-pulse'}`}
+                  />
                   {isFocused && (
                     <span className="text-[8px] bg-(--color-accent) text-white font-black px-1 py-0.2 tracking-wider uppercase">
                       ACTIVE
@@ -581,11 +801,10 @@ export default function Terminal({
                   pane={pane}
                   preload={preload}
                   replay={replay}
-                  onConnectionChange={(state) => {
-                    if (pane.id === activeTab.activePaneId) setConnected(state);
-                  }}
+                  onConnectionChange={handleConnectionChange}
                   registerClear={registerClear}
                   registerFit={registerFit}
+                  registerControl={registerControl}
                 />
 
                 {/* Pending Command Authorization Prompt inside Pane */}
@@ -659,9 +878,9 @@ export default function Terminal({
           <span className="text-(--color-text-muted) max-w-[180px] truncate" title={cwd}>
             {cwd || 'CWD: /'}
           </span>
-          {connected ? (
-            <span className="flex items-center gap-1 text-(--color-success) font-bold">
-              <Wifi className="w-3 h-3" /> PTY Online
+          {onlinePanes > 0 ? (
+            <span className="flex items-center gap-1 text-(--color-success) font-bold" title="PTY sessions online / total panes">
+              <Wifi className="w-3 h-3" /> PTY {onlinePanes}/{totalPanes}
             </span>
           ) : (
             <span className="flex items-center gap-1 text-(--color-text-muted)">
