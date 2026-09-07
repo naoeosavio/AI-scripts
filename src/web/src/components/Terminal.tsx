@@ -9,12 +9,11 @@ import {
   AlertCircle,
   Trash2,
   ShieldCheck,
-  Columns,
-  Rows,
   Plus,
   X,
   Maximize2,
   Minimize2,
+  Minus,
   Square,
   ChevronUp,
   ChevronDown,
@@ -313,6 +312,7 @@ interface TerminalProps {
   onSkipPending: () => void;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
+  onHide?: () => void;
   agentLines?: TerminalLine[];
   onAgentLinesClear?: () => void;
   initialLayout?: TerminalLayout;
@@ -331,12 +331,16 @@ const DEFAULT_TAB: TerminalTabMeta = {
 // Close WS connections of inactive tabs after this long without use (PTY survives server-side)
 const TAB_WS_IDLE_MS = 60_000;
 
+// Maximum parallel sessions (tabs). Multi-pane split was removed; one session = one tab.
+export const MAX_TABS = 8;
+
 export default function Terminal({
   pendingCommand,
   onConfirmPending,
   onSkipPending,
   isExpanded = false,
   onToggleExpand,
+  onHide,
   agentLines = [],
   onAgentLinesClear,
   initialLayout,
@@ -463,7 +467,7 @@ export default function Terminal({
     list.reduce((max, t) => Math.max(max, parseInt(t.name, 10) || 0), 0) + 1;
 
   const handleAddTab = () => {
-    if (tabs.length >= 4) return;
+    if (tabs.length >= MAX_TABS) return;
     const newTabNum = nextTabNumber(tabs);
     const newPaneId = crypto.randomUUID();
     const newTabId = crypto.randomUUID();
@@ -491,17 +495,6 @@ export default function Terminal({
     if (activeTabId === tabId) {
       setActiveTabId(filtered[0]?.id ?? 'tab-1');
     }
-  };
-
-  const handleSplitPane = (splitType: 'vertical' | 'horizontal') => {
-    if (activeTab.panes.length >= 4) return;
-    const newPaneId = crypto.randomUUID();
-    const paneCount = activeTab.panes.length + 1;
-    updateTab((tab) => ({
-      ...tab,
-      panes: [...tab.panes, { id: newPaneId, title: `bash #${paneCount}` }],
-      activePaneId: newPaneId,
-    }));
   };
 
   const handleClosePane = (paneId: string, e: React.MouseEvent) => {
@@ -626,7 +619,7 @@ export default function Terminal({
               </span>
             )}
             <span className="text-(--color-accent-text) font-mono text-[9px] bg-(--color-accent-subtle) border border-(--color-accent)/30 px-1.5 py-0.5 ml-0.5 font-semibold">
-              TMUX
+              PTY
             </span>
           </div>
 
@@ -675,17 +668,17 @@ export default function Terminal({
 
             <button
               onClick={handleAddTab}
-              disabled={tabs.length >= 4}
+              disabled={tabs.length >= MAX_TABS}
               className={`flex items-center gap-1 px-2.5 py-1 text-[10px] border font-mono transition-all ${
-                tabs.length >= 4
+                tabs.length >= MAX_TABS
                   ? 'border-(--color-border-subtle) text-(--color-text-muted) cursor-not-allowed opacity-50'
                   : 'border-(--color-border-medium) bg-white/5 text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 hover:border-(--color-border-strong) cursor-pointer'
               }`}
-              title={tabs.length >= 4 ? 'Maximum 4 parallel tabs reached' : 'Add new parallel tab (Max 4)'}
+              title={tabs.length >= MAX_TABS ? `Maximum ${MAX_TABS} parallel tabs reached` : `Add new parallel tab (Max ${MAX_TABS})`}
             >
               <Plus className="w-3 h-3 text-(--color-accent)" />
               <span className="hidden sm:inline">New Tab</span>
-              <span className="text-[9px] text-(--color-text-muted)">({tabs.length}/4)</span>
+              <span className="text-[9px] text-(--color-text-muted)">({tabs.length}/{MAX_TABS})</span>
             </button>
           </div>
         </div>
@@ -699,24 +692,9 @@ export default function Terminal({
           )}
 
           <div className="hidden sm:flex items-center gap-1 bg-white/5 border border-(--color-border-subtle) p-0.5">
-            <button
-              onClick={() => handleSplitPane('vertical')}
-              disabled={activeTab.panes.length >= 4}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-              title="Split Pane Vertically (Side-by-side)"
-            >
-              <Columns className="w-3 h-3 text-(--color-accent)" />
-              <span>Split V</span>
-            </button>
-            <button
-              onClick={() => handleSplitPane('horizontal')}
-              disabled={activeTab.panes.length >= 4}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-              title="Split Pane Horizontally (Stacked)"
-            >
-              <Rows className="w-3 h-3 text-(--color-accent)" />
-              <span>Split H</span>
-            </button>
+            <span className="hidden md:inline px-2 py-0.5 text-[10px] text-(--color-text-muted) uppercase font-bold tracking-wider select-none">
+              1 sessão = 1 tab
+            </span>
           </div>
 
           <span className="hidden md:flex items-center gap-1.5 text-[9px] bg-white/5 text-(--color-text-secondary) border border-(--color-border-medium) px-2 py-0.5 uppercase font-bold tracking-wider">
@@ -730,6 +708,16 @@ export default function Terminal({
               title={isExpanded ? 'Restore Shell Height' : 'Maximize Shell Height'}
             >
               {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+
+          {onHide && !isExpanded && (
+            <button
+              onClick={onHide}
+              className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
+              title="Minimizar console (esconder)"
+            >
+              <Minus className="w-3.5 h-3.5" />
             </button>
           )}
 
@@ -848,10 +836,10 @@ export default function Terminal({
         ))}
       </div>
 
-      {/* Classic TMUX Bottom Status Bar */}
+      {/* Classic PTY Bottom Status Bar */}
       <div className="flex items-center justify-between px-3 py-1 bg-(--color-bg-tertiary) border-t border-(--color-border-subtle) text-[9.5px] text-(--color-text-muted) font-mono shrink-0 select-none">
         <div className="flex items-center gap-3">
-          <span className="text-(--color-accent) font-bold uppercase tracking-wider">[tell-ai:tmux]</span>
+          <span className="text-(--color-accent) font-bold uppercase tracking-wider">[tell-ai:pty]</span>
           <div className="flex items-center gap-1.5 text-(--color-text-secondary)">
             {tabs.map((tab, idx) => (
               <span
@@ -867,10 +855,7 @@ export default function Terminal({
 
         <div className="hidden md:flex items-center gap-3">
           <span>
-            Tabs: <strong className="text-(--color-text-secondary)">{tabs.length}/4</strong>
-          </span>
-          <span>
-            Panes in Tab: <strong className="text-(--color-text-secondary)">{activeTab.panes.length}/4</strong>
+            Tabs: <strong className="text-(--color-text-secondary)">{tabs.length}/{MAX_TABS}</strong>
           </span>
           <span>CLI-AI Support: <strong className="text-(--color-accent-text)">tell-ai, codex, opencode</strong></span>
         </div>

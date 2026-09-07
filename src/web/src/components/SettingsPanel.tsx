@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, Focus, RotateCcw, Download, Trash2 } from 'lucide-react';
+import { Key, Settings, Info, FileText, ChevronDown, ChevronUp, Camera, History, Wrench, RefreshCw, Palette, Sun, Moon, Type, Check, PanelLeft, PanelRight, PanelBottom, Maximize2, EyeOff, Focus, RotateCcw, Download, Trash2 } from 'lucide-react';
 import { useTheme, AccentPalette, FontChoice, ScaleLevel, LayoutMode } from '../theme.tsx';
 import { apiFetch } from '../api.ts';
 
@@ -69,7 +69,7 @@ const ACCENT_OPTIONS: { id: AccentPalette; label: string; color: string }[] = [
   { id: 'cyan',    label: 'Cyan',    color: '#0891B2' },
 ];
 
-const FONT_OPTIONS: FontChoice[] = ['Inter', 'Space Grotesk', 'JetBrains Mono'];
+const FONT_OPTIONS: FontChoice[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Custom'];
 const SCALE_OPTIONS: { label: string; value: ScaleLevel }[] = [
   { label: '0.85', value: 0.85 },
   { label: '0.92', value: 0.92 },
@@ -80,6 +80,7 @@ const SCALE_OPTIONS: { label: string; value: ScaleLevel }[] = [
 const LAYOUT_OPTIONS: { id: LayoutMode; label: string; desc: string }[] = [
   { id: 'default', label: 'Classic', desc: 'Explorer left · bottom terminal' },
   { id: 'focused', label: 'Focused', desc: 'Explorer right · fullscreen terminal · chat maximized' },
+  { id: 'custom', label: 'Custom', desc: 'You decide: sidebar side · terminal placement' },
 ];
 
 export default function SettingsPanel({
@@ -101,7 +102,7 @@ export default function SettingsPanel({
   const [showSession, setShowSession] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
 
-  const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, setLayout, resetTheme } = useTheme();
+  const { config, setMode, setAccent, setFontSans, setFontDisplay, setFontMono, setScale, setLayout, setCustomSidebarSide, setCustomTerminal, setCustomFont, resetTheme } = useTheme();
 
   const downloadSnapshot = async (name: string) => {
     try {
@@ -197,16 +198,22 @@ export default function SettingsPanel({
                 label="UI Font"
                 value={config.fontSans}
                 onChange={setFontSans}
+                customValue={config.customFonts.sans}
+                onCustomChange={(v) => setCustomFont('sans', v)}
               />
               <FontPicker
                 label="Display Font"
                 value={config.fontDisplay}
                 onChange={setFontDisplay}
+                customValue={config.customFonts.display}
+                onCustomChange={(v) => setCustomFont('display', v)}
               />
               <FontPicker
                 label="Code Font"
                 value={config.fontMono}
                 onChange={setFontMono}
+                customValue={config.customFonts.mono}
+                onCustomChange={(v) => setCustomFont('mono', v)}
               />
             </div>
 
@@ -253,6 +260,75 @@ export default function SettingsPanel({
                 ))}
               </div>
             </div>
+
+            {/* Custom layout controls */}
+            {config.layout === 'custom' && (
+              <div className="space-y-3 border border-(--color-border-subtle) bg-(--color-bg-primary) p-2.5">
+                <p className="text-[8.5px] text-(--color-text-muted) font-sans leading-snug">
+                  You decide everything: sidebar side, terminal placement. Sizes by drag (settings, terminal, editor) are persisted.
+                </p>
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Sidebar</span>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => setCustomSidebarSide('left')}
+                      className={`flex items-center justify-center gap-1.5 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                        config.customSidebarSide === 'left'
+                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                      }`}
+                    >
+                      <PanelLeft className="w-3 h-3" /> Left
+                    </button>
+                    <button
+                      onClick={() => setCustomSidebarSide('right')}
+                      className={`flex items-center justify-center gap-1.5 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                        config.customSidebarSide === 'right'
+                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                      }`}
+                    >
+                      <PanelRight className="w-3 h-3" /> Right
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">Terminal</span>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      onClick={() => setCustomTerminal('bottom')}
+                      className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                        config.customTerminal === 'bottom'
+                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                      }`}
+                    >
+                      <PanelBottom className="w-3 h-3" /> Bottom
+                    </button>
+                    <button
+                      onClick={() => setCustomTerminal('fullscreen')}
+                      className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                        config.customTerminal === 'fullscreen'
+                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                      }`}
+                    >
+                      <Maximize2 className="w-3 h-3" /> Full
+                    </button>
+                    <button
+                      onClick={() => setCustomTerminal('hidden')}
+                      className={`flex items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                        config.customTerminal === 'hidden'
+                          ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                          : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                      }`}
+                    >
+                      <EyeOff className="w-3 h-3" /> Hidden
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Reset */}
             <div className="flex justify-end pt-1">
@@ -556,25 +632,49 @@ export default function SettingsPanel({
   );
 }
 
-function FontPicker({ label, value, onChange }: { label: string; value: FontChoice; onChange: (f: FontChoice) => void }) {
+function FontPicker({
+  label,
+  value,
+  onChange,
+  customValue,
+  onCustomChange,
+}: {
+  label: string;
+  value: FontChoice;
+  onChange: (f: FontChoice) => void;
+  customValue: string;
+  onCustomChange: (v: string) => void;
+}) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold">{label}</span>
-      <div className="flex gap-1">
-        {FONT_OPTIONS.map((f) => (
-          <button
-            key={f}
-            onClick={() => onChange(f)}
-            className={`px-2 py-1 text-[9px] border cursor-pointer transition-colors ${
-              value === f
-                ? 'bg-(--color-accent) border-(--color-accent) text-white font-bold'
-                : 'bg-(--color-bg-primary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-(--color-text-primary) font-bold">{label}</span>
+        <div className="flex gap-1">
+          {FONT_OPTIONS.map((f) => (
+            <button
+              key={f}
+              onClick={() => onChange(f)}
+              className={`px-2 py-1 text-[9px] border cursor-pointer transition-colors ${
+                value === f
+                  ? 'bg-(--color-accent) border-(--color-accent) text-white font-bold'
+                  : 'bg-(--color-bg-primary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+              }`}
+            >
+              {f === 'Custom' ? 'Custom' : f}
+            </button>
+          ))}
+        </div>
       </div>
+      {value === 'Custom' && (
+        <input
+          type="text"
+          value={customValue}
+          onChange={(e) => onCustomChange(e.target.value)}
+          placeholder="Font family (ex: Fira Code, monospace)"
+          className="w-full bg-(--color-bg-primary) border border-(--color-border-medium) px-2 py-1 text-[9px] font-mono text-(--color-text-primary) focus:outline-none focus:border-(--color-accent)"
+          spellCheck={false}
+        />
+      )}
     </div>
   );
 }

@@ -2,9 +2,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 
 export type ThemeMode = 'dark' | 'light';
 export type AccentPalette = 'rose' | 'blue' | 'emerald' | 'amber' | 'violet' | 'cyan';
-export type FontChoice = 'Inter' | 'Space Grotesk' | 'JetBrains Mono';
+export type FontChoice = 'Inter' | 'Space Grotesk' | 'JetBrains Mono' | 'Custom';
 export type ScaleLevel = 0.85 | 0.92 | 1.0 | 1.08 | 1.15;
-export type LayoutMode = 'default' | 'focused';
+export type LayoutMode = 'default' | 'focused' | 'custom';
+export type SidebarSide = 'left' | 'right';
+export type TerminalPlacement = 'bottom' | 'fullscreen' | 'hidden';
+
+export interface CustomFonts {
+  sans: string;
+  display: string;
+  mono: string;
+}
 
 export interface ThemeConfig {
   mode: ThemeMode;
@@ -15,9 +23,20 @@ export interface ThemeConfig {
   scale: ScaleLevel;
   layout: LayoutMode;
   settingsHeight: number;
+  terminalHeight: number;
+  sidebarCollapsed: boolean;
+  customSidebarSide: SidebarSide;
+  customTerminal: TerminalPlacement;
+  customFonts: CustomFonts;
 }
 
 const STORAGE_KEY = 'theme-config-v2';
+
+const DEFAULT_CUSTOM_FONTS: CustomFonts = {
+  sans: 'Inter',
+  display: 'Space Grotesk',
+  mono: 'JetBrains Mono',
+};
 
 const DEFAULT_THEME: ThemeConfig = {
   mode: 'dark',
@@ -28,6 +47,11 @@ const DEFAULT_THEME: ThemeConfig = {
   scale: 1.0,
   layout: 'focused',
   settingsHeight: 320,
+  terminalHeight: 280,
+  sidebarCollapsed: false,
+  customSidebarSide: 'left',
+  customTerminal: 'bottom',
+  customFonts: DEFAULT_CUSTOM_FONTS,
 };
 
 const ACCENT_COLORS: Record<AccentPalette, { primary: string; hover: string; subtle: string; text: string }> = {
@@ -75,12 +99,27 @@ const LIGHT_VARS: Record<string, string> = {
   '--color-scrollbar-thumb':'rgba(0,0,0,0.15)',
 };
 
-function getFontFamily(name: FontChoice): string {
+const FONT_CHOICES: FontChoice[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Custom'];
+
+function getFontFamily(name: FontChoice, custom?: string): string {
+  if (name === 'Custom') {
+    return custom && custom.trim() ? `"${sanitizeFontFamily(custom)}", system-ui, sans-serif` : '"Inter", system-ui, sans-serif';
+  }
   switch (name) {
     case 'Inter': return '"Inter", system-ui, sans-serif';
     case 'Space Grotesk': return '"Space Grotesk", system-ui, sans-serif';
     case 'JetBrains Mono': return '"JetBrains Mono", monospace';
   }
+}
+
+function sanitizeFontFamily(raw: string): string {
+  return raw.replace(/["'\\`{};<>]/g, '').trim().slice(0, 120);
+}
+
+function sanitizeCustomFontValue(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const v = sanitizeFontFamily(raw);
+  return v || fallback;
 }
 
 interface ThemeContextValue {
@@ -93,6 +132,11 @@ interface ThemeContextValue {
   setScale: (s: ScaleLevel) => void;
   setLayout: (l: LayoutMode) => void;
   setSettingsHeight: (h: number) => void;
+  setTerminalHeight: (h: number) => void;
+  setSidebarCollapsed: (v: boolean) => void;
+  setCustomSidebarSide: (v: SidebarSide) => void;
+  setCustomTerminal: (v: TerminalPlacement) => void;
+  setCustomFont: (slot: keyof CustomFonts, value: string) => void;
   resetTheme: () => void;
 }
 
@@ -106,6 +150,11 @@ const ThemeContext = createContext<ThemeContextValue>({
   setScale: () => {},
   setLayout: () => {},
   setSettingsHeight: () => {},
+  setTerminalHeight: () => {},
+  setSidebarCollapsed: () => {},
+  setCustomSidebarSide: () => {},
+  setCustomTerminal: () => {},
+  setCustomFont: () => {},
   resetTheme: () => {},
 });
 
@@ -114,7 +163,7 @@ export function useTheme() {
 }
 
 export function xtermThemeFromConfig(config: ThemeConfig) {
-  const accent = ACCENT_COLORS[config.accent];
+  const accent = ACCENT_COLORS[config.accent] || ACCENT_COLORS.rose;
   if (config.mode === 'light') {
     return {
       background: '#F5F5F5',
@@ -150,17 +199,28 @@ export function xtermThemeFromConfig(config: ThemeConfig) {
 }
 
 function normalizeConfig(raw: any): ThemeConfig {
-  const c: ThemeConfig = { ...DEFAULT_THEME };
+  const c: ThemeConfig = { ...DEFAULT_THEME, customFonts: { ...DEFAULT_CUSTOM_FONTS } };
   if (raw && typeof raw === 'object') {
     if (raw.mode === 'dark' || raw.mode === 'light') c.mode = raw.mode;
     if (ACCENT_COLORS[raw.accent as AccentPalette]) c.accent = raw.accent as AccentPalette;
-    if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontSans)) c.fontSans = raw.fontSans;
-    if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontDisplay)) c.fontDisplay = raw.fontDisplay;
-    if ((['Inter', 'Space Grotesk', 'JetBrains Mono'] as FontChoice[]).includes(raw.fontMono)) c.fontMono = raw.fontMono;
+    if (FONT_CHOICES.includes(raw.fontSans)) c.fontSans = raw.fontSans;
+    if (FONT_CHOICES.includes(raw.fontDisplay)) c.fontDisplay = raw.fontDisplay;
+    if (FONT_CHOICES.includes(raw.fontMono)) c.fontMono = raw.fontMono;
     if ([0.85, 0.92, 1.0, 1.08, 1.15].includes(raw.scale)) c.scale = raw.scale;
-    if (raw.layout === 'default' || raw.layout === 'focused') c.layout = raw.layout;
+    if (['default', 'focused', 'custom'].includes(raw.layout)) c.layout = raw.layout;
     if (typeof raw.settingsHeight === 'number' && !Number.isNaN(raw.settingsHeight)) {
       c.settingsHeight = Math.min(Math.max(raw.settingsHeight, 140), 900);
+    }
+    if (typeof raw.terminalHeight === 'number' && !Number.isNaN(raw.terminalHeight)) {
+      c.terminalHeight = Math.min(Math.max(raw.terminalHeight, 120), 1200);
+    }
+    if (typeof raw.sidebarCollapsed === 'boolean') c.sidebarCollapsed = raw.sidebarCollapsed;
+    if (raw.customSidebarSide === 'left' || raw.customSidebarSide === 'right') c.customSidebarSide = raw.customSidebarSide;
+    if (['bottom', 'fullscreen', 'hidden'].includes(raw.customTerminal)) c.customTerminal = raw.customTerminal;
+    if (raw.customFonts && typeof raw.customFonts === 'object') {
+      c.customFonts.sans = sanitizeCustomFontValue(raw.customFonts.sans, DEFAULT_CUSTOM_FONTS.sans);
+      c.customFonts.display = sanitizeCustomFontValue(raw.customFonts.display, DEFAULT_CUSTOM_FONTS.display);
+      c.customFonts.mono = sanitizeCustomFontValue(raw.customFonts.mono, DEFAULT_CUSTOM_FONTS.mono);
     }
   }
   return c;
@@ -198,9 +258,9 @@ function applyConfigToRoot(config: ThemeConfig) {
     root.style.setProperty('--color-accent-subtle', accent.subtle);
     root.style.setProperty('--color-accent-text', accent.text);
 
-    root.style.setProperty('--font-sans', getFontFamily(config.fontSans));
-    root.style.setProperty('--font-display', getFontFamily(config.fontDisplay));
-    root.style.setProperty('--font-mono', getFontFamily(config.fontMono));
+    root.style.setProperty('--font-sans', getFontFamily(config.fontSans, config.customFonts.sans));
+    root.style.setProperty('--font-display', getFontFamily(config.fontDisplay, config.customFonts.display));
+    root.style.setProperty('--font-mono', getFontFamily(config.fontMono, config.customFonts.mono));
 
     root.style.setProperty('--ui-scale', String(config.scale));
 
@@ -234,7 +294,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setScale: (scale) => update({ scale }),
       setLayout: (layout) => update({ layout }),
       setSettingsHeight: (settingsHeight) => update({ settingsHeight }),
-      resetTheme: () => setConfig(DEFAULT_THEME),
+      setTerminalHeight: (terminalHeight) => update({ terminalHeight }),
+      setSidebarCollapsed: (sidebarCollapsed) => update({ sidebarCollapsed }),
+      setCustomSidebarSide: (customSidebarSide) => update({ customSidebarSide }),
+      setCustomTerminal: (customTerminal) => update({ customTerminal }),
+      setCustomFont: (slot, value) =>
+        setConfig((prev) => ({ ...prev, customFonts: { ...prev.customFonts, [slot]: sanitizeFontFamily(value) } })),
+      resetTheme: () => setConfig({ ...DEFAULT_THEME, customFonts: { ...DEFAULT_CUSTOM_FONTS } }),
     }),
     [config, update],
   );

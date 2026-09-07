@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown } from 'lucide-react';
+import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown, Minimize2 } from 'lucide-react';
 
 export interface ChatMessage {
   id: string;
@@ -33,6 +33,7 @@ interface ChatSectionProps {
   autoExecute: boolean;
   onAutoExecuteChange: (val: boolean) => void;
   onSelectSample: (prompt: string) => void;
+  onMinimize?: () => void;
 }
 
 const SAMPLE_PROMPTS = [
@@ -71,6 +72,7 @@ export default function ChatSection({
   autoExecute,
   onAutoExecuteChange,
   onSelectSample,
+  onMinimize,
 }: ChatSectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -151,7 +153,7 @@ export default function ChatSection({
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-(--color-accent) animate-pulse" />
           <span className="font-display font-black text-xs tracking-[0.2em] uppercase text-(--color-text-primary)">
-            Console Interface
+            Chat Interface
           </span>
         </div>
 
@@ -210,6 +212,16 @@ export default function ChatSection({
             />
             <span className="font-bold tracking-wider text-[9px] uppercase">Auto-Run (-y)</span>
           </label>
+
+          {onMinimize && (
+            <button
+              onClick={onMinimize}
+              title="Minimizar chat — mostrar console"
+              className="p-1.5 border border-(--color-border-subtle) hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
