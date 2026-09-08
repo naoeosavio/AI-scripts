@@ -311,23 +311,30 @@ TELL_TOKEN=<generated-token> tell --web --host 0.0.0.0
 
 With `TELL_TOKEN` set:
 
-- Every `/api/*` endpoint requires `Authorization: Bearer <token>`
-  (`GET /api/config` stays open so the UI can boot).
+- Every `/api/*` endpoint requires `Authorization: Bearer <token>`.
+  Only `GET /api/auth/status` (tells the login page whether a token is
+  needed) and `POST /api/auth/verify` (checks the token) are public —
+  `GET /api/config` also requires auth so it can't leak `cwd`/model info.
 - The terminal WebSocket requires the same token (`?token=` on the upgrade
   request) and only accepts same-origin connections.
 - The command bridge enforces limits even with a valid token: 10 commands/min
   per IP, max 2 concurrent commands, 200 KB output truncation, per-command
   timeout (`--exec-timeout`, default 120 s).
 
-**Logging in from the browser:** nothing to configure. On the first request the
-page gets a `401`, a native prompt asks for the token, and the answer is stored
-in `localStorage` — every following request (and the terminal WebSocket) sends
-it automatically. Reloading the page does not ask again.
+**Logging in from the browser:** open the page and a dedicated login screen
+asks for the token (animated Tell logo included). The main environment —
+chat, files, terminal — only loads after a successful login. The token lives
+**only in memory**: it is never written to `localStorage`, `sessionStorage`,
+cookies or the URL, so reloading the page (or closing the tab) always asks
+for it again. Every following request (and the terminal WebSocket) sends it
+automatically until then.
 
-- Wrong or rotated token? The prompt reappears on the next `401` — just paste
-  the new one.
-- To log out: in the browser console run `localStorage.removeItem('tell-token')`
-  and reload.
+- Wrong or rotated token? The login shows a generic `Invalid token` — just
+  paste the correct one. After 3 failures the form waits 5 s (30 s after 5),
+  and the server blocks the IP with `429` after 5 attempts in 15 minutes.
+- To log out: click **Sair** in the top bar (wipes the token from memory and
+  returns to the login screen). Any `401` mid-session (rotated token) does
+  the same automatically.
 - `curl`/API clients: `-H "Authorization: Bearer <token>"`.
 
 > `TELL_TOKEN` also blocks read/write access to secret-looking files
@@ -376,7 +383,7 @@ docker run --rm -it -p 3000:3000 \
 
 | Problem | Fix |
 |---------|-----|
-| `401 Unauthorized` / login prompt keeps appearing | The server runs with `TELL_TOKEN`. Paste the exact value into the prompt; if it is stale, clear it with `localStorage.removeItem('tell-token')` and reload. |
+| `401 Unauthorized` / login screen keeps rejecting | The server runs with `TELL_TOKEN`. Paste the exact value into the login form (nothing is stored — a stale token can't linger; just retype). After too many tries wait 15 min (`429` + `Retry-After`). |
 | `Failed to load native module: pty.node` | `node-pty` is a native module. Run `npm rebuild node-pty` (from `src/web`) or install build tools (`python3`, `make`, `g++`). |
 | Port already in use | Set another port: `PORT=3100 tell --web` |
 | Wrong model | Set `TELL_MODEL` (e.g. `TELL_MODEL=g tell --web`) or pick the model in the chat header. |

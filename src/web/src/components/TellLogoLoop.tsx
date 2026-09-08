@@ -3,6 +3,12 @@ import { useEffect, useState } from 'react';
 /**
  * Animated ASCII logo cycling through the 4 variants documented in `tell.md`
  * (TELL AI / SDK / CLI / WEB). Pure presentational — no network, no secrets.
+ *
+ * NOTE: block/box-drawing glyphs (█ ═ ║ ╔ ╝…) only align under a true
+ * monospace font WITH box-drawing coverage. The system `monospace` fallback
+ * on minimal systems often substitutes a proportional font per-glyph, which
+ * garbles the art — hence the explicit stack below (DejaVu Sans Mono covers
+ * these glyphs at uniform advance width) plus ligature/kerning kills.
  */
 
 const FRAMES: Array<{ label: string; art: string }> = [
@@ -50,6 +56,10 @@ const FRAMES: Array<{ label: string; art: string }> = [
 
 const FRAME_MS = 2000;
 
+/** Monospace stack with guaranteed box-drawing coverage at uniform width. */
+const LOGO_FONT_STACK =
+  '"DejaVu Sans Mono","Noto Sans Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace';
+
 export default function TellLogoLoop() {
   const [index, setIndex] = useState(0);
 
@@ -62,14 +72,24 @@ export default function TellLogoLoop() {
   const frame = FRAMES[index] ?? FRAMES[0]!;
 
   return (
-    <div className="select-none" aria-label="Tell logo">
-      <pre
-        aria-hidden="true"
-        className="font-mono text-[8px] sm:text-[10px] leading-tight text-(--color-accent-text) whitespace-pre overflow-x-auto"
-      >
-        {frame.art}
-        <span className="animate-pulse">█</span>
-      </pre>
+    <div className="select-none w-full" aria-label="Tell logo">
+      <div className="overflow-x-auto">
+        <pre
+          aria-hidden="true"
+          className="w-max mx-auto text-[8px] sm:text-[10px] text-(--color-accent-text) whitespace-pre"
+          style={{
+            fontFamily: LOGO_FONT_STACK,
+            letterSpacing: '0',
+            wordSpacing: '0',
+            lineHeight: 1.35,
+            fontKerning: 'none',
+            fontVariantLigatures: 'none',
+            fontFeatureSettings: '"liga" 0, "calt" 0',
+          }}
+        >
+          {frame.art}
+        </pre>
+      </div>
       <div className="mt-2 flex items-center justify-center gap-1.5" aria-hidden="true">
         {FRAMES.map((f, i) => (
           <span

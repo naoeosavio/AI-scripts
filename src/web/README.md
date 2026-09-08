@@ -38,8 +38,9 @@ tell-web --help
 
 ## Envs (see `.env.example`)
 
-`PORT`, `TELL_MODEL`, `TELL_TOKEN` (`Bearer` auth on `/api/*` except
-`/api/config`, and `?token=` on WS) + vendor keys (`GEMINI_API_KEY`,
+`PORT`, `TELL_MODEL`, `TELL_TOKEN` (`Bearer` auth on `/api/*` except the public
+`GET /api/auth/status` + `POST /api/auth/verify`, and `?token=` on WS;
+token lives only in browser memory — retyped on every connection) + vendor keys (`GEMINI_API_KEY`,
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`,
 `FIREWORKS_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, …).
 
@@ -53,7 +54,9 @@ tell-web --help
 | POST | `/api/save-file` | `{path, content, expectedMtime}` (409 if changed on disk) |
 | POST | `/api/execute` | `{command}` — blocks high-risk patterns, 429 (10/min, max 2 concurrent) |
 | GET | `/api/models` | Models/aliases + `keysStatus` per vendor |
-| GET | `/api/config` | `defaultModel`, `autoExecute`, `chain`, `yes`, `cwd` (no auth) |
+| GET | `/api/auth/status` | Public: `{authRequired}` only (drives the isolated login screen) |
+| POST | `/api/auth/verify` | Public + rate-limited (5/15min/IP): `{token}` → `200`/`401` generic/`429` + `Retry-After` |
+| GET | `/api/config` | `defaultModel`, `autoExecute`, `chain`, `yes`, `cwd` (requires auth when `TELL_TOKEN` is set) |
 | GET | `/api/context` | Generated system prompt (tree + README + conventions) |
 | POST | `/api/tell` | `{messages, modelAlias?, systemPrompt?}` (400 invalid payload, 429) |
 | GET/PUT | `/api/session` | Persisted state + server facts + live scrollbacks |
