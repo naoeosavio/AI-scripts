@@ -10,17 +10,17 @@
   "bin": {
     "tell-web": "dist/server.js"
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "dev": "tsx server.ts",
     "build": "tsup && vite build --emptyOutDir false && chmod +x dist/server.js",
+    "lint": "tsc -p tsconfig.json",
+    "format": "biome check --write src",
+    "check": "biome check src",
+    "ci": "npm run lint && npm run check && npm run build",
     "start": "node dist/server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "typecheck": "tsc -p tsconfig.json",
-    "lint": "npm run typecheck",
     "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {

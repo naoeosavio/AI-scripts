@@ -1,13 +1,30 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Send, Sparkles, BrainCircuit, Terminal, Check, Copy, Square, ArrowDown, Minimize2, Pencil, Trash2, RotateCcw, ChevronDown, ChevronUp, GitFork } from 'lucide-react';
-import { useTheme } from '../theme.tsx';
 import {
-  FEEDBACK_PREFIX_RE,
-  parseFeedback,
-  findLinkedFeedbackIndex,
-  displaySideFor,
+  ArrowDown,
+  BrainCircuit,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  GitFork,
+  Minimize2,
+  Pencil,
+  RotateCcw,
+  Send,
+  Sparkles,
+  Square,
+  Terminal,
+  Trash2,
+} from 'lucide-react';
+import type React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
   defaultFeedbackOpen,
+  displaySideFor,
+  FEEDBACK_PREFIX_RE,
+  findLinkedFeedbackIndex,
+  parseFeedback,
 } from '../../chain-feedback.ts';
+import { useTheme } from '../theme.tsx';
 
 export interface ChatMessage {
   id: string;
@@ -64,7 +81,17 @@ export function projectBasename(cwd: string): string {
 }
 
 // Vendors that require an API key (vast/local are keyless endpoints)
-const KEYED_VENDORS = new Set(['openai', 'anthropic', 'google', 'xai', 'deepseek', 'fireworks', 'openrouter', 'moonshotai', 'cerebras']);
+const KEYED_VENDORS = new Set([
+  'openai',
+  'anthropic',
+  'google',
+  'xai',
+  'deepseek',
+  'fireworks',
+  'openrouter',
+  'moonshotai',
+  'cerebras',
+]);
 const VENDOR_KEY_ALIASES: Record<string, string> = { google: 'google' };
 
 // Autoscroll only sticks when the user is already this close to the bottom
@@ -106,8 +133,7 @@ export default function ChatSection({
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null);
   // Explicit per-card open overrides; default follows content length (long starts collapsed).
   const [feedbackOpen, setFeedbackOpen] = useState<Record<string, boolean>>({});
-  const isFeedbackOpen = (m: { id: string; content: string }) =>
-    feedbackOpen[m.id] ?? defaultFeedbackOpen(m.content);
+  const isFeedbackOpen = (m: { id: string; content: string }) => feedbackOpen[m.id] ?? defaultFeedbackOpen(m.content);
 
   // Chat width: custom layout reads customChatWrap (default 80ch, 'max' = free space)
   const chatWrap = config.layout === 'custom' ? config.customChatWrap : 80;
@@ -134,7 +160,7 @@ export default function ChatSection({
     } else {
       setShowJump(true);
     }
-  }, [messages]);
+  }, []);
 
   const handleCopy = async (id: string, text: string) => {
     try {
@@ -205,7 +231,13 @@ export default function ChatSection({
               {models.map((m) => (
                 <option key={m.alias} value={m.alias} disabled={!hasKey(m.vendor)} className="bg-(--color-bg-primary)">
                   {m.alias} : {m.model}
-                  {!hasKey(m.vendor) ? ' (no key)' : m.fast ? ' · fast' : m.thinking && m.thinking !== 'none' ? ` · ${m.thinking}` : ' · none'}
+                  {!hasKey(m.vendor)
+                    ? ' (no key)'
+                    : m.fast
+                      ? ' · fast'
+                      : m.thinking && m.thinking !== 'none'
+                        ? ` · ${m.thinking}`
+                        : ' · none'}
                 </option>
               ))}
             </select>
@@ -216,7 +248,8 @@ export default function ChatSection({
                     ⚡ Fast
                   </span>
                 ) : (
-                  selectedModel.thinking && selectedModel.thinking !== 'none' && (
+                  selectedModel.thinking &&
+                  selectedModel.thinking !== 'none' && (
                     <span className="text-[8px] font-black uppercase tracking-wider px-1 py-0.2 border border-(--color-border-medium) bg-white/5 text-(--color-text-secondary)">
                       🧠 {selectedModel.thinking}
                     </span>
@@ -250,6 +283,7 @@ export default function ChatSection({
 
           {onClearChat && messages.length > 0 && (
             <button
+              type="button"
               onClick={() => {
                 if (window.confirm('Clear the whole chat? This cannot be undone.')) onClearChat();
               }}
@@ -261,6 +295,7 @@ export default function ChatSection({
           )}
           {onMinimize && (
             <button
+              type="button"
               onClick={onMinimize}
               title="Minimize chat — show terminal"
               className="p-1.5 border border-(--color-border-subtle) hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
@@ -289,19 +324,25 @@ export default function ChatSection({
         {messages.length === 0 ? (
           <div className="h-full flex flex-col justify-center max-w-xl mx-auto space-y-6 pt-6 relative z-10">
             {/* Project annotation — real workspace name */}
-            <div className="text-[10px] font-bold tracking-[0.3em] text-(--color-text-muted) uppercase truncate" title={cwd}>
+            <div
+              className="text-[10px] font-bold tracking-[0.3em] text-(--color-text-muted) uppercase truncate"
+              title={cwd}
+            >
               [ Tell Web — {projectBasename(cwd || '')} ]
             </div>
 
             {/* Compact hero — stays above the fold on mobile */}
             <div className="space-y-2 select-none">
               <h1 className="text-5xl sm:text-7xl font-black leading-[0.85] uppercase tracking-tighter -ml-1 text-(--color-text-primary)">
-                Tell<br/>Web.
+                Tell
+                <br />
+                Web.
               </h1>
               <div className="mt-3 flex gap-4 items-center">
                 <div className="h-[1px] w-12 bg-(--color-border-medium) shrink-0"></div>
                 <p className="text-sm font-light leading-relaxed tracking-tight text-(--color-text-secondary)">
-                  Ask the agent to run commands, edit files and inspect this workspace. Scripts require your confirmation before executing.
+                  Ask the agent to run commands, edit files and inspect this workspace. Scripts require your
+                  confirmation before executing.
                 </p>
               </div>
             </div>
@@ -314,6 +355,7 @@ export default function ChatSection({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 select-none">
                 {SAMPLE_PROMPTS.map((sample, idx) => (
                   <button
+                    type="button"
                     key={idx}
                     onClick={() => onSelectSample(sample.prompt)}
                     className="px-4 py-2.5 border border-(--color-border-subtle) text-left text-[10px] font-bold uppercase tracking-widest text-(--color-text-primary) hover:bg-(--color-text-primary) hover:text-(--color-bg-primary) hover:border-(--color-text-primary) transition-all duration-150 cursor-pointer rounded-none font-display"
@@ -335,8 +377,7 @@ export default function ChatSection({
             const containsRuns = !displayIsUser && hasRunsInMessage(m.content);
             const runScripts = !displayIsUser && containsRuns ? extractRunScripts(m.content) : [];
             const scriptExpanded = expandedScriptId === m.id;
-            const linkedFeedbackIdx =
-              !displayIsUser && containsRuns ? findLinkedFeedbackIndex(messages, msgIdx) : -1;
+            const linkedFeedbackIdx = !displayIsUser && containsRuns ? findLinkedFeedbackIndex(messages, msgIdx) : -1;
             const linkedFeedback =
               linkedFeedbackIdx >= 0 ? parseFeedback(messages[linkedFeedbackIdx]?.content ?? '') : null;
 
@@ -349,17 +390,14 @@ export default function ChatSection({
               const header = parsed?.kind === 'skipped' ? 'SKIPPED BY USER' : 'EXECUTED COMMAND';
               const open = isFeedbackOpen(m);
               return (
-                <div
-                  key={m.id}
-                  style={wrapStyle}
-                  className="group/msg flex gap-3 mx-auto relative z-10 justify-start"
-                >
+                <div key={m.id} style={wrapStyle} className="group/msg flex gap-3 mx-auto relative z-10 justify-start">
                   <div className="w-8 h-8 bg-white/5 border border-(--color-border-medium) text-(--color-text-primary) rounded-none flex items-center justify-center shrink-0 select-none">
                     <Terminal className="w-4 h-4 text-(--color-accent)" />
                   </div>
                   <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'flex-1 max-w-full' : 'max-w-[85%]'}`}>
                     <div className="rounded-none text-xs leading-relaxed bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle) overflow-hidden">
                       <button
+                        type="button"
                         onClick={() => setFeedbackOpen((prev) => ({ ...prev, [m.id]: !open }))}
                         aria-expanded={open}
                         title={open ? 'Hide result' : 'Expand result'}
@@ -374,54 +412,58 @@ export default function ChatSection({
                         )}
                       </button>
                       {open && (
-                      <div className="px-4 pb-4 space-y-2">
-                      {parsed && parsed.command && (
-                        <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto custom-scrollbar select-text">
-                          {parsed.command}
-                        </pre>
-                      )}
-                      {parsed?.kind === 'executed' ? (
-                        parsed.output ? (
-                          <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text text-(--color-text-secondary)">
-                            {parsed.output}
-                          </pre>
-                        ) : (
-                          <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">(no output)</p>
-                        )
-                      ) : (
-                        <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">Command skipped by user.</p>
-                      )}
-                      <div className="mt-2 flex justify-end gap-1.5 select-none">
-                        {parsed && parsed.command && (
-                          <button
-                            onClick={() => handleCopy(`${m.id}-cmd`, parsed.command)}
-                            title="Copy command"
-                            className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
-                          >
-                            {copiedId === `${m.id}-cmd` ? (
-                              <Check className="w-3 h-3 text-(--color-success)" />
+                        <div className="px-4 pb-4 space-y-2">
+                          {parsed?.command && (
+                            <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto custom-scrollbar select-text">
+                              {parsed.command}
+                            </pre>
+                          )}
+                          {parsed?.kind === 'executed' ? (
+                            parsed.output ? (
+                              <pre className="mt-2 p-2 bg-(--color-bg-primary) border border-(--color-border-subtle) text-[10px] font-mono whitespace-pre-wrap break-all max-h-48 overflow-y-auto custom-scrollbar select-text text-(--color-text-secondary)">
+                                {parsed.output}
+                              </pre>
                             ) : (
-                              <Copy className="w-3 h-3" />
+                              <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">(no output)</p>
+                            )
+                          ) : (
+                            <p className="mt-2 text-[10px] text-(--color-text-muted) font-sans">
+                              Command skipped by user.
+                            </p>
+                          )}
+                          <div className="mt-2 flex justify-end gap-1.5 select-none">
+                            {parsed?.command && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(`${m.id}-cmd`, parsed.command)}
+                                title="Copy command"
+                                className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                              >
+                                {copiedId === `${m.id}-cmd` ? (
+                                  <Check className="w-3 h-3 text-(--color-success)" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                                {copiedId === `${m.id}-cmd` ? 'Copied' : 'Cmd'}
+                              </button>
                             )}
-                            {copiedId === `${m.id}-cmd` ? 'Copied' : 'Cmd'}
-                          </button>
-                        )}
-                        {parsed?.kind === 'executed' && parsed.output && (
-                          <button
-                            onClick={() => handleCopy(`${m.id}-out`, parsed.output)}
-                            title="Copy result"
-                            className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
-                          >
-                            {copiedId === `${m.id}-out` ? (
-                              <Check className="w-3 h-3 text-(--color-success)" />
-                            ) : (
-                              <Copy className="w-3 h-3" />
+                            {parsed?.kind === 'executed' && parsed.output && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(`${m.id}-out`, parsed.output)}
+                                title="Copy result"
+                                className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
+                              >
+                                {copiedId === `${m.id}-out` ? (
+                                  <Check className="w-3 h-3 text-(--color-success)" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                                {copiedId === `${m.id}-out` ? 'Copied' : 'Output'}
+                              </button>
                             )}
-                            {copiedId === `${m.id}-out` ? 'Copied' : 'Output'}
-                          </button>
-                        )}
-                      </div>
-                      </div>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -455,8 +497,8 @@ export default function ChatSection({
                         {typeof m.thought === 'string'
                           ? m.thought
                           : typeof m.thought === 'object' && m.thought !== null
-                          ? (m.thought as any).text || JSON.stringify(m.thought, null, 2)
-                          : String(m.thought)}
+                            ? (m.thought as any).text || JSON.stringify(m.thought, null, 2)
+                            : String(m.thought)}
                       </div>
                     </div>
                   )}
@@ -473,18 +515,19 @@ export default function ChatSection({
                             handleCancelEdit();
                           }
                         }}
-                        autoFocus
                         rows={Math.min(12, Math.max(2, editingValue.split('\n').length + 1))}
                         className="w-full bg-transparent border-none text-xs text-(--color-text-primary) focus:outline-none leading-relaxed font-sans select-text resize-y custom-scrollbar"
                       />
                       <div className="flex items-center justify-end gap-2 select-none">
                         <button
+                          type="button"
                           onClick={handleCancelEdit}
                           className="px-3 py-1 border border-(--color-border-medium) text-[10px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleSaveEdit(m.id)}
                           disabled={!editingValue.trim() || loading}
                           className="flex items-center gap-1.5 px-3 py-1 bg-(--color-text-primary) hover:bg-(--color-accent) text-(--color-bg-primary) hover:text-white disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-black uppercase tracking-wider transition-colors cursor-pointer"
@@ -514,6 +557,7 @@ export default function ChatSection({
                         {containsRuns && (
                           <div className="mt-3 border border-(--color-accent)/25 bg-(--color-accent-subtle) rounded-none overflow-hidden">
                             <button
+                              type="button"
                               onClick={() => setExpandedScriptId(scriptExpanded ? null : m.id)}
                               aria-expanded={scriptExpanded}
                               title={scriptExpanded ? 'Minimize script' : 'Expand to view the script and result'}
@@ -543,6 +587,7 @@ export default function ChatSection({
                                     </pre>
                                     <div className="flex justify-end">
                                       <button
+                                        type="button"
                                         onClick={() => handleCopy(`${m.id}-script-${idx}`, script)}
                                         title="Copy script"
                                         className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
@@ -569,6 +614,7 @@ export default function ChatSection({
                                         </pre>
                                         <div className="flex justify-end">
                                           <button
+                                            type="button"
                                             onClick={() => handleCopy(`${m.id}-output`, linkedFeedback.output)}
                                             title="Copy result"
                                             className="flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
@@ -586,13 +632,17 @@ export default function ChatSection({
                                       <p className="text-[10px] text-(--color-text-muted) font-sans">(no output)</p>
                                     )
                                   ) : linkedFeedback?.kind === 'skipped' ? (
-                                    <p className="text-[10px] text-(--color-text-muted) font-sans">Command skipped by user.</p>
+                                    <p className="text-[10px] text-(--color-text-muted) font-sans">
+                                      Command skipped by user.
+                                    </p>
                                   ) : (
                                     <p className="text-[10px] text-(--color-text-muted) font-sans">
-                                      Waiting for execution — output will appear here after you authorize and run the command.
+                                      Waiting for execution — output will appear here after you authorize and run the
+                                      command.
                                     </p>
                                   )}
-                                </div>                              </div>
+                                </div>{' '}
+                              </div>
                             )}
                           </div>
                         )}
@@ -604,14 +654,20 @@ export default function ChatSection({
                   {!displayIsUser && editingId !== m.id && (
                     <div className="flex justify-start gap-1 opacity-100 md:opacity-0 md:group-hover/msg:opacity-100 focus-within:opacity-100 transition-opacity select-none">
                       <button
+                        type="button"
                         onClick={() => handleCopy(m.id, cleanContent)}
                         title="Copy response"
                         className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                       >
-                        {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                        {copiedId === m.id ? (
+                          <Check className="w-3 h-3 text-(--color-success)" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
                       </button>
                       {onRetryMessage && (
                         <button
+                          type="button"
                           onClick={() => onRetryMessage(m.id)}
                           disabled={loading}
                           title="Retry — regenerate from this response"
@@ -622,6 +678,7 @@ export default function ChatSection({
                       )}
                       {onForkFromMessage && (
                         <button
+                          type="button"
                           onClick={() => onForkFromMessage(m.id)}
                           title="Fork from this message"
                           className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
@@ -636,13 +693,19 @@ export default function ChatSection({
                   {isUser && !isFeedback && onEditMessage && editingId !== m.id && (
                     <div className="flex justify-end gap-1 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100 transition-opacity select-none">
                       <button
+                        type="button"
                         onClick={() => handleCopy(m.id, m.content)}
                         title="Copy message"
                         className="p-1.5 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
                       >
-                        {copiedId === m.id ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                        {copiedId === m.id ? (
+                          <Check className="w-3 h-3 text-(--color-success)" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setEditingId(m.id);
                           setEditingValue(m.content);
@@ -672,6 +735,7 @@ export default function ChatSection({
       {/* Jump-to-new-message button */}
       {showJump && (
         <button
+          type="button"
           onClick={() => {
             nearBottomRef.current = true;
             setShowJump(false);
@@ -701,7 +765,9 @@ export default function ChatSection({
             disabled={loading}
             rows={1}
             maxLength={MAX_INPUT_CHARS}
-            placeholder={loading ? 'Executing… (Stop button cancels the chain)' : 'Ask the agent… (Shift+Enter = newline)'}
+            placeholder={
+              loading ? 'Executing… (Stop button cancels the chain)' : 'Ask the agent… (Shift+Enter = newline)'
+            }
             className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-(--color-text-secondary) focus:outline-none leading-relaxed font-sans select-text resize-none max-h-32 overflow-y-auto custom-scrollbar"
           />
           {inputPrompt.length > 0 && (

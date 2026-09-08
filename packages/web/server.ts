@@ -1,34 +1,34 @@
-import express from 'express';
+import { exec } from 'node:child_process';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import fs from 'node:fs';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { createServer as createViteServer } from 'vite';
-import { generateText } from 'ai';
+import { promisify } from 'node:util';
 import { get_model, MODELS, resolve_model_spec, type SDKConfig } from '@tell-ai/sdk';
-import { buildSystemPrompt } from './context-builder';
-import { attachTerminalServer, getScrollback } from './pty';
+import { generateText } from 'ai';
+import express from 'express';
+import { createServer as createViteServer } from 'vite';
 import { parseCliArgs, printHelp } from './cli-args';
-import { resolveWithin } from './paths';
+import { buildSystemPrompt } from './context-builder';
 import {
-  isSensitiveRelPath,
-  isHighRiskScript,
-  createRateLimiter,
-  validateTellPayload,
-  isValidTokenInput,
   authFailureMessage,
+  createRateLimiter,
+  isHighRiskScript,
+  isSensitiveRelPath,
+  isValidTokenInput,
+  validateTellPayload,
 } from './guards';
+import { resolveWithin } from './paths';
+import { attachTerminalServer, getScrollback } from './pty';
 import {
-  emptySession,
-  loadSession,
-  saveSession,
   createSnapshot,
-  listHistory,
+  emptySession,
   historyDir,
   listGitChanges,
+  listHistory,
+  loadSession,
+  saveSession,
   type TellSession,
 } from './session';
 
@@ -49,13 +49,13 @@ if (!fs.existsSync(cliArgs.cwd) || !fs.statSync(cliArgs.cwd).isDirectory()) {
 const CWD = cliArgs.cwd;
 const INITIAL_PROMPT = cliArgs.initialPrompt;
 const AUTO_EXECUTE = cliArgs.autoExecute;
-const DEFAULT_MODEL = (cliArgs.model || process.env.TELL_MODEL || 'l').trim();
+const DEFAULT_MODEL = (cliArgs.model || process.env['TELL_MODEL'] || 'l').trim();
 const CHAIN = cliArgs.chain;
 const YES = cliArgs.yes;
-const PORT = cliArgs.port ?? Number(process.env.PORT || 3000);
+const PORT = cliArgs.port ?? Number(process.env['PORT'] || 3000);
 const HOST = cliArgs.host || '127.0.0.1';
 const EXEC_TIMEOUT_MS = cliArgs.execTimeout ?? 120_000;
-const TELL_TOKEN = process.env.TELL_TOKEN || '';
+const TELL_TOKEN = process.env['TELL_TOKEN'] || '';
 
 // API keys / base URLs are injected into the SDK (it never reads process.env).
 function load_sdk_config_from_env(): SDKConfig {
@@ -93,7 +93,7 @@ const tellRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });
 const authRateLimit = createRateLimiter({ max: 5, windowMs: 15 * 60_000 });
 let activeExecutions = 0;
 
-function clientIp(req: { ip?: string; socket: { remoteAddress?: string } }): string {
+function clientIp(req: { ip?: string | undefined; socket: { remoteAddress?: string | undefined } }): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
 }
 
@@ -273,18 +273,18 @@ function buildMergedSession(body: Partial<TellSession>): TellSession {
 // ---------------------------------------------------------------------------
 
 // API: Get workspace file tree structure
-app.get('/api/status', (req, res) => {
+app.get('/api/status', (_req, res) => {
   try {
     const tree = getFileTree(CWD);
-    res.json({ files: tree });
+    return res.json({ files: tree });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 // API: Read file content (returns mtime for optimistic-concurrency save checks)
 app.get('/api/file', (req, res) => {
-  const filePath = req.query.path as string;
+  const filePath = req.query['path'] as string;
   if (!filePath) {
     return res.status(400).json({ error: 'File path is required' });
   }
@@ -306,15 +306,15 @@ app.get('/api/file', (req, res) => {
       return res.status(413).json({ error: 'File too large to preview (>10MB). Use download instead.' });
     }
     const content = fs.readFileSync(resolvedPath, 'utf8');
-    res.json({ content, mtime: stat.mtimeMs, size: stat.size });
+    return res.json({ content, mtime: stat.mtimeMs, size: stat.size });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 // API: Download raw file bytes (used for binary/large files)
 app.get('/api/file/raw', (req, res) => {
-  const filePath = req.query.path as string;
+  const filePath = req.query['path'] as string;
   if (!filePath) {
     return res.status(400).json({ error: 'File path is required' });
   }
@@ -331,9 +331,9 @@ app.get('/api/file/raw', (req, res) => {
     if (!fs.existsSync(resolvedPath)) {
       return res.status(404).json({ error: 'File not found' });
     }
-    res.download(resolvedPath);
+    return res.download(resolvedPath);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -366,9 +366,9 @@ app.post('/api/save-file', (req, res) => {
     fs.writeFileSync(resolvedPath, content, 'utf8');
     serverState.filesChanged.add(filePath);
     const stat = fs.statSync(resolvedPath);
-    res.json({ success: true, mtime: stat.mtimeMs });
+    return res.json({ success: true, mtime: stat.mtimeMs });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -385,7 +385,7 @@ app.post('/api/execute', async (req, res) => {
 
   if (isHighRiskScript(command)) {
     return res.status(400).json({
-      output: `Blocked Command: "${command}"\n\nSecurity Guard: This command contains high-risk patterns (e.g. root deletion, modification of system directories, interpreter eval, curl pipe execution, or sudo privileges) and has been blocked for safety.`
+      output: `Blocked Command: "${command}"\n\nSecurity Guard: This command contains high-risk patterns (e.g. root deletion, modification of system directories, interpreter eval, curl pipe execution, or sudo privileges) and has been blocked for safety.`,
     });
   }
 
@@ -404,21 +404,23 @@ app.post('/api/execute', async (req, res) => {
     });
     const truncate = (text: string) =>
       text.length > EXEC_OUTPUT_LIMIT ? `${text.slice(0, EXEC_OUTPUT_LIMIT)}\n[truncated]` : text;
-    res.json({ output: truncate(stdout) + truncate(stderr) });
+    return res.json({ output: truncate(stdout) + truncate(stderr) });
   } catch (error: any) {
     const output = [
       error.stdout || '',
       error.stderr || '',
       error.killed ? `Process timed out after ${EXEC_TIMEOUT_MS}ms` : error.message || '',
-    ].filter(Boolean).join('\n');
-    res.json({ output: output.slice(0, EXEC_OUTPUT_LIMIT + 32) });
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return res.json({ output: output.slice(0, EXEC_OUTPUT_LIMIT + 32) });
   } finally {
     activeExecutions -= 1;
   }
 });
 
 // API: List of supported models and aliases
-app.get('/api/models', (req, res) => {
+app.get('/api/models', (_req, res) => {
   const formattedModels = Object.entries(MODELS).map(([alias, spec]) => {
     try {
       const resolved = resolve_model_spec(spec);
@@ -437,17 +439,17 @@ app.get('/api/models', (req, res) => {
 
   // Check which API keys are active in the environment
   const keysStatus = {
-    google: !!(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY),
-    openai: !!process.env.OPENAI_API_KEY,
-    anthropic: !!process.env.ANTHROPIC_API_KEY,
-    xai: !!process.env.XAI_API_KEY,
-    deepseek: !!process.env.DEEPSEEK_API_KEY,
-    fireworks: !!process.env.FIREWORKS_API_KEY,
-    cerebras: !!process.env.CEREBRAS_API_KEY,
-    moonshotai: !!process.env.MOONSHOTAI_API_KEY,
-    openrouter: !!process.env.OPENROUTER_API_KEY,
-    alibaba: !!process.env.ALIBABA_API_KEY,
-    zhipu: !!process.env.ZHIPU_API_KEY,
+    google: !!(process.env['GOOGLE_API_KEY'] || process.env['GEMINI_API_KEY']),
+    openai: !!process.env['OPENAI_API_KEY'],
+    anthropic: !!process.env['ANTHROPIC_API_KEY'],
+    xai: !!process.env['XAI_API_KEY'],
+    deepseek: !!process.env['DEEPSEEK_API_KEY'],
+    fireworks: !!process.env['FIREWORKS_API_KEY'],
+    cerebras: !!process.env['CEREBRAS_API_KEY'],
+    moonshotai: !!process.env['MOONSHOTAI_API_KEY'],
+    openrouter: !!process.env['OPENROUTER_API_KEY'],
+    alibaba: !!process.env['ALIBABA_API_KEY'],
+    zhipu: !!process.env['ZHIPU_API_KEY'],
   };
 
   res.json({
@@ -467,9 +469,7 @@ function sanitizeReasoning(val: any, depth = 0): string | null {
   if (!val || depth > 4) return null;
   if (typeof val === 'string') return truncateReasoning(val);
   if (Array.isArray(val)) {
-    const parts = val
-      .map((item) => sanitizeReasoning(item, depth + 1))
-      .filter(Boolean) as string[];
+    const parts = val.map((item) => sanitizeReasoning(item, depth + 1)).filter(Boolean) as string[];
     return parts.length ? truncateReasoning(parts.join('\n')) : null;
   }
   if (typeof val === 'object') {
@@ -532,7 +532,7 @@ app.post('/api/auth/verify', async (req, res) => {
 
 // API: Server configuration (default model set via TELL_MODEL, e.g. `tell g web`)
 // Requires auth when TELL_TOKEN is set (cwd/model must not leak to anonymous clients).
-app.get('/api/config', (req, res) => {
+app.get('/api/config', (_req, res) => {
   res.json({
     defaultModel: DEFAULT_MODEL,
     autoExecute: AUTO_EXECUTE,
@@ -543,7 +543,7 @@ app.get('/api/config', (req, res) => {
 });
 
 // API: Auto-generated project context (tree 4 levels + README + AGENTS + protocol)
-app.get('/api/context', (req, res) => {
+app.get('/api/context', (_req, res) => {
   try {
     const systemPrompt = buildSystemPrompt(CWD);
     res.json({ systemPrompt, cwd: CWD });
@@ -595,14 +595,14 @@ app.post('/api/tell', async (req, res) => {
       reasoning: reasoning as any,
     });
 
-    res.json({
+    return res.json({
       text: result.text,
       // Pass back other useful properties if available
       reasoning: sanitizeReasoning((result as any).reasoning),
     });
   } catch (error: any) {
     console.error('Error generating AI text:', error);
-    res.status(500).json({ error: 'AI generation failed. Check server logs.' });
+    return res.status(500).json({ error: 'AI generation failed. Check server logs.' });
   }
 });
 
@@ -611,7 +611,7 @@ app.post('/api/tell', async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // API: Get current session (persisted + live server facts + live scrollbacks)
-app.get('/api/session', (req, res) => {
+app.get('/api/session', (_req, res) => {
   const session = mergePaneScrollback(loadSession(CWD) || emptySession(CWD));
   if (INITIAL_PROMPT && (!session.messages || session.messages.length === 0)) {
     session.messages = [{ role: 'user', content: INITIAL_PROMPT }];
@@ -619,7 +619,7 @@ app.get('/api/session', (req, res) => {
   session.keysUsed = [...serverState.keysUsed];
   session.filesChanged = [...serverState.filesChanged];
   session.stats = { ...session.stats, commandsRun: serverState.commandsRun, aiTurns: serverState.aiTurns };
-  res.json({ session });
+  return res.json({ session });
 });
 
 // API: Save session state (client sends client-owned fields; server merges facts)
@@ -630,12 +630,12 @@ app.put('/api/session', (req, res) => {
   }
   const merged = buildMergedSession(body);
   const ok = saveSession(CWD, merged);
-  res.json({ success: ok, session: merged });
+  return res.json({ success: ok, session: merged });
 });
 
 // API: List session history snapshots
-app.get('/api/session/history', (req, res) => {
-  res.json({ history: listHistory(CWD) });
+app.get('/api/session/history', (_req, res) => {
+  return res.json({ history: listHistory(CWD) });
 });
 
 // API: Read a single snapshot (used for restore and download)
@@ -650,9 +650,9 @@ app.get('/api/session/history/:name', (req, res) => {
   }
   try {
     const session = JSON.parse(fs.readFileSync(full, 'utf8'));
-    res.json({ name, session });
+    return res.json({ name, session });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -668,9 +668,9 @@ app.delete('/api/session/history/:name', (req, res) => {
   }
   try {
     fs.unlinkSync(full);
-    res.json({ success: true, history: listHistory(CWD) });
+    return res.json({ success: true, history: listHistory(CWD) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
@@ -683,15 +683,15 @@ app.post('/api/session/snapshot', async (req, res) => {
     const merged = buildMergedSession(body || {});
     saveSession(CWD, merged);
     const name = createSnapshot(CWD, merged);
-    res.json({ success: !!name, name, gitChanges, history: listHistory(CWD) });
+    return res.json({ success: !!name, name, gitChanges, history: listHistory(CWD) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 
 // Setup Vite dev server middleware in development, and static file serving in production
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env['NODE_ENV'] !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -700,8 +700,8 @@ async function startServer() {
   } else {
     const distPath = __dirname;
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    app.get('*', (_req, res) => {
+      return res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 

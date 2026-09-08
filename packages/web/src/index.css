@@ -15,13 +15,13 @@
 :root {
   --ui-scale: 1;
 
-  --color-bg-primary: #0A0A0A;
+  --color-bg-primary: #0a0a0a;
   --color-bg-secondary: #121212;
   --color-bg-tertiary: #080808;
   --color-bg-elevated: #141414;
-  --color-bg-input: #0D0D0D;
+  --color-bg-input: #0d0d0d;
 
-  --color-text-primary: #F5F5F5;
+  --color-text-primary: #f5f5f5;
   --color-text-secondary: rgba(255, 255, 255, 0.6);
   --color-text-muted: rgba(255, 255, 255, 0.35);
 
@@ -29,13 +29,13 @@
   --color-border-medium: rgba(255, 255, 255, 0.15);
   --color-border-strong: rgba(255, 255, 255, 0.25);
 
-  --color-accent: #E11D48;
-  --color-accent-hover: #F43F5E;
-  --color-accent-subtle: #4C0519;
-  --color-accent-text: #FB7185;
+  --color-accent: #e11d48;
+  --color-accent-hover: #f43f5e;
+  --color-accent-subtle: #4c0519;
+  --color-accent-text: #fb7185;
 
-  --color-success: #10B981;
-  --color-error: #EF4444;
+  --color-success: #10b981;
+  --color-error: #ef4444;
 
   --color-scrollbar-track: rgba(255, 255, 255, 0.03);
   --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
@@ -45,14 +45,14 @@
 /* Font families and accent tokens are runtime-overridable via the ThemeProvider
  * (inline root vars from theme.tsx are the single source of truth — they win).
  * Only neutral tokens are mirrored here as first-paint fallbacks. */
-:root[data-theme='light'] {
-  --color-bg-primary: #FFFFFF;
-  --color-bg-secondary: #F5F5F5;
-  --color-bg-tertiary: #E5E5E5;
-  --color-bg-elevated: #FAFAFA;
-  --color-bg-input: #F0F0F0;
+:root[data-theme="light"] {
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f5f5f5;
+  --color-bg-tertiary: #e5e5e5;
+  --color-bg-elevated: #fafafa;
+  --color-bg-input: #f0f0f0;
 
-  --color-text-primary: #0A0A0A;
+  --color-text-primary: #0a0a0a;
   --color-text-secondary: rgba(0, 0, 0, 0.6);
   --color-text-muted: rgba(0, 0, 0, 0.35);
 
@@ -61,7 +61,7 @@
   --color-border-strong: rgba(0, 0, 0, 0.25);
 
   --color-success: #059669;
-  --color-error: #DC2626;
+  --color-error: #dc2626;
 
   --color-scrollbar-track: rgba(0, 0, 0, 0.03);
   --color-scrollbar-thumb: rgba(0, 0, 0, 0.15);
@@ -90,7 +90,7 @@ body {
 /* Decorative pulsing only: spinning loaders stay (they are functional feedback) */
 @media (prefers-reduced-motion: reduce) {
   .animate-pulse {
-    animation: none !important;
+    animation: none;
   }
 }
 

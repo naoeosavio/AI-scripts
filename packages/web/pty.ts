@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
-import http from 'node:http';
-import { spawn, IPty } from 'node-pty';
-import type { WebSocket } from 'ws';
+import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { type IPty, spawn } from 'node-pty';
+import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
-import { isValidPaneId, clampTerminalSize } from './guards';
+import { clampTerminalSize, isValidPaneId } from './guards';
 
 /** Constant-time WS token check (sha256 both sides so lengths don't leak). */
 function wsTokensEqual(provided: string, expected: string): boolean {
@@ -22,7 +22,7 @@ export interface TerminalServerOptions {
   cwd: string;
   shell?: string;
   /** When set, WS upgrades must carry ?token=<value> (mirrors TELL_TOKEN auth). */
-  token?: string;
+  token?: string | undefined;
 }
 
 interface PaneSession {
@@ -69,11 +69,7 @@ export interface GcTimerState {
 }
 
 /** Arm the GC timer; fires `onExpire` after `delayMs` unless cancelled. */
-export function scheduleGcTimer(
-  state: GcTimerState,
-  onExpire: () => void,
-  delayMs: number = GC_AFTER_MS,
-): void {
+export function scheduleGcTimer(state: GcTimerState, onExpire: () => void, delayMs: number = GC_AFTER_MS): void {
   cancelGcTimer(state);
   state.lastDisconnect = Date.now();
   state.timer = setTimeout(() => {
@@ -90,17 +86,21 @@ export function cancelGcTimer(state: GcTimerState): void {
 
 function scheduleGc(paneId: string, session: PaneSession, delayMs: number = GC_AFTER_MS): void {
   if (session.clients.size > 0) return;
-  scheduleGcTimer(session, () => {
-    const s = sessions.get(paneId);
-    if (s && s.clients.size === 0) {
-      try {
-        s.pty.kill();
-      } catch {
-        /* already dead */
+  scheduleGcTimer(
+    session,
+    () => {
+      const s = sessions.get(paneId);
+      if (s && s.clients.size === 0) {
+        try {
+          s.pty.kill();
+        } catch {
+          /* already dead */
+        }
+        sessions.delete(paneId);
       }
-      sessions.delete(paneId);
-    }
-  }, delayMs);
+    },
+    delayMs,
+  );
 }
 
 function ensureSession(paneId: string, opts: TerminalServerOptions): PaneSession {
@@ -213,10 +213,7 @@ export function attachTerminalServer(server: http.Server, opts: TerminalServerOp
     }
     const paneId = rawPaneId;
 
-    const size = clampTerminalSize(
-      Number(searchParams.get('cols')) || 80,
-      Number(searchParams.get('rows')) || 24,
-    );
+    const size = clampTerminalSize(Number(searchParams.get('cols')) || 80, Number(searchParams.get('rows')) || 24);
 
     if (!sessions.has(paneId) && sessions.size >= MAX_SESSIONS) {
       ws.close(4429, 'too many terminal sessions');

@@ -6,6 +6,13 @@ const ts = require('typescript');
 
 const WEB_SRC = path.join(__dirname, '..', 'packages', 'web');
 const CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-web-backend-'));
+// Transpiled web modules live in a temp dir, so link the repo node_modules
+// there — web sources import workspace deps (e.g. @tell-ai/sdk).
+try {
+  fs.symlinkSync(path.join(__dirname, '..', 'node_modules'), path.join(CACHE_DIR, 'node_modules'), 'dir');
+} catch {
+  /* already linked */
+}
 
 function loadModule(name) {
   const source = fs.readFileSync(path.join(WEB_SRC, name), 'utf8');

@@ -1,27 +1,28 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Folder,
-  FolderOpen,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
   File,
+  FileArchive,
   FileCode,
+  FileImage,
   FileJson,
   FileText,
-  FileImage,
-  FileArchive,
-  ChevronRight,
-  ChevronDown,
+  Folder,
+  FolderOpen,
+  Loader2,
   RefreshCw,
   Search,
-  AlertTriangle,
-  Loader2,
 } from 'lucide-react';
+import type React from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../api.ts';
 
 interface FileNode {
   name: string;
   path: string;
   isDirectory: boolean;
-  children?: FileNode[];
+  children?: FileNode[] | undefined;
 }
 
 interface FileExplorerProps {
@@ -32,8 +33,9 @@ interface FileExplorerProps {
 
 // Extension → icon mapping (fallback: File)
 function iconForFile(name: string) {
-  const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
-  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'sh', 'bash', 'rs', 'go', 'c', 'cpp', 'h'].includes(ext)) return FileCode;
+  const ext = name.includes('.') ? (name.split('.').pop()?.toLowerCase() ?? '') : '';
+  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'py', 'sh', 'bash', 'rs', 'go', 'c', 'cpp', 'h'].includes(ext))
+    return FileCode;
   if (['json', 'jsonc', 'yaml', 'yml', 'toml'].includes(ext)) return FileJson;
   if (['md', 'txt', 'log'].includes(ext)) return FileText;
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp'].includes(ext)) return FileImage;
@@ -69,7 +71,7 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
   const [query, setQuery] = useState('');
   const firstLoadRef = useRef(true);
 
-  const fetchFiles = async () => {
+  const fetchFiles = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -86,18 +88,20 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
+  // Re-fetch when the parent bumps refreshTrigger (e.g. after a file save).
   useEffect(() => {
+    void refreshTrigger;
     fetchFiles();
-  }, [refreshTrigger]);
+  }, [fetchFiles, refreshTrigger]);
 
-  const toggleExpand = (dirPath: string) => {
+  const toggleExpand = useCallback((dirPath: string) => {
     setExpandedDirs((prev) => ({
       ...prev,
       [dirPath]: !prev[dirPath],
     }));
-  };
+  }, []);
 
   // Pre-expand top-level `src` folders — only on the first successful load
   useEffect(() => {
@@ -114,62 +118,65 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
 
   const filteredTree = useMemo(() => filterTree(files, query.trim()), [files, query]);
 
-  const renderNode = (node: FileNode, depth = 0): React.ReactNode => {
-    const isExpanded = query.trim() ? true : expandedDirs[node.path];
-    const isSelected = selectedFilePath === node.path;
+  const renderNode = useCallback(
+    (node: FileNode, depth = 0): React.ReactNode => {
+      const isExpanded = query.trim() ? true : expandedDirs[node.path];
+      const isSelected = selectedFilePath === node.path;
 
-    if (node.isDirectory) {
-      return (
-        <div key={node.path} className="flex flex-col">
+      if (node.isDirectory) {
+        return (
+          <div key={node.path} className="flex flex-col">
+            <button
+              type="button"
+              onClick={() => toggleExpand(node.path)}
+              className="flex items-center gap-2 py-1.5 px-2.5 hover:bg-white/5 text-left text-xs font-bold text-(--color-text-secondary) transition-colors w-full cursor-pointer rounded-none uppercase tracking-wide font-display"
+              style={{ paddingLeft: `${depth * 12 + 10}px` }}
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 text-(--color-text-muted) shrink-0" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 text-(--color-text-muted) shrink-0" />
+              )}
+              {isExpanded ? (
+                <FolderOpen className="w-3.5 h-3.5 text-(--color-accent) shrink-0 fill-(--color-accent)/10" />
+              ) : (
+                <Folder className="w-3.5 h-3.5 text-(--color-accent) shrink-0 fill-(--color-accent)/10" />
+              )}
+              <span className="truncate">{node.name}</span>
+            </button>
+            {isExpanded && node.children && (
+              <div className="flex flex-col border-l border-(--color-border-subtle) ml-3.5">
+                {node.children.map((child) => renderNode(child, depth + 1))}
+              </div>
+            )}
+          </div>
+        );
+      } else {
+        const Icon = iconForFile(node.name);
+        return (
           <button
-            onClick={() => toggleExpand(node.path)}
-            className="flex items-center gap-2 py-1.5 px-2.5 hover:bg-white/5 text-left text-xs font-bold text-(--color-text-secondary) transition-colors w-full cursor-pointer rounded-none uppercase tracking-wide font-display"
-            style={{ paddingLeft: `${depth * 12 + 10}px` }}
+            type="button"
+            key={node.path}
+            onClick={() => onFileSelect(node.path)}
+            className={`flex items-center gap-2 py-1.5 px-2.5 text-left text-xs transition-all duration-150 w-full cursor-pointer rounded-none font-mono ${
+              isSelected
+                ? 'bg-white/5 text-(--color-text-primary) font-bold border-l-2 border-(--color-accent)'
+                : 'hover:bg-white/5 text-(--color-text-secondary)'
+            }`}
+            style={{ paddingLeft: `${depth * 12 + 15}px` }}
           >
-            {isExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5 text-(--color-text-muted) shrink-0" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-(--color-text-muted) shrink-0" />
-            )}
-            {isExpanded ? (
-              <FolderOpen className="w-3.5 h-3.5 text-(--color-accent) shrink-0 fill-(--color-accent)/10" />
-            ) : (
-              <Folder className="w-3.5 h-3.5 text-(--color-accent) shrink-0 fill-(--color-accent)/10" />
-            )}
+            <Icon
+              className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-(--color-accent)' : 'text-(--color-text-muted)'}`}
+            />
             <span className="truncate">{node.name}</span>
           </button>
-          {isExpanded && node.children && (
-            <div className="flex flex-col border-l border-(--color-border-subtle) ml-3.5">
-              {node.children.map((child) => renderNode(child, depth + 1))}
-            </div>
-          )}
-        </div>
-      );
-    } else {
-      const Icon = iconForFile(node.name);
-      return (
-        <button
-          key={node.path}
-          onClick={() => onFileSelect(node.path)}
-          className={`flex items-center gap-2 py-1.5 px-2.5 text-left text-xs transition-all duration-150 w-full cursor-pointer rounded-none font-mono ${
-            isSelected
-              ? 'bg-white/5 text-(--color-text-primary) font-bold border-l-2 border-(--color-accent)'
-              : 'hover:bg-white/5 text-(--color-text-secondary)'
-          }`}
-          style={{ paddingLeft: `${depth * 12 + 15}px` }}
-        >
-          <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-(--color-accent)' : 'text-(--color-text-muted)'}`} />
-          <span className="truncate">{node.name}</span>
-        </button>
-      );
-    }
-  };
-
-  const rows = useMemo(
-    () => filteredTree.map((node) => renderNode(node)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredTree, expandedDirs, selectedFilePath, query],
+        );
+      }
+    },
+    [expandedDirs, onFileSelect, query, selectedFilePath, toggleExpand],
   );
+
+  const rows = useMemo(() => filteredTree.map((node) => renderNode(node)), [filteredTree, renderNode]);
 
   return (
     <div className="flex flex-col h-full bg-(--color-bg-primary) border-r border-(--color-border-subtle)">
@@ -181,6 +188,7 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
           </span>
         </div>
         <button
+          type="button"
           onClick={fetchFiles}
           disabled={loading}
           className="p-1 rounded-none text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/5 disabled:opacity-50 transition-colors cursor-pointer"
@@ -207,6 +215,7 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
           />
           {query && (
             <button
+              type="button"
               onClick={() => setQuery('')}
               className="text-(--color-text-muted) hover:text-(--color-text-primary) text-[10px] cursor-pointer shrink-0"
               title="Clear filter"
@@ -223,6 +232,7 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
             <AlertTriangle className="w-5 h-5 text-(--color-error)" />
             <p className="text-[10px] font-mono uppercase tracking-wider text-(--color-error)">{error}</p>
             <button
+              type="button"
               onClick={fetchFiles}
               className="px-3 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/5 cursor-pointer"
             >
@@ -235,9 +245,13 @@ export default function FileExplorer({ onFileSelect, selectedFilePath, refreshTr
             <p className="text-[10px] font-mono uppercase tracking-wider text-(--color-text-muted)">Loading tree...</p>
           </div>
         ) : files.length === 0 ? (
-          <div className="p-4 text-center text-(--color-text-muted) text-xs font-mono uppercase tracking-wider">Empty Directory</div>
+          <div className="p-4 text-center text-(--color-text-muted) text-xs font-mono uppercase tracking-wider">
+            Empty Directory
+          </div>
         ) : filteredTree.length === 0 ? (
-          <div className="p-4 text-center text-(--color-text-muted) text-xs font-mono uppercase tracking-wider">No matches</div>
+          <div className="p-4 text-center text-(--color-text-muted) text-xs font-mono uppercase tracking-wider">
+            No matches
+          </div>
         ) : (
           rows
         )}

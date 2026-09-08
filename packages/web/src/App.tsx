@@ -1,29 +1,36 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal as TerminalIcon, Sparkles, PanelLeftClose, PanelLeftOpen, Maximize2, MessagesSquare as MessagesSquareIcon } from 'lucide-react';
-import FileExplorer from './components/FileExplorer.tsx';
-import FileViewer from './components/FileViewer.tsx';
-import Terminal, { TerminalLine, TerminalLayout, TerminalTabMeta } from './components/Terminal.tsx';
+import {
+  Maximize2,
+  MessagesSquare as MessagesSquareIcon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sparkles,
+  Terminal as TerminalIcon,
+} from 'lucide-react';
+import type React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { clampTerminalWidthCh, mergeRestoredTerminalLayout, resolveSafeActiveTabId } from '../terminal-layout.ts';
+import { apiFetch } from './api.ts';
 import AgentFeed from './components/AgentFeed.tsx';
+import ChatSection, { type ChatMessage } from './components/ChatSection.tsx';
 import ChatThreads, {
-  ChatThread,
+  type ChatThread,
   loadThreads,
-  saveThreads,
-  threadTitleFromMessages,
+  deleteThreadFromList as pureDeleteThread,
   duplicateThread as pureDuplicateThread,
   forkThreadFromMessage as pureForkThread,
-  deleteThreadFromList as pureDeleteThread,
+  saveThreads,
+  threadTitleFromMessages,
 } from './components/ChatThreads.tsx';
-import {
-  resolveSafeActiveTabId,
-  mergeRestoredTerminalLayout,
-  clampTerminalWidthCh,
-} from '../terminal-layout.ts';
+import FileExplorer from './components/FileExplorer.tsx';
+import FileViewer from './components/FileViewer.tsx';
 import SettingsPanel from './components/SettingsPanel.tsx';
-import ChatSection, { ChatMessage } from './components/ChatSection.tsx';
-import { useTheme } from './theme.tsx';
-import { apiFetch } from './api.ts';
+import Terminal, { type TerminalLayout, type TerminalLine, type TerminalTabMeta } from './components/Terminal.tsx';
 import { useToast } from './components/Toast.tsx';
+import { useTheme } from './theme.tsx';
 
+// Fallback until /api/context loads: the server replaces this with the
+// generated prompt (project tree + README/AGENTS + @tell-ai/sdk protocol).
+// Kept local so the frontend bundle doesn't pull the SDK browser build.
 const DEFAULT_SYSTEM_PROMPT = `
 This is a multi-step terminal assistant running on linux.
 
@@ -54,7 +61,17 @@ const FEEDBACK_OUTPUT_LIMIT = 4 * 1024;
 const UNLOAD_BODY_LIMIT = 60 * 1024;
 
 // Vendors that require an API key (mirrors ChatSection; used for the submit guard)
-const KEYED_VENDORS = new Set(['openai', 'anthropic', 'google', 'xai', 'deepseek', 'fireworks', 'openrouter', 'moonshotai', 'cerebras']);
+const KEYED_VENDORS = new Set([
+  'openai',
+  'anthropic',
+  'google',
+  'xai',
+  'deepseek',
+  'fireworks',
+  'openrouter',
+  'moonshotai',
+  'cerebras',
+]);
 
 interface SessionInfo {
   keysUsed: string[];
@@ -68,15 +85,9 @@ interface HistoryEntry {
   size: number;
 }
 
-export default function App({ onLogout }: { onLogout?: () => void }) {
-  const {
-    config,
-    setSettingsHeight,
-    setTerminalHeight,
-    setTerminalWidthCh,
-    setSidebarCollapsed,
-    setThreadsCollapsed,
-  } = useTheme();
+export default function App({ onLogout }: { onLogout?: (() => void) | undefined }) {
+  const { config, setSettingsHeight, setTerminalHeight, setTerminalWidthCh, setSidebarCollapsed, setThreadsCollapsed } =
+    useTheme();
   const { toast } = useToast();
   // Layout resolution: presets pin sidebar/terminal; 'custom' reads user-decided config
   const sidebarSide: 'left' | 'right' =
@@ -159,7 +170,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   });
   const adoptedRestoredRef = useRef(false);
   const [terminalScrollback, setTerminalScrollback] = useState<Record<string, string>>({});
-  const [layoutTick, setLayoutTick] = useState<number>(0);
+  const [_layoutTick, setLayoutTick] = useState<number>(0);
 
   const handleTerminalTabsChange = useCallback((tabs: TerminalTabMeta[], activeTabId: string) => {
     const safeActive = resolveSafeActiveTabId(tabs, activeTabId);
@@ -229,7 +240,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [persistSession, sessionReady, messages, systemPrompt, modelAlias, layoutTick]);
+  }, [persistSession, sessionReady]);
 
   // Best-effort final save on page unload. Trim the payload until it fits the
   // keepalive body budget (drop old messages first, then all of them); skip if still oversized.
@@ -327,7 +338,12 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
               if (!active || active.messages.length > 0) return prev;
               const next = prev.threads.map((t) =>
                 t.id === prev.activeId
-                  ? { ...t, messages: seeded, title: threadTitleFromMessages(seeded), updatedAt: new Date().toISOString() }
+                  ? {
+                      ...t,
+                      messages: seeded,
+                      title: threadTitleFromMessages(seeded),
+                      updatedAt: new Date().toISOString(),
+                    }
                   : t,
               );
               saveThreads(next, prev.activeId);
@@ -352,7 +368,8 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
             }
             setTerminalScrollback(scrollback);
           }
-          if (Array.isArray(s.keysUsed)) setSessionInfo({ keysUsed: s.keysUsed, filesChanged: s.filesChanged || [], stats: s.stats || {} });
+          if (Array.isArray(s.keysUsed))
+            setSessionInfo({ keysUsed: s.keysUsed, filesChanged: s.filesChanged || [], stats: s.stats || {} });
         }
       } catch (error) {
         console.error('Error fetching session:', error);
@@ -377,9 +394,9 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   }, []);
 
   // Helper to append a line to the agent feed
-  const appendAgentLine = (type: TerminalLine['type'], text: string) => {
+  const appendAgentLine = useCallback((type: TerminalLine['type'], text: string) => {
     setTerminalLines((prev) => [...prev.slice(-199), { type, text }]);
-  };
+  }, []);
 
   // Helper: extract runs from model response (case-insensitive: <RUN>, <run>, <Run>...)
   const extractRunScripts = (text: string): string[] => {
@@ -401,26 +418,22 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   };
 
   // Keep the active thread in sync whenever messages change (title + persistence)
-  const syncThreadMessages = useCallback(
-    (nextMessages: ChatMessage[]) => {
-      setThreadsState((prev) => {
-        const next = prev.threads.map((t) =>
-          t.id === prev.activeId
-            ? {
-                ...t,
-                messages: nextMessages,
-                updatedAt: new Date().toISOString(),
-                title:
-                  nextMessages.length === 0 ? t.title : threadTitleFromMessages(nextMessages),
-              }
-            : t,
-        );
-        saveThreads(next, prev.activeId);
-        return { threads: next, activeId: prev.activeId };
-      });
-    },
-    [],
-  );
+  const syncThreadMessages = useCallback((nextMessages: ChatMessage[]) => {
+    setThreadsState((prev) => {
+      const next = prev.threads.map((t) =>
+        t.id === prev.activeId
+          ? {
+              ...t,
+              messages: nextMessages,
+              updatedAt: new Date().toISOString(),
+              title: nextMessages.length === 0 ? t.title : threadTitleFromMessages(nextMessages),
+            }
+          : t,
+      );
+      saveThreads(next, prev.activeId);
+      return { threads: next, activeId: prev.activeId };
+    });
+  }, []);
 
   const setMessagesAndSync = useCallback(
     (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
@@ -448,7 +461,13 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
 
   const handleNewThread = useCallback(() => {
     const now = new Date().toISOString();
-    const t: ChatThread = { id: crypto.randomUUID(), title: 'New conversation', createdAt: now, updatedAt: now, messages: [] };
+    const t: ChatThread = {
+      id: crypto.randomUUID(),
+      title: 'New conversation',
+      createdAt: now,
+      updatedAt: now,
+      messages: [],
+    };
     setThreadsState((prev) => {
       const next = [...prev.threads, t];
       saveThreads(next, t.id);
@@ -474,7 +493,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   const handleForkThread = useCallback(() => {
     handleDuplicateThread();
     appendAgentLine('system', 'Thread forked (full copy).');
-  }, [handleDuplicateThread]);
+  }, [handleDuplicateThread, appendAgentLine]);
 
   const handleForkFromMessage = useCallback(
     (id: string) => {
@@ -496,21 +515,18 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
       setMessages(fork.messages);
       appendAgentLine('system', 'Thread forked from the selected message.');
     },
-    [messages],
+    [messages, appendAgentLine],
   );
 
-  const handleDeleteThread = useCallback(
-    (id: string) => {
-      setThreadsState((prev) => {
-        const next = pureDeleteThread(prev, id, () => crypto.randomUUID(), new Date().toISOString());
-        saveThreads(next.threads, next.activeId);
-        const activeMsgs = next.threads.find((t) => t.id === next.activeId)?.messages ?? [];
-        setMessages(activeMsgs);
-        return next;
-      });
-    },
-    [],
-  );
+  const handleDeleteThread = useCallback((id: string) => {
+    setThreadsState((prev) => {
+      const next = pureDeleteThread(prev, id, () => crypto.randomUUID(), new Date().toISOString());
+      saveThreads(next.threads, next.activeId);
+      const activeMsgs = next.threads.find((t) => t.id === next.activeId)?.messages ?? [];
+      setMessages(activeMsgs);
+      return next;
+    });
+  }, []);
 
   // Clear the whole chat: messages + agent feed + any in-flight chain.
   const handleClearChat = () => {
@@ -641,7 +657,10 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
     const selectedModel = models.find((m) => m.alias === modelAlias);
     const vendorKeys = keysStatus as Record<string, boolean>;
     if (selectedModel && KEYED_VENDORS.has(selectedModel.vendor) && !vendorKeys[selectedModel.vendor]) {
-      toast('error', `Model "${modelAlias}" (${selectedModel.vendor}) has no API key. Set it in .env and restart the server.`);
+      toast(
+        'error',
+        `Model "${modelAlias}" (${selectedModel.vendor}) has no API key. Set it in .env and restart the server.`,
+      );
       return;
     }
 
@@ -964,6 +983,23 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
     }
   };
 
+  const onEditorKeyDown = (e: React.KeyboardEvent) => {
+    const step = 16;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setEditorWidth((w) => Math.max(w - step, 240));
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setEditorWidth((w) => Math.min(w + step, Math.floor(window.innerWidth * 0.6)));
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      setEditorWidth(240);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      setEditorWidth(Math.floor(window.innerWidth * 0.6));
+    }
+  };
+
   const onTerminalKeyDown = (e: React.KeyboardEvent) => {
     const step = 16;
     const stepCh = 4;
@@ -980,9 +1016,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         e.preventDefault();
         const dir = terminalPlacement === 'top' ? -1 : 1;
         const delta = (e.key === 'ArrowUp' ? 1 : -1) * dir * step;
-        setTerminalHeight(
-          Math.min(Math.max(config.terminalHeight + delta, 120), Math.floor(window.innerHeight * 0.8)),
-        );
+        setTerminalHeight(Math.min(Math.max(config.terminalHeight + delta, 120), Math.floor(window.innerHeight * 0.8)));
       }
     }
     if (e.key === 'Home') {
@@ -1034,6 +1068,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
           />
         </div>
 
+        {/* biome-ignore lint/a11y/useSemanticElements: interactive resize handle with keyboard support, not a static thematic break */}
         <div
           role="separator"
           aria-orientation="horizontal"
@@ -1097,12 +1132,16 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   const handleAgentFeedToggle = useCallback((open: boolean) => setAgentFeedOpen(open), []);
 
   const threadsCollapsed = config.threadsCollapsed;
-  const toggleThreadsCollapsed = useCallback(() => setThreadsCollapsed(!threadsCollapsed), [setThreadsCollapsed, threadsCollapsed]);
+  const toggleThreadsCollapsed = useCallback(
+    () => setThreadsCollapsed(!threadsCollapsed),
+    [setThreadsCollapsed, threadsCollapsed],
+  );
 
   const navBar = (
     <div className="flex items-center justify-between px-3 py-1.5 bg-(--color-bg-input) border-b border-(--color-border-subtle) shrink-0 select-none">
       <div className="flex items-center gap-1.5">
         <button
+          type="button"
           onClick={toggleThreadsCollapsed}
           title={threadsCollapsed ? 'Show conversations' : 'Hide conversations'}
           aria-label={threadsCollapsed ? 'Show conversations' : 'Hide conversations'}
@@ -1117,6 +1156,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         </button>
 
         <button
+          type="button"
           onClick={() => {
             setView('chat');
             setChatMinimized(false);
@@ -1132,6 +1172,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         </button>
 
         <button
+          type="button"
           onClick={() => {
             setView('terminal');
             setChatMinimized(false);
@@ -1157,13 +1198,16 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
       </div>
 
       <div className="flex items-center gap-3 text-[10px] font-mono text-(--color-text-muted)">
-        <span className="hidden sm:inline">Mode: <strong className="text-(--color-text-secondary)">Interactive Shell</strong></span>
+        <span className="hidden sm:inline">
+          Mode: <strong className="text-(--color-text-secondary)">Interactive Shell</strong>
+        </span>
         <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded-full bg-(--color-success) animate-pulse" />
           <strong className="text-(--color-success)">Sandbox Ready</strong>
         </span>
         {onLogout && (
           <button
+            type="button"
             onClick={onLogout}
             title="Sair (apaga o token da memória)"
             aria-label="Sair (apaga o token da memória)"
@@ -1173,6 +1217,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
           </button>
         )}
         <button
+          type="button"
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           title={sidebarCollapsed ? 'Open Explorer' : 'Minimize Explorer'}
           aria-label={sidebarCollapsed ? 'Open Explorer' : 'Minimize Explorer'}
@@ -1262,7 +1307,9 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-w-0">
           {chatBox}
           {/* Code Viewer & Editor (collapsible if none selected) */}
-          <div className={`${selectedFilePath ? 'flex-1 lg:max-w-xl' : 'w-0 lg:max-w-0'} flex flex-col shrink-0 transition-all duration-300 overflow-hidden`}>
+          <div
+            className={`${selectedFilePath ? 'flex-1 lg:max-w-xl' : 'w-0 lg:max-w-0'} flex flex-col shrink-0 transition-all duration-300 overflow-hidden`}
+          >
             <FileViewer
               filePath={selectedFilePath}
               onSaveCompleted={() => setRefreshFileTreeTrigger((prev) => prev + 1)}
@@ -1283,7 +1330,9 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         )}
       </div>
       {/* Mobile fallbacks: threads/feed left-right collapse to top */}
-      <div className="md:hidden">{(threadsSide === 'left' || threadsSide === 'right') && threadsPanel('horizontal')}</div>
+      <div className="md:hidden">
+        {(threadsSide === 'left' || threadsSide === 'right') && threadsPanel('horizontal')}
+      </div>
       <div className="lg:hidden">
         {(agentFeedPlacement === 'left' || agentFeedPlacement === 'right') && agentFeedPanel}
       </div>
@@ -1303,6 +1352,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         <span className="text-(--color-text-muted) font-mono tracking-normal">({messages.length} msg)</span>
       </div>
       <button
+        type="button"
         onClick={() => {
           setView('chat');
           setChatMinimized(false);
@@ -1323,6 +1373,7 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
         <span>Console — minimized</span>
       </div>
       <button
+        type="button"
         onClick={() => setTerminalMinimized(false)}
         title="Restore console"
         className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
@@ -1368,63 +1419,81 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
   );
 
   const terminalResizeHandleV = isVerticalDock ? (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize terminal"
-      aria-valuenow={Math.round(config.terminalHeight)}
-      aria-valuemin={120}
-      aria-valuemax={900}
-      tabIndex={0}
-      onKeyDown={onTerminalKeyDown}
-      onPointerDown={(e) => startDrag('terminalV', e)}
-      onMouseDown={(e) => startDrag('terminalV', e)}
-      onDoubleClick={resetTerminalSize}
-      className="relative shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
-      title="Drag to resize the terminal (double-click resets)"
-    >
-      <div className="absolute -top-[5px] left-0 right-0 h-[12px] cursor-row-resize" />
-    </div>
+    <>
+      {/* biome-ignore lint/a11y/useSemanticElements: interactive resize handle with keyboard support, not a static thematic break */}
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize terminal"
+        aria-valuenow={Math.round(config.terminalHeight)}
+        aria-valuemin={120}
+        aria-valuemax={900}
+        tabIndex={0}
+        onKeyDown={onTerminalKeyDown}
+        onPointerDown={(e) => startDrag('terminalV', e)}
+        onMouseDown={(e) => startDrag('terminalV', e)}
+        onDoubleClick={resetTerminalSize}
+        className="relative shrink-0 h-1.5 cursor-row-resize border-t border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
+        title="Drag to resize the terminal (double-click resets)"
+      >
+        <div className="absolute -top-[5px] left-0 right-0 h-[12px] cursor-row-resize" />
+      </div>
+    </>
   ) : null;
 
   const terminalResizeHandleH = isHorizontalDock ? (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize terminal (60 to 200 characters)"
-      aria-valuenow={Math.round(config.terminalWidthCh)}
-      aria-valuemin={60}
-      aria-valuemax={200}
-      tabIndex={0}
-      onKeyDown={onTerminalKeyDown}
-      onPointerDown={(e) => startDrag('terminalH', e)}
-      onMouseDown={(e) => startDrag('terminalH', e)}
-      onDoubleClick={resetTerminalSize}
-      className="relative shrink-0 w-1.5 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
-      title={`Width ${config.terminalWidthCh}ch — drag (60–200ch, double-click resets)`}
-    >
-      <div className="absolute top-0 bottom-0 -left-[5px] w-[12px] cursor-col-resize" />
-    </div>
+    <>
+      {/* biome-ignore lint/a11y/useSemanticElements: interactive resize handle with keyboard support, not a static thematic break */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize terminal (60 to 200 characters)"
+        aria-valuenow={Math.round(config.terminalWidthCh)}
+        aria-valuemin={60}
+        aria-valuemax={200}
+        tabIndex={0}
+        onKeyDown={onTerminalKeyDown}
+        onPointerDown={(e) => startDrag('terminalH', e)}
+        onMouseDown={(e) => startDrag('terminalH', e)}
+        onDoubleClick={resetTerminalSize}
+        className="relative shrink-0 w-1.5 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-(--color-accent) touch-none"
+        title={`Width ${config.terminalWidthCh}ch — drag (60–200ch, double-click resets)`}
+      >
+        <div className="absolute top-0 bottom-0 -left-[5px] w-[12px] cursor-col-resize" />
+      </div>
+    </>
   ) : null;
 
   const dockedTerminalContainer =
     terminalPlacement === 'left' ? (
-      <div className="shrink-0 flex overflow-hidden border-r border-(--color-border-subtle)" style={{ width: `${config.terminalWidthCh}ch` }}>
+      <div
+        className="shrink-0 flex overflow-hidden border-r border-(--color-border-subtle)"
+        style={{ width: `${config.terminalWidthCh}ch` }}
+      >
         {terminalPane}
         {terminalResizeHandleH}
       </div>
     ) : terminalPlacement === 'right' ? (
-      <div className="shrink-0 flex overflow-hidden border-l border-(--color-border-subtle)" style={{ width: `${config.terminalWidthCh}ch` }}>
+      <div
+        className="shrink-0 flex overflow-hidden border-l border-(--color-border-subtle)"
+        style={{ width: `${config.terminalWidthCh}ch` }}
+      >
         {terminalResizeHandleH}
         {terminalPane}
       </div>
     ) : terminalPlacement === 'top' ? (
-      <div className="shrink-0 flex flex-col overflow-hidden border-b border-(--color-border-subtle)" style={{ height: config.terminalHeight }}>
+      <div
+        className="shrink-0 flex flex-col overflow-hidden border-b border-(--color-border-subtle)"
+        style={{ height: config.terminalHeight }}
+      >
         {terminalPane}
         {terminalResizeHandleV}
       </div>
     ) : (
-      <div className="shrink-0 flex flex-col overflow-hidden border-t border-(--color-border-subtle)" style={{ height: config.terminalHeight }}>
+      <div
+        className="shrink-0 flex flex-col overflow-hidden border-t border-(--color-border-subtle)"
+        style={{ height: config.terminalHeight }}
+      >
         {terminalResizeHandleV}
         {terminalPane}
       </div>
@@ -1442,11 +1511,16 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
           {/* Editor panel next to the maximized console */}
           {selectedFilePath && (
             <>
+              {/* biome-ignore lint/a11y/useSemanticElements: interactive resize handle with keyboard support, not a static thematic break */}
               <div
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize editor"
+                aria-valuenow={Math.round(editorWidth)}
+                aria-valuemin={240}
+                aria-valuemax={1200}
                 tabIndex={0}
+                onKeyDown={onEditorKeyDown}
                 onPointerDown={(e) => startDrag('editor', e)}
                 onMouseDown={(e) => startDrag('editor', e)}
                 className="relative w-1.5 shrink-0 cursor-col-resize border-l border-(--color-border-subtle) bg-(--color-bg-secondary) hover:bg-(--color-accent)/40 transition-colors touch-none"
@@ -1467,23 +1541,20 @@ export default function App({ onLogout }: { onLogout?: () => void }) {
       )}
 
       {/* Chat + docked terminal */}
-      {chatVisible && (
-        <>
-          {isHorizontalDock ? (
-            <div className="flex-1 min-h-0 flex overflow-hidden">
-              {terminalPlacement === 'left' && isDocked && dockedTerminalContainer}
-              <div className="flex-1 min-w-0 flex overflow-hidden">{chatAndViewer}</div>
-              {terminalPlacement === 'right' && isDocked && dockedTerminalContainer}
-            </div>
-          ) : (
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              {terminalPlacement === 'top' && isDocked && dockedTerminalContainer}
-              <div className="flex-1 min-h-0 flex overflow-hidden">{chatAndViewer}</div>
-              {terminalPlacement === 'bottom' && isDocked && dockedTerminalContainer}
-            </div>
-          )}
-        </>
-      )}
+      {chatVisible &&
+        (isHorizontalDock ? (
+          <div className="flex-1 min-h-0 flex overflow-hidden">
+            {terminalPlacement === 'left' && isDocked && dockedTerminalContainer}
+            <div className="flex-1 min-w-0 flex overflow-hidden">{chatAndViewer}</div>
+            {terminalPlacement === 'right' && isDocked && dockedTerminalContainer}
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {terminalPlacement === 'top' && isDocked && dockedTerminalContainer}
+            <div className="flex-1 min-h-0 flex overflow-hidden">{chatAndViewer}</div>
+            {terminalPlacement === 'bottom' && isDocked && dockedTerminalContainer}
+          </div>
+        ))}
     </>
   );
 

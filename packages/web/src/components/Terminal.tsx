@@ -1,26 +1,27 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal as Xterm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { Terminal as Xterm } from '@xterm/xterm';
+import type React from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import '@xterm/xterm/css/xterm.css';
-import { wsAuthQuery } from '../auth.ts';
 import {
-  Terminal as TerminalIcon,
-  Play,
   AlertCircle,
-  Trash2,
-  ShieldCheck,
-  Plus,
-  X,
   Maximize2,
   Minimize2,
   Minus,
-  Square,
   Pencil,
+  Play,
+  Plus,
+  ShieldCheck,
+  Square,
+  Terminal as TerminalIcon,
+  Trash2,
   Wifi,
   WifiOff,
+  X,
 } from 'lucide-react';
-import { useTheme, xtermThemeFromConfig } from '../theme.tsx';
 import { mergeRestoredTerminalLayout, resolveSafeActiveTabId } from '../../terminal-layout.ts';
+import { wsAuthQuery } from '../auth.ts';
+import { useTheme, xtermThemeFromConfig } from '../theme.tsx';
 import { useToast } from './Toast.tsx';
 
 export interface TerminalLine {
@@ -122,9 +123,7 @@ function XtermPane({
 
     const sendResize = () => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }),
-        );
+        wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
       }
     };
 
@@ -296,7 +295,18 @@ function XtermPane({
     // preload/replay are mount-time only; the register/onConnectionChange callbacks are stable
     // and the xterm theme is updated by a dedicated effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pane.id]);
+  }, [
+    pane.id,
+    config,
+    onConnectionChange,
+    pane.title,
+    preload,
+    registerClear,
+    registerControl,
+    registerFit,
+    replay,
+    toast,
+  ]);
 
   // Update the xterm color theme / font size live when the user changes appearance prefs
   useEffect(() => {
@@ -325,21 +335,21 @@ interface TerminalProps {
   pendingCommand: string | null;
   onConfirmPending: (editedCommand: string) => void;
   onSkipPending: () => void;
-  isExpanded?: boolean;
-  onToggleExpand?: () => void;
-  onHide?: () => void;
-  initialLayout?: TerminalLayout;
-  initialScrollback?: Record<string, string>;
-  onLayoutChange?: (layout: TerminalLayout) => void;
-  cwd?: string;
+  isExpanded?: boolean | undefined;
+  onToggleExpand?: (() => void) | undefined;
+  onHide?: (() => void) | undefined;
+  initialLayout?: TerminalLayout | undefined;
+  initialScrollback?: Record<string, string> | undefined;
+  onLayoutChange?: ((layout: TerminalLayout) => void) | undefined;
+  cwd?: string | undefined;
   /** Controlled mode (owned by App so view switches never reset tabs). */
-  tabs?: TerminalTabMeta[];
-  activeTabId?: string;
-  onTabsChange?: (tabs: TerminalTabMeta[], activeTabId: string) => void;
+  tabs?: TerminalTabMeta[] | undefined;
+  activeTabId?: string | undefined;
+  onTabsChange?: ((tabs: TerminalTabMeta[], activeTabId: string) => void) | undefined;
   /** Compact lateral mode: cascade select, icon-only New Tab, reduced header. */
-  compact?: boolean;
+  compact?: boolean | undefined;
   /** Minimal status bar (used together with compact). */
-  minimalStatus?: boolean;
+  minimalStatus?: boolean | undefined;
 }
 
 const TERMINAL_LAYOUT_KEY = 'tell-terminal-layout-v1';
@@ -396,17 +406,21 @@ export default function Terminal({
   compact = false,
   minimalStatus = false,
 }: TerminalProps) {
-  const [internalTabs, setInternalTabs] = useState<TerminalTabMeta[]>(() => loadPersistedLayout()?.tabs ?? [DEFAULT_TAB]);
+  const [internalTabs, setInternalTabs] = useState<TerminalTabMeta[]>(
+    () => loadPersistedLayout()?.tabs ?? [DEFAULT_TAB],
+  );
   const [internalActiveTabId, setInternalActiveTabId] = useState<string>(
     () => loadPersistedLayout()?.activeTabId ?? 'tab-1',
   );
-  const isControlled = controlledTabs !== undefined && controlledActiveTabId !== undefined && onTabsChange !== undefined;
+  const isControlled =
+    controlledTabs !== undefined && controlledActiveTabId !== undefined && onTabsChange !== undefined;
   const tabs = isControlled ? (controlledTabs as TerminalTabMeta[]) : internalTabs;
   const activeTabId = isControlled ? (controlledActiveTabId as string) : internalActiveTabId;
   const setTabsEffective = useCallback(
     (updater: TerminalTabMeta[] | ((prev: TerminalTabMeta[]) => TerminalTabMeta[])) => {
       const prev = isControlled ? (controlledTabs as TerminalTabMeta[]) : internalTabs;
-      const next = typeof updater === 'function' ? (updater as (p: TerminalTabMeta[]) => TerminalTabMeta[])(prev) : updater;
+      const next =
+        typeof updater === 'function' ? (updater as (p: TerminalTabMeta[]) => TerminalTabMeta[])(prev) : updater;
       if (isControlled) {
         onTabsChange?.(next, (controlledActiveTabId as string) ?? next[0]?.id ?? 'tab-1');
       } else {
@@ -475,7 +489,7 @@ export default function Terminal({
   useEffect(() => {
     const maxNum = tabs.reduce((max, t) => Math.max(max, parseInt(t.name, 10) || 0), 0);
     tabSeqRef.current = Math.max(tabSeqRef.current, maxNum, tabs.length);
-  }, [tabs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabs.length, tabs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Adopt a restored session layout when it arrives. Merge by id so it works
   // even if the user already touched the layout (added tabs/panes) before the
@@ -500,7 +514,7 @@ export default function Terminal({
       return;
     }
     onLayoutChange?.(layout);
-  }, [tabs, safeActiveTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabs, safeActiveTabId, onLayoutChange]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reconnect panes of the active tab; close WS of inactive tabs after a 60s idle
   // (server keeps the PTY alive for 5min without clients, so this saves resources
@@ -545,9 +559,7 @@ export default function Terminal({
   }, [pendingCommand, onSkipPending, onConfirmPending]);
 
   const updateTab = (updater: (tab: TerminalTabMeta) => TerminalTabMeta) => {
-    setTabsEffective((prev) =>
-      prev.map((tab) => (tab.id === safeActiveTabId ? updater(tab) : tab)),
-    );
+    setTabsEffective((prev) => prev.map((tab) => (tab.id === safeActiveTabId ? updater(tab) : tab)));
   };
 
   const handleAddTab = () => {
@@ -587,7 +599,8 @@ export default function Terminal({
     if (activeTab.panes.length <= 1) return;
     destroyPanes([paneId]);
     const remaining = activeTab.panes.filter((p) => p.id !== paneId);
-    const newActive = activeTab.activePaneId === paneId ? (remaining[0]?.id ?? activeTab.activePaneId) : activeTab.activePaneId;
+    const newActive =
+      activeTab.activePaneId === paneId ? (remaining[0]?.id ?? activeTab.activePaneId) : activeTab.activePaneId;
     updateTab((tab) => ({ ...tab, panes: remaining, activePaneId: newActive }));
   };
 
@@ -605,7 +618,7 @@ export default function Terminal({
       }
     });
     return () => cancelAnimationFrame(id);
-  }, [safeActiveTabId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [safeActiveTabId, tabs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClearPane = (paneId: string) => {
     clearFnsRef.current.get(paneId)?.();
@@ -682,9 +695,14 @@ export default function Terminal({
                 ))}
               </select>
               <button
+                type="button"
                 onClick={handleAddTab}
                 disabled={tabs.length >= MAX_TABS}
-                title={tabs.length >= MAX_TABS ? `Maximum ${MAX_TABS} parallel tabs reached` : `Add new tab (${tabs.length}/${MAX_TABS})`}
+                title={
+                  tabs.length >= MAX_TABS
+                    ? `Maximum ${MAX_TABS} parallel tabs reached`
+                    : `Add new tab (${tabs.length}/${MAX_TABS})`
+                }
                 aria-label="Add new tab"
                 className={`shrink-0 self-center p-1 border font-mono transition-all ${
                   tabs.length >= MAX_TABS
@@ -696,111 +714,122 @@ export default function Terminal({
               </button>
             </div>
           ) : (
-          <div role="tablist" aria-label="Terminal sessions" className="flex items-center gap-1">
-            {tabs.map((tab) => {
-              const isActive = tab.id === safeActiveTabId;
-              const isRenaming = renamingTabId === tab.id;
-              return (
-                <div
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={isActive}
-                  tabIndex={isActive ? 0 : -1}
-                  data-tab-id={tab.id}
-                  onClick={() => setActiveTabIdEffective(tab.id)}
-                  onDoubleClick={(e) => handleStartRenameTab(tab, e)}
-                  onKeyDown={(e) => {
-                    if (renamingTabId === tab.id) return;
-                    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const idx = tabs.findIndex((t) => t.id === tab.id);
-                      const next = e.key === 'ArrowRight' ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
-                      const nextTab = tabs[next];
-                      if (!nextTab) return;
-                      setActiveTabIdEffective(nextTab.id);
-                      requestAnimationFrame(() => {
-                        document.querySelector<HTMLElement>(`[data-tab-id="${nextTab.id}"]`)?.focus();
-                      });
-                    } else if (e.key === 'Enter' && !isRenaming) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleStartRenameTab(tab, e as unknown as React.MouseEvent);
-                    }
-                  }}
-                  className={`group/tab flex items-center gap-1.5 px-3 py-1 text-[10px] border font-mono transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) font-bold shadow-sm'
-                      : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
-                  }`}
-                >
-                  <Square className={`w-2.5 h-2.5 ${isActive ? 'fill-(--color-accent) text-(--color-accent)' : 'text-(--color-text-muted)'}`} />
-                  {isRenaming ? (
-                    <input
-                      type="text"
-                      value={renamingName}
-                      maxLength={30}
-                      onChange={(e) => setRenamingName(e.target.value)}
-                      onBlur={() => handleSaveTabName(tab.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
+            <div role="tablist" aria-label="Terminal sessions" className="flex items-center gap-1">
+              {tabs.map((tab) => {
+                const isActive = tab.id === safeActiveTabId;
+                const isRenaming = renamingTabId === tab.id;
+                return (
+                  <div
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    tabIndex={isActive ? 0 : -1}
+                    data-tab-id={tab.id}
+                    onClick={() => setActiveTabIdEffective(tab.id)}
+                    onDoubleClick={(e) => handleStartRenameTab(tab, e)}
+                    onKeyDown={(e) => {
+                      if (renamingTabId === tab.id) return;
+                      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                        e.preventDefault();
                         e.stopPropagation();
-                        if (e.key === 'Enter') handleSaveTabName(tab.id);
-                        else if (e.key === 'Escape') handleCancelRename();
-                      }}
-                      autoFocus
-                      onFocus={(e) => e.target.select()}
-                      aria-label="Terminal TAB name"
-                      className="bg-(--color-bg-primary) text-(--color-text-primary) px-1 py-0.5 border border-(--color-accent) text-[10px] w-24 focus:outline-none"
+                        const idx = tabs.findIndex((t) => t.id === tab.id);
+                        const next =
+                          e.key === 'ArrowRight' ? (idx + 1) % tabs.length : (idx - 1 + tabs.length) % tabs.length;
+                        const nextTab = tabs[next];
+                        if (!nextTab) return;
+                        setActiveTabIdEffective(nextTab.id);
+                        requestAnimationFrame(() => {
+                          document.querySelector<HTMLElement>(`[data-tab-id="${nextTab.id}"]`)?.focus();
+                        });
+                      } else if (e.key === 'Enter' && !isRenaming) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleStartRenameTab(tab, e as unknown as React.MouseEvent);
+                      }
+                    }}
+                    className={`group/tab flex items-center gap-1.5 px-3 py-1 text-[10px] border font-mono transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-(--color-bg-elevated) border-(--color-accent)/60 text-(--color-text-primary) font-bold shadow-sm'
+                        : 'bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10'
+                    }`}
+                  >
+                    <Square
+                      className={`w-2.5 h-2.5 ${isActive ? 'fill-(--color-accent) text-(--color-accent)' : 'text-(--color-text-muted)'}`}
                     />
-                  ) : (
-                    <>
-                      <span className="truncate max-w-[100px]" title="Double-click or pencil to rename">
-                        {tab.name}
-                      </span>
+                    {isRenaming ? (
+                      <input
+                        type="text"
+                        value={renamingName}
+                        maxLength={30}
+                        onChange={(e) => setRenamingName(e.target.value)}
+                        onBlur={() => handleSaveTabName(tab.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') handleSaveTabName(tab.id);
+                          else if (e.key === 'Escape') handleCancelRename();
+                        }}
+                        onFocus={(e) => e.target.select()}
+                        aria-label="Terminal TAB name"
+                        className="bg-(--color-bg-primary) text-(--color-text-primary) px-1 py-0.5 border border-(--color-accent) text-[10px] w-24 focus:outline-none"
+                      />
+                    ) : (
+                      <>
+                        <span className="truncate max-w-[100px]" title="Double-click or pencil to rename">
+                          {tab.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleStartRenameTab(tab, e)}
+                          title="Rename TAB"
+                          aria-label={`Rename TAB ${tab.name}`}
+                          className={`p-0.5 transition-colors cursor-pointer ${
+                            isActive
+                              ? 'text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10'
+                              : 'opacity-0 group-hover/tab:opacity-100 hover:text-(--color-text-primary) hover:bg-white/10'
+                          }`}
+                        >
+                          <Pencil className="w-2.5 h-2.5" />
+                        </button>
+                      </>
+                    )}
+                    <span className="text-[9px] text-(--color-text-muted) font-sans ml-0.5">({tab.panes.length}P)</span>
+                    {tabs.length > 1 && (
                       <button
-                        onClick={(e) => handleStartRenameTab(tab, e)}
-                        title="Rename TAB"
-                        aria-label={`Rename TAB ${tab.name}`}
-                        className={`p-0.5 transition-colors cursor-pointer ${
-                          isActive
-                            ? 'text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10'
-                            : 'opacity-0 group-hover/tab:opacity-100 hover:text-(--color-text-primary) hover:bg-white/10'
-                        }`}
+                        type="button"
+                        onClick={(e) => handleCloseTab(tab.id, e)}
+                        className="p-0.5 hover:bg-white/10 text-(--color-text-muted) hover:text-(--color-accent-text) transition-colors ml-1"
+                        title="Close Tab"
                       >
-                        <Pencil className="w-2.5 h-2.5" />
+                        <X className="w-2.5 h-2.5" />
                       </button>
-                    </>
-                  )}
-                  <span className="text-[9px] text-(--color-text-muted) font-sans ml-0.5">({tab.panes.length}P)</span>
-                  {tabs.length > 1 && (
-                    <button
-                      onClick={(e) => handleCloseTab(tab.id, e)}
-                      className="p-0.5 hover:bg-white/10 text-(--color-text-muted) hover:text-(--color-accent-text) transition-colors ml-1"
-                      title="Close Tab"
-                    >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+                    )}
+                  </div>
+                );
+              })}
 
-            <button
-              onClick={handleAddTab}
-              disabled={tabs.length >= MAX_TABS}
-              className={`shrink-0 self-center flex items-center gap-1 px-2.5 py-1 text-[10px] border font-mono whitespace-nowrap transition-all ${
-                tabs.length >= MAX_TABS
-                  ? 'border-(--color-border-subtle) text-(--color-text-muted) cursor-not-allowed opacity-50'
-                  : 'border-(--color-border-medium) bg-white/5 text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 hover:border-(--color-border-strong) cursor-pointer'
-              }`}
-              title={tabs.length >= MAX_TABS ? `Maximum ${MAX_TABS} parallel tabs reached` : `Add new parallel tab (Max ${MAX_TABS})`}
-            >
-              <Plus className="w-3 h-3 text-(--color-accent) shrink-0" />
-              <span>New Tab</span>
-              <span className="text-[9px] text-(--color-text-muted)">({tabs.length}/{MAX_TABS})</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleAddTab}
+                disabled={tabs.length >= MAX_TABS}
+                className={`shrink-0 self-center flex items-center gap-1 px-2.5 py-1 text-[10px] border font-mono whitespace-nowrap transition-all ${
+                  tabs.length >= MAX_TABS
+                    ? 'border-(--color-border-subtle) text-(--color-text-muted) cursor-not-allowed opacity-50'
+                    : 'border-(--color-border-medium) bg-white/5 text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 hover:border-(--color-border-strong) cursor-pointer'
+                }`}
+                title={
+                  tabs.length >= MAX_TABS
+                    ? `Maximum ${MAX_TABS} parallel tabs reached`
+                    : `Add new parallel tab (Max ${MAX_TABS})`
+                }
+              >
+                <Plus className="w-3 h-3 text-(--color-accent) shrink-0" />
+                <span>New Tab</span>
+                <span className="text-[9px] text-(--color-text-muted)">
+                  ({tabs.length}/{MAX_TABS})
+                </span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -828,6 +857,7 @@ export default function Terminal({
 
           {onToggleExpand && (
             <button
+              type="button"
               onClick={onToggleExpand}
               className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
               title={isExpanded ? 'Restore Shell Height' : 'Maximize Shell Height'}
@@ -838,6 +868,7 @@ export default function Terminal({
 
           {onHide && !isExpanded && (
             <button
+              type="button"
               onClick={onHide}
               className="p-1 hover:bg-white/10 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors cursor-pointer"
               title="Minimize console (hide)"
@@ -847,6 +878,7 @@ export default function Terminal({
           )}
 
           <button
+            type="button"
             onClick={() => handleClearPane(activeTab.activePaneId)}
             className="p-1 hover:bg-white/10 text-(--color-text-muted) hover:text-(--color-accent-text) transition-colors cursor-pointer"
             title="Clear Active Pane Output"
@@ -864,98 +896,104 @@ export default function Terminal({
             className={`absolute inset-0 grid gap-1.5 ${tab.id === safeActiveTabId ? '' : 'hidden'} ${getGridClasses(tab.panes.length)}`}
           >
             {tab.panes.map((pane) => {
-          const isFocused = pane.id === activeTab.activePaneId;
-          const preloadScrollback = initialScrollback[pane.id] || '';
-          const isRestored = adoptedInitialRef.current;
-          const preload = isRestored ? preloadScrollback : BOOT_MESSAGE;
-          const replay = isRestored ? !preloadScrollback : true;
-          const paneOnline = !!paneConn[pane.id];
+              const isFocused = pane.id === activeTab.activePaneId;
+              const preloadScrollback = initialScrollback[pane.id] || '';
+              const isRestored = adoptedInitialRef.current;
+              const preload = isRestored ? preloadScrollback : BOOT_MESSAGE;
+              const replay = isRestored ? !preloadScrollback : true;
+              const paneOnline = !!paneConn[pane.id];
 
-          return (
-            <div
-              key={pane.id}
-              onClick={() => handleSelectPane(pane.id)}
-              className={`flex flex-col h-full min-h-0 border transition-all duration-200 ${
-                isFocused
-                  ? 'border-(--color-accent)/80 bg-(--color-bg-elevated) shadow-lg shadow-(--color-accent)/20'
-                  : 'border-(--color-border-subtle) bg-(--color-bg-tertiary) opacity-80 hover:opacity-100 hover:border-(--color-border-medium)'
-              }`}
-            >
-              <div className="flex items-center justify-between px-2.5 py-1 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) shrink-0 select-none">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFocused ? 'bg-(--color-accent)' : 'bg-(--color-text-muted)'}`} />
-                  <span className="font-bold text-[10px] text-(--color-text-secondary) truncate">
-                    {pane.title || 'bash'}
-                  </span>
-                  <span
-                    title={paneOnline ? 'PTY Online' : 'PTY Offline'}
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneOnline ? 'bg-(--color-success)' : 'bg-(--color-error)/60 animate-pulse'}`}
-                  />
-                  {isFocused && (
-                    <span className="text-[8px] bg-(--color-accent) text-white font-black px-1 py-0.2 tracking-wider uppercase">
-                      ACTIVE
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  {activeTab.panes.length > 1 && (
-                    <button
-                      onClick={(e) => handleClosePane(pane.id, e)}
-                      className="p-1 hover:bg-(--color-accent-subtle) hover:text-(--color-accent-text) text-(--color-text-muted) transition-colors cursor-pointer ml-1"
-                      title="Close Pane"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="relative flex-1 min-h-0 bg-(--color-bg-tertiary)">
-                <XtermPane
-                  pane={pane}
-                  preload={preload}
-                  replay={replay}
-                  onConnectionChange={handleConnectionChange}
-                  registerClear={registerClear}
-                  registerFit={registerFit}
-                  registerControl={registerControl}
-                />
-
-                {/* Pending Command Authorization Prompt inside Pane */}
-                {pendingCommand && isFocused && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center p-3">
-                    <div className="border border-(--color-accent)/40 bg-(--color-bg-primary)/95 p-3 w-full space-y-2 text-(--color-text-primary) shadow-2xl">
-                      <div className="flex items-center gap-1.5 text-(--color-accent) font-black text-xs uppercase tracking-wider select-none font-display">
-                        <AlertCircle className="w-3.5 h-3.5 text-(--color-accent) shrink-0" />
-                        <span>Permission Requested: Shell Execution</span>
-                      </div>
-                      <p className="text-[10px] text-(--color-text-secondary) font-sans select-none">
-                        The AI requested to execute this script in workspace:
-                      </p>
-                      <pre className="p-2 bg-(--color-bg-tertiary) border border-(--color-border-subtle) text-(--color-accent-text) font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
-                        {pendingCommand}
-                      </pre>
-                      <div className="flex items-center justify-end gap-2 pt-1 select-none">
+              return (
+                // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents lint/a11y/noNoninteractiveElementInteractions: pane focus container with nested interactive controls; keyboard users tab directly into the terminal
+                <div
+                  key={pane.id}
+                  onClick={() => handleSelectPane(pane.id)}
+                  className={`flex flex-col h-full min-h-0 border transition-all duration-200 ${
+                    isFocused
+                      ? 'border-(--color-accent)/80 bg-(--color-bg-elevated) shadow-lg shadow-(--color-accent)/20'
+                      : 'border-(--color-border-subtle) bg-(--color-bg-tertiary) opacity-80 hover:opacity-100 hover:border-(--color-border-medium)'
+                  }`}
+                >
+                  <div className="flex items-center justify-between px-2.5 py-1 bg-(--color-bg-secondary) border-b border-(--color-border-subtle) shrink-0 select-none">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${isFocused ? 'bg-(--color-accent)' : 'bg-(--color-text-muted)'}`}
+                      />
+                      <span className="font-bold text-[10px] text-(--color-text-secondary) truncate">
+                        {pane.title || 'bash'}
+                      </span>
+                      <span
+                        title={paneOnline ? 'PTY Online' : 'PTY Offline'}
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${paneOnline ? 'bg-(--color-success)' : 'bg-(--color-error)/60 animate-pulse'}`}
+                      />
+                      {isFocused && (
+                        <span className="text-[8px] bg-(--color-accent) text-white font-black px-1 py-0.2 tracking-wider uppercase">
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {activeTab.panes.length > 1 && (
                         <button
-                          onClick={onSkipPending}
-                          className="px-3 py-1 border border-(--color-border-medium) hover:bg-white/10 text-(--color-text-secondary) font-sans text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                          type="button"
+                          onClick={(e) => handleClosePane(pane.id, e)}
+                          className="p-1 hover:bg-(--color-accent-subtle) hover:text-(--color-accent-text) text-(--color-text-muted) transition-colors cursor-pointer ml-1"
+                          title="Close Pane"
                         >
-                          Skip
+                          <X className="w-3 h-3" />
                         </button>
-                        <button
-                          onClick={() => onConfirmPending(pendingCommand)}
-                          className="flex items-center gap-1 px-4 py-1 bg-(--color-text-primary) hover:bg-(--color-accent) text-(--color-bg-primary) hover:text-white font-sans text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
-                        >
-                          <Play className="w-3 h-3 fill-current" />
-                          Authorize & Execute
-                        </button>
-                      </div>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          );
+
+                  <div className="relative flex-1 min-h-0 bg-(--color-bg-tertiary)">
+                    <XtermPane
+                      pane={pane}
+                      preload={preload}
+                      replay={replay}
+                      onConnectionChange={handleConnectionChange}
+                      registerClear={registerClear}
+                      registerFit={registerFit}
+                      registerControl={registerControl}
+                    />
+
+                    {/* Pending Command Authorization Prompt inside Pane */}
+                    {pendingCommand && isFocused && (
+                      <div className="absolute inset-0 z-20 flex items-center justify-center p-3">
+                        <div className="border border-(--color-accent)/40 bg-(--color-bg-primary)/95 p-3 w-full space-y-2 text-(--color-text-primary) shadow-2xl">
+                          <div className="flex items-center gap-1.5 text-(--color-accent) font-black text-xs uppercase tracking-wider select-none font-display">
+                            <AlertCircle className="w-3.5 h-3.5 text-(--color-accent) shrink-0" />
+                            <span>Permission Requested: Shell Execution</span>
+                          </div>
+                          <p className="text-[10px] text-(--color-text-secondary) font-sans select-none">
+                            The AI requested to execute this script in workspace:
+                          </p>
+                          <pre className="p-2 bg-(--color-bg-tertiary) border border-(--color-border-subtle) text-(--color-accent-text) font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
+                            {pendingCommand}
+                          </pre>
+                          <div className="flex items-center justify-end gap-2 pt-1 select-none">
+                            <button
+                              type="button"
+                              onClick={onSkipPending}
+                              className="px-3 py-1 border border-(--color-border-medium) hover:bg-white/10 text-(--color-text-secondary) font-sans text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                            >
+                              Skip
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onConfirmPending(pendingCommand)}
+                              className="flex items-center gap-1 px-4 py-1 bg-(--color-text-primary) hover:bg-(--color-accent) text-(--color-bg-primary) hover:text-white font-sans text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              Authorize & Execute
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
             })}
           </div>
         ))}
@@ -969,7 +1007,11 @@ export default function Terminal({
             {tabs.map((tab, idx) => (
               <span
                 key={tab.id}
-                className={tab.id === safeActiveTabId ? 'text-(--color-accent-text) font-bold underline' : 'text-(--color-text-muted)'}
+                className={
+                  tab.id === safeActiveTabId
+                    ? 'text-(--color-accent-text) font-bold underline'
+                    : 'text-(--color-text-muted)'
+                }
               >
                 {idx + 1}:{tab.name.split(':')[1] || tab.name}
                 {tab.id === safeActiveTabId ? '*' : ''}
@@ -981,9 +1023,14 @@ export default function Terminal({
         {!minimalStatus && !compact && (
           <div className="hidden md:flex items-center gap-3">
             <span>
-              Tabs: <strong className="text-(--color-text-secondary)">{tabs.length}/{MAX_TABS}</strong>
+              Tabs:{' '}
+              <strong className="text-(--color-text-secondary)">
+                {tabs.length}/{MAX_TABS}
+              </strong>
             </span>
-            <span>CLI-AI Support: <strong className="text-(--color-accent-text)">tell-ai, codex, opencode</strong></span>
+            <span>
+              CLI-AI Support: <strong className="text-(--color-accent-text)">tell-ai, codex, opencode</strong>
+            </span>
           </div>
         )}
 
@@ -994,7 +1041,10 @@ export default function Terminal({
             </span>
           )}
           {onlinePanes > 0 ? (
-            <span className="flex items-center gap-1 text-(--color-success) font-bold" title="PTY sessions online / total panes">
+            <span
+              className="flex items-center gap-1 text-(--color-success) font-bold"
+              title="PTY sessions online / total panes"
+            >
               <Wifi className="w-3 h-3" /> {onlinePanes}/{totalPanes}
             </span>
           ) : (

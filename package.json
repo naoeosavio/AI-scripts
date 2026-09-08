@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "bun run --filter @tell-ai/sdk build && bun run --filter tell-ai build && bun run --filter @tell-ai/web build",
-    "lint": "bun run --filter @tell-ai/sdk lint && bun run --filter tell-ai lint && bun run --filter @tell-ai/web typecheck" ,
+    "lint": "bun run --filter @tell-ai/sdk lint && bun run --filter tell-ai lint && bun run --filter @tell-ai/web lint" ,
     "format": "biome check --write packages",
     "check": "biome check packages",
     "test:security": "bun run --filter @tell-ai/sdk build && node test/test-tell-security.js",

@@ -1,9 +1,9 @@
-import { StrictMode, Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { lazy, StrictMode, Suspense, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ThemeProvider } from './theme.tsx';
-import { ToastProvider } from './components/Toast.tsx';
-import LoginScreen from './components/LoginScreen.tsx';
 import { clearMemoryToken } from './auth.ts';
+import LoginScreen from './components/LoginScreen.tsx';
+import { ToastProvider } from './components/Toast.tsx';
+import { ThemeProvider } from './theme.tsx';
 import './index.css';
 
 // The main environment is code-split: this chunk (login gate) loads first,
@@ -29,7 +29,8 @@ function Shell() {
         // No TELL_TOKEN on the server → skip login entirely.
         if (!required) setAuthenticated(true);
       } catch {
-        if (!cancelled) setStatusError('Não foi possível contatar o servidor. Verifique se ele está rodando e recarregue.');
+        if (!cancelled)
+          setStatusError('Não foi possível contatar o servidor. Verifique se ele está rodando e recarregue.');
       }
     })();
     return () => {
@@ -86,7 +87,9 @@ function Shell() {
   );
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root');
+if (!rootElement) throw new Error('Root element #root not found');
+createRoot(rootElement).render(
   <StrictMode>
     <Shell />
   </StrictMode>,

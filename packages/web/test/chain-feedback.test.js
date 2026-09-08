@@ -1,13 +1,13 @@
 // Chain-feedback presentation rules: execution outputs are stored as role:'user'
 // (LLM context unchanged) but must render on the LLM side; SCRIPT expanders
 // show the linked result. Guards the "executed command on the user side" bug.
-import { describe, it } from 'node:test';
+
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
 const {
   FEEDBACK_PREFIX_RE,
-  isChainFeedback,
   isChainFeedbackMessage,
   parseFeedback,
   findLinkedFeedbackIndex,
@@ -87,11 +87,7 @@ describe('findLinkedFeedbackIndex', () => {
   });
 
   it('skips assistant follow-ups between script and result', () => {
-    const msgs = [
-      assistantRun,
-      { id: 'a2', role: 'assistant', content: 'working on it' },
-      feedback,
-    ];
+    const msgs = [assistantRun, { id: 'a2', role: 'assistant', content: 'working on it' }, feedback];
     assert.strictEqual(findLinkedFeedbackIndex(msgs, 0), 2);
   });
 });

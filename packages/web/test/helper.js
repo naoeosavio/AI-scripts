@@ -1,8 +1,8 @@
 // Shared helper: transpile a src/web .ts module (and its relative deps) to CJS.
 // Output goes to test/.tmp/ so bare imports (node-pty, ws) resolve via src/web/node_modules.
 import fs from 'node:fs';
-import path from 'node:path';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -27,7 +27,7 @@ function compiledPath(name) {
     },
   }).outputText;
   // Rewrite relative requires to the transpiled dependency output.
-  js = js.replace(/require\(["'](\.[^"']*)["']\)/g, (m, rel) => {
+  js = js.replace(/require\(["'](\.[^"']*)["']\)/g, (_m, rel) => {
     let resolved = path.normalize(path.join(path.dirname(name), rel));
     if (!/\.[a-z]+$/i.test(resolved)) resolved += '.ts';
     return `require(${JSON.stringify(compiledPath(resolved))})`;

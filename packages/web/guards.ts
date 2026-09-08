@@ -144,10 +144,7 @@ export const TELL_MAX_CONTENT_CHARS = 50 * 1024;
 export const TELL_MAX_SYSTEM_CHARS = 30 * 1024;
 
 /** Returns an error message when the payload is invalid, null when acceptable. */
-export function validateTellPayload(body: {
-  messages?: unknown;
-  systemPrompt?: unknown;
-}): string | null {
+export function validateTellPayload(body: { messages?: unknown; systemPrompt?: unknown }): string | null {
   const { messages, systemPrompt } = body || {};
   if (!Array.isArray(messages)) return 'messages array is required';
   if (messages.length > TELL_MAX_MESSAGES) {

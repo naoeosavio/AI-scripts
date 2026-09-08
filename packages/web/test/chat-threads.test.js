@@ -1,7 +1,8 @@
 // Chat-thread store rules: section permanence (never zero threads), title hygiene
 // (chain feedback excluded), duplication/fork identity, corruption recovery.
-import { describe, it } from 'node:test';
+
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
 const {
@@ -80,7 +81,10 @@ describe('deleteThreadFromList', () => {
     const a = thread('a', []);
     const b = thread('b', []);
     const next = deleteThreadFromList({ threads: [a, b], activeId: a.id }, b.id, rid, NOW);
-    assert.deepStrictEqual(next.threads.map((t) => t.id), [a.id]);
+    assert.deepStrictEqual(
+      next.threads.map((t) => t.id),
+      [a.id],
+    );
     assert.strictEqual(next.activeId, a.id);
   });
 
@@ -102,7 +106,10 @@ describe('deleteThreadFromList', () => {
 describe('sanitize + resolveActiveThreadId (permanence across reloads)', () => {
   it('repairs missing message ids and drops id-less threads', () => {
     const clean = sanitizeThreads(
-      [{ id: 't1', title: 't', createdAt: NOW, updatedAt: NOW, messages: [{ role: 'user', content: 'x' }] }, { title: 'junk' }],
+      [
+        { id: 't1', title: 't', createdAt: NOW, updatedAt: NOW, messages: [{ role: 'user', content: 'x' }] },
+        { title: 'junk' },
+      ],
       rid,
     );
     assert.strictEqual(clean.length, 1);
@@ -117,6 +124,12 @@ describe('sanitize + resolveActiveThreadId (permanence across reloads)', () => {
 
   it('cloneMessagesWithIds preserves order and content', () => {
     const cloned = cloneMessagesWithIds([msg('user', 'a', 'x'), msg('assistant', 'b', 'y')], rid);
-    assert.deepStrictEqual(cloned.map((m) => [m.role, m.content]), [['user', 'a'], ['assistant', 'b']]);
+    assert.deepStrictEqual(
+      cloned.map((m) => [m.role, m.content]),
+      [
+        ['user', 'a'],
+        ['assistant', 'b'],
+      ],
+    );
   });
 });

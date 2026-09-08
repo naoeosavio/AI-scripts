@@ -1,20 +1,16 @@
 // Login isolation (task-login): token never persisted client-side; server
 // verifies with constant-time compare + strict rate limit; WS drops tokenless upgrades.
-import { describe, it, before, after } from 'node:test';
+
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
 import WebSocket from 'ws';
 import { loadModule, WEB_SRC } from './helper.js';
 
-const {
-  isValidTokenInput,
-  loginBackoffMs,
-  authFailureMessage,
-  AUTH_TOKEN_MAX_LENGTH,
-} = loadModule('guards.ts');
+const { isValidTokenInput, loginBackoffMs, authFailureMessage, AUTH_TOKEN_MAX_LENGTH } = loadModule('guards.ts');
 
 describe('auth guards (pure)', () => {
   it('AUTH_TOKEN_MAX_LENGTH is 256', () => {

@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Save, AlertCircle, CheckCircle, Edit3, X, Loader2, Download, RefreshCw, FileWarning } from 'lucide-react';
+import { AlertCircle, CheckCircle, Download, Edit3, FileWarning, Loader2, RefreshCw, Save, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../api.ts';
 import { useToast } from './Toast.tsx';
 
@@ -176,6 +176,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
           {isEditing ? (
             <>
               <button
+                type="button"
                 onClick={handleCancel}
                 disabled={saving}
                 className="flex items-center gap-1 px-3 py-1 border border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/5 rounded-none text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer font-display"
@@ -184,21 +185,19 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleSave}
                 disabled={saving || !isDirty}
                 title={isDirty ? 'Save changes' : 'No changes to save'}
                 className="flex items-center gap-1.5 px-4 py-1 bg-(--color-text-primary) hover:bg-(--color-accent) text-(--color-bg-primary) hover:text-white disabled:opacity-40 disabled:cursor-not-allowed rounded-none text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer font-display"
               >
-                {saving ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Save className="w-3.5 h-3.5" />
-                )}
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 Save
               </button>
             </>
           ) : (
             <button
+              type="button"
               onClick={() => setIsEditing(true)}
               disabled={loading || blockedView}
               className="flex items-center gap-1 px-4 py-1.5 bg-(--color-text-primary) text-(--color-bg-primary) hover:bg-(--color-accent) hover:text-white disabled:opacity-40 disabled:cursor-not-allowed rounded-none text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer font-display"
@@ -210,6 +209,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
 
           {blockedView && (
             <button
+              type="button"
               onClick={handleDownload}
               className="flex items-center gap-1 px-3 py-1.5 border border-(--color-border-medium) text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/5 rounded-none text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer font-display"
             >
@@ -220,6 +220,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
 
           {onCloseFile && (
             <button
+              type="button"
               onClick={onCloseFile}
               className="flex items-center gap-1 px-3 py-1.5 border border-(--color-border-subtle) hover:border-(--color-accent)/60 hover:bg-(--color-accent-subtle) text-(--color-text-secondary) hover:text-(--color-accent-text) text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer font-display"
               title="Close File Viewer"
@@ -248,6 +249,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
           <span className="flex-1 font-bold">{message.text}</span>
           {conflict && (
             <button
+              type="button"
               onClick={handleReload}
               className="flex items-center gap-1 px-2 py-0.5 border border-(--color-border-medium) hover:bg-white/10 text-[9px] font-bold uppercase tracking-wider cursor-pointer shrink-0"
             >
@@ -273,6 +275,7 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
               {isBinary ? 'Binary file — preview unavailable' : 'Large file (>500KB) — preview unavailable'}
             </p>
             <button
+              type="button"
               onClick={handleDownload}
               className="flex items-center gap-1.5 px-4 py-1.5 bg-(--color-text-primary) text-(--color-bg-primary) hover:bg-(--color-accent) hover:text-white rounded-none text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer"
             >
@@ -289,7 +292,11 @@ export default function FileViewer({ filePath, onSaveCompleted, onCloseFile }: F
           />
         ) : (
           <pre className="w-full h-full p-4 text-(--color-text-secondary) font-mono text-xs overflow-auto select-text leading-relaxed bg-(--color-bg-primary) whitespace-pre-wrap custom-scrollbar">
-            {content || <span className="text-(--color-text-muted) italic uppercase tracking-wider">[ Workspace File is Empty ]</span>}
+            {content || (
+              <span className="text-(--color-text-muted) italic uppercase tracking-wider">
+                [ Workspace File is Empty ]
+              </span>
+            )}
           </pre>
         )}
       </div>

@@ -1,16 +1,17 @@
-import { Plus, Copy, GitFork, Trash2, MessagesSquare } from 'lucide-react';
-import type { ChatMessage } from './ChatSection.tsx';
-import {
-  threadTitleFromMessages as pureThreadTitle,
-  sanitizeThreads as pureSanitizeThreads,
-  resolveActiveThreadId as pureResolveActiveThreadId,
-} from '../../chat-threads.ts';
+import { Copy, GitFork, MessagesSquare, Plus, Trash2 } from 'lucide-react';
 import type { ChatThread as PureChatThread } from '../../chat-threads.ts';
+import {
+  resolveActiveThreadId as pureResolveActiveThreadId,
+  sanitizeThreads as pureSanitizeThreads,
+  threadTitleFromMessages as pureThreadTitle,
+} from '../../chat-threads.ts';
+import type { ChatMessage } from './ChatSection.tsx';
+
 export {
+  cloneMessagesWithIds,
+  deleteThreadFromList,
   duplicateThread,
   forkThreadFromMessage,
-  deleteThreadFromList,
-  cloneMessagesWithIds,
 } from '../../chat-threads.ts';
 
 export interface ChatThread {
@@ -117,6 +118,7 @@ export default function ChatThreads({
             Conversations
           </span>
           <button
+            type="button"
             onClick={onNew}
             title="New conversation"
             className="p-1 text-(--color-text-muted) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
@@ -128,6 +130,7 @@ export default function ChatThreads({
 
       {isHorizontal && (
         <button
+          type="button"
           onClick={onNew}
           title="New conversation"
           className="shrink-0 flex items-center gap-1 px-2 py-1 border border-(--color-border-medium) text-[9px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
@@ -137,6 +140,8 @@ export default function ChatThreads({
       )}
 
       <div
+        role="listbox"
+        aria-label="Conversations"
         className={
           isHorizontal
             ? 'flex items-center gap-1 flex-1 min-w-0 overflow-x-auto custom-scrollbar'
@@ -148,6 +153,15 @@ export default function ChatThreads({
           return (
             <div
               key={t.id}
+              role="option"
+              aria-selected={isActive}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(t.id);
+                }
+              }}
               className={
                 isHorizontal
                   ? `group/thread shrink-0 max-w-[200px] flex items-center gap-1 pl-2 pr-1 py-1 border text-[10px] font-mono cursor-pointer transition-colors ${
@@ -168,6 +182,7 @@ export default function ChatThreads({
               <span className="text-[8px] text-(--color-text-muted) shrink-0">{t.messages.length}</span>
               {threads.length > 1 && (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (window.confirm(`Delete "${t.title}"?`)) onDelete(t.id);
@@ -186,6 +201,7 @@ export default function ChatThreads({
       {!isHorizontal && active && (
         <div className="shrink-0 border-t border-(--color-border-subtle) p-1.5 grid grid-cols-2 gap-1">
           <button
+            type="button"
             onClick={onDuplicate}
             title="Duplicate current conversation"
             className="flex items-center justify-center gap-1 px-1 py-1.5 border border-(--color-border-medium) text-[8px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"
@@ -193,6 +209,7 @@ export default function ChatThreads({
             <Copy className="w-3 h-3" /> Duplicate
           </button>
           <button
+            type="button"
             onClick={onFork}
             title="Fork current conversation"
             className="flex items-center justify-center gap-1 px-1 py-1.5 border border-(--color-border-medium) text-[8px] font-bold uppercase tracking-wider text-(--color-text-secondary) hover:text-(--color-text-primary) hover:bg-white/10 transition-colors cursor-pointer"

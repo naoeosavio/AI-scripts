@@ -1,6 +1,7 @@
 // isHighRiskScript — task_build cases (sudo, rm -rf /, curl|sh, python -c, echo ok).
-import { describe, it } from 'node:test';
+
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
 const { isHighRiskScript, isSensitiveRelPath } = loadModule('guards.ts');

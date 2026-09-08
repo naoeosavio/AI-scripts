@@ -1,5 +1,5 @@
+import { Check, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { ChevronUp, ChevronDown, Copy, Check } from 'lucide-react';
 import type { TerminalLine } from './Terminal.tsx';
 
 interface AgentFeedProps {
@@ -47,6 +47,7 @@ export default function AgentFeed({ lines, open, onToggle, onClear, pendingComma
     <div className={`shrink-0 border-b border-(--color-accent)/20 bg-(--color-bg-primary) ${className ?? ''}`}>
       <div className="flex items-center justify-between px-3 py-1 select-none">
         <button
+          type="button"
           onClick={() => onToggle(!open)}
           aria-expanded={open}
           title={open ? 'Minimize Agent Feed' : 'Expand Agent Feed'}
@@ -58,6 +59,7 @@ export default function AgentFeed({ lines, open, onToggle, onClear, pendingComma
         </button>
         {onClear && (
           <button
+            type="button"
             onClick={onClear}
             className="text-(--color-text-muted) hover:text-(--color-accent-text) text-[9px] uppercase tracking-widest cursor-pointer"
           >
@@ -94,6 +96,7 @@ export default function AgentFeed({ lines, open, onToggle, onClear, pendingComma
                   )}
                   {isLong && (
                     <button
+                      type="button"
                       onClick={() => setExpandedIdx(expanded ? null : i)}
                       className="mt-0.5 text-[9px] uppercase tracking-wider text-(--color-accent-text) hover:text-(--color-accent) cursor-pointer"
                     >
@@ -102,11 +105,16 @@ export default function AgentFeed({ lines, open, onToggle, onClear, pendingComma
                   )}
                 </div>
                 <button
+                  type="button"
                   onClick={() => handleCopy(i, line.text)}
                   title="Copy feed line"
                   className="shrink-0 p-1 text-(--color-text-muted) hover:text-(--color-text-primary) opacity-0 group-hover/feed:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
                 >
-                  {copiedIdx === i ? <Check className="w-3 h-3 text-(--color-success)" /> : <Copy className="w-3 h-3" />}
+                  {copiedIdx === i ? (
+                    <Check className="w-3 h-3 text-(--color-success)" />
+                  ) : (
+                    <Copy className="w-3 h-3" />
+                  )}
                 </button>
               </div>
             );

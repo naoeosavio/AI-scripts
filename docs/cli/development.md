@@ -16,10 +16,8 @@ packages/cli/
 Root orchestration (`package.json`, bun workspaces `packages/*` — SDK, CLI, web):
 
 ```bash
-npm run build          # SDK (ESM+CJS+dts+2 browser) then CLI (minified .mjs)
-npm run build:web      # web sandbox: tsup server + vite assets → packages/web/dist/
-npm run lint           # tsc --noEmit in SDK + CLI
-npm run lint:web       # tsc --noEmit in packages/web
+npm run build          # SDK (ESM+CJS+dts+2 browser) + CLI (minified .mjs) + web (tsup server + vite assets)
+npm run lint           # tsc --noEmit in SDK + CLI + web
 npm run format         # biome check --write packages/
 npm run check          # biome check packages/
 npm run test:security  # build SDK, then node test/test-tell-security.js
@@ -30,8 +28,17 @@ npm run ci             # build + lint + format check + test
 
 > Web notes: `packages/web/server.ts` resolves models through `@tell-ai/sdk`
 > (`MODELS`, `resolve_model_spec`, `get_model`) with keys/URLs injected from the
-> environment — the SDK never reads `process.env` itself. The `auth`/`routes`
-> suites spawn a real server via `tsx` and need its `node_modules` installed.
+> environment — the SDK never reads `process.env` itself. `buildSystemPrompt`
+> composes the project context (tree + README/AGENTS) with the SDK's
+> `get_system_prompt({ chain: true })`, so the `<RUN>`/injection protocol has a
+> single source of truth. The `auth`/`routes` suites spawn a real server via
+> `tsx` and need its `node_modules` installed.
+>
+> Intentional divergences (test-pinned, do not "dedupe"): `isHighRiskScript`
+> blocks all interpreter `-c`/`-e`, `env`, `base64 -d` and shell expansions
+> (the CLI allows local one-liners by design); the frontend `extractRunScripts`
+> matches `<RUN>` case-insensitively (SDK `extract_runs` is case-sensitive);
+> `App.tsx` keeps a static fallback prompt so the frontend stays SDK-free.
 
 Package script (`packages/cli/package.json:10-16`): `build: tsup && chmod +x dist/Tell.mjs`, `lint: tsc -p tsconfig.json`, `format/check: biome … src`, `ci: lint + check + build`. Formatting: Biome 2.2.6, single quotes, 2-space, 120 cols (`biome.json`).
 

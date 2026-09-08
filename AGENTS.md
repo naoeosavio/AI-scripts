@@ -13,10 +13,8 @@ This file provides guidance to AI when working with code in this repository.
 All commands run from the root and delegate to the packages:
 
 ```bash
-npm run build          # builds @tell-ai/sdk (ESM+CJS+dts + 2 browser bundles) then tell-ai (minified CJS, bun shebang)
-npm run build:web      # builds the web sandbox (tsup server + vite assets → packages/web/dist/)
-npm run lint           # tsc --noEmit in both packages (type-check only)
-npm run lint:web       # tsc --noEmit in packages/web
+npm run build          # SDK (ESM+CJS+dts + 2 browser bundles) + tell-ai (minified .mjs) + web sandbox (tsup server + vite assets → packages/web/dist/)
+npm run lint           # tsc --noEmit in all three packages (type-check only)
 npm run format         # biome check --write packages/  (auto-fix formatting)
 npm run check          # biome check packages/  (check only)
 npm test               # security + context + web suites

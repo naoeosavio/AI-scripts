@@ -4,7 +4,7 @@ export interface CliArgs {
   /** Resolved absolute working directory for the sandbox. */
   cwd: string;
   /** Optional initial prompt used to pre-seed the first chat message. */
-  initialPrompt?: string;
+  initialPrompt?: string | undefined;
   /** Whether automatic execution of AI-generated commands is enabled. Defaults to true (unless --no-exec). */
   autoExecute: boolean;
   /** Model shortcode or full spec (`-m/--model`). */
@@ -14,11 +14,11 @@ export interface CliArgs {
   /** Whether command execution is auto-confirmed (autoExecute on). */
   yes: boolean;
   /** TCP port for the web server (`--port`). Overrides PORT env. */
-  port?: number;
+  port?: number | undefined;
   /** Bind address for the web server (`--host`). Defaults to 127.0.0.1. */
-  host?: string;
+  host?: string | undefined;
   /** Per-command execution timeout in ms (`--exec-timeout`). Defaults to 120000. */
-  execTimeout?: number;
+  execTimeout?: number | undefined;
   /** Whether `--help` was requested. */
   help: boolean;
 }

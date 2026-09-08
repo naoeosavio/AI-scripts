@@ -1,11 +1,12 @@
 // HTTP routes against a real server on an ephemeral port (fetch, no supertest).
 // Covers task_build: traversal 403, .env 403, /tell 400, /snapshot returns name.
-import { describe, it, before, after } from 'node:test';
+
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
 import { WEB_SRC } from './helper.js';
 
 const TSX_CLI = path.join(WEB_SRC, 'node_modules', 'tsx', 'dist', 'cli.mjs');
@@ -18,7 +19,10 @@ let base;
 async function waitForServer(proc, timeoutMs = 45000) {
   let out = '';
   const portPromise = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`server did not start within ${timeoutMs}ms. Output: ${out.slice(-2000)}`)), timeoutMs);
+    const timer = setTimeout(
+      () => reject(new Error(`server did not start within ${timeoutMs}ms. Output: ${out.slice(-2000)}`)),
+      timeoutMs,
+    );
     proc.stdout.on('data', (d) => {
       out += d.toString();
       const m = out.match(/running at http:\/\/\S+:(\d+)/);

@@ -27,27 +27,13 @@ export function cloneMessagesWithIds(messages: ChatMessage[], randomId: () => st
   return messages.map((m) => ({ ...m, id: randomId() }));
 }
 
-export function makeThread(
-  messages: ChatMessage[],
-  title: string,
-  randomId: () => string,
-  nowIso: string,
-): ChatThread {
+export function makeThread(messages: ChatMessage[], title: string, randomId: () => string, nowIso: string): ChatThread {
   return { id: randomId(), title, createdAt: nowIso, updatedAt: nowIso, messages };
 }
 
 /** Full copy of the active thread (new identity, fresh message ids). */
-export function duplicateThread(
-  active: ChatThread,
-  randomId: () => string,
-  nowIso: string,
-): ChatThread {
-  return makeThread(
-    cloneMessagesWithIds(active.messages, randomId),
-    `${active.title} (copy)`,
-    randomId,
-    nowIso,
-  );
+export function duplicateThread(active: ChatThread, randomId: () => string, nowIso: string): ChatThread {
+  return makeThread(cloneMessagesWithIds(active.messages, randomId), `${active.title} (copy)`, randomId, nowIso);
 }
 
 /** Fork: copy of messages up to and including `uptoIndex`. Returns null for bad index. */
@@ -71,12 +57,7 @@ export interface ThreadList {
  * Delete a thread. Never returns an empty list: deleting the last thread
  * yields a fresh empty one (prevents a zero-section state).
  */
-export function deleteThreadFromList(
-  list: ThreadList,
-  id: string,
-  randomId: () => string,
-  nowIso: string,
-): ThreadList {
+export function deleteThreadFromList(list: ThreadList, id: string, randomId: () => string, nowIso: string): ThreadList {
   const filtered = list.threads.filter((t) => t.id !== id);
   if (filtered.length === 0) {
     const fresh = makeThread([], 'New conversation', randomId, nowIso);

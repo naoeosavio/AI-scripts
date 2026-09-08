@@ -30,7 +30,6 @@ export function clampTerminalWidthCh(value: unknown): number {
   return Math.min(Math.max(n, TERMINAL_WIDTH_CH_MIN), TERMINAL_WIDTH_CH_MAX);
 }
 
-
 /** First tab id wins when the requested active id is gone (stale after close/race). */
 export function resolveSafeActiveTabId(tabs: TerminalTabLike[], activeTabId: string): string {
   if (tabs.some((t) => t.id === activeTabId)) return activeTabId;
@@ -50,10 +49,7 @@ export function nextTabNumber(seq: number, tabs: TerminalTabLike[]): { seq: numb
 
 function isVirginDefaultTab(tabs: TerminalTabLike[]): boolean {
   return (
-    tabs.length === 1 &&
-    tabs[0]?.id === 'tab-1' &&
-    tabs[0]?.panes.length === 1 &&
-    tabs[0]?.panes[0]?.id === 'pane-1'
+    tabs.length === 1 && tabs[0]?.id === 'tab-1' && tabs[0]?.panes.length === 1 && tabs[0]?.panes[0]?.id === 'pane-1'
   );
 }
 
@@ -63,10 +59,7 @@ function isVirginDefaultTab(tabs: TerminalTabLike[]): boolean {
  * - Otherwise restored tabs win by id, user-only tabs are appended
  *   (renames/new tabs made before the fetch resolved survive).
  */
-export function mergeRestoredTerminalLayout(
-  prev: TerminalTabLike[],
-  restored: TerminalLayoutLike,
-): TerminalTabLike[] {
+export function mergeRestoredTerminalLayout(prev: TerminalTabLike[], restored: TerminalLayoutLike): TerminalTabLike[] {
   if (!restored.tabs.length) return prev;
   if (isVirginDefaultTab(prev)) return restored.tabs;
   const restoredIds = new Set(restored.tabs.map((t) => t.id));
@@ -84,14 +77,13 @@ export function mergeRestoredTerminalLayout(
 export function parsePersistedTerminalLayout(raw: unknown): TerminalLayoutLike | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
-  if (!Array.isArray(obj.tabs) || obj.tabs.length === 0) return null;
-  const tabs = (obj.tabs as unknown[]).filter(
-    (t): t is TerminalTabLike =>
-      !!t && typeof t === 'object' && typeof (t as TerminalTabLike).id === 'string',
+  if (!Array.isArray(obj['tabs']) || (obj['tabs'] as unknown[]).length === 0) return null;
+  const tabs = (obj['tabs'] as unknown[]).filter(
+    (t): t is TerminalTabLike => !!t && typeof t === 'object' && typeof (t as TerminalTabLike).id === 'string',
   );
   if (tabs.length === 0) return null;
   return {
     tabs,
-    activeTabId: typeof obj.activeTabId === 'string' ? (obj.activeTabId as string) : (tabs[0]?.id ?? ''),
+    activeTabId: typeof obj['activeTabId'] === 'string' ? (obj['activeTabId'] as string) : (tabs[0]?.id ?? ''),
   };
 }

@@ -34,14 +34,12 @@ Set your API keys with environment variables (see the [CLI README](./packages/cl
 Monorepo (bun workspaces `packages/*`) plus the web sandbox in `packages/web/`. All commands run from the root:
 
 ```bash
-npm run build       # SDK (ESM+CJS+types+2 browser bundles) then CLI (minified .mjs)
-npm run build:web   # web sandbox server + frontend assets (packages/web/dist/)
-npm run lint        # tsc --noEmit in SDK + CLI
-npm run lint:web    # tsc --noEmit in packages/web
+npm run build       # SDK (ESM+CJS+types+2 browser bundles) + CLI (minified .mjs) + web (server + assets)
+npm run lint        # tsc --noEmit in SDK + CLI + web
 npm run format      # biome check --write packages/
 npm run check       # biome check packages/
 npm test            # security + context + web suites
-npm run test:web    # web backend harness (cli-args/paths/guards/session) only
+npm run test:web    # web backend harness + packages/web suite only
 npm run ci          # build + lint + check + test
 ```
 
@@ -83,7 +81,7 @@ sessions in `.tell/`. Run it locally, on a repo/server you manage remotely, or e
 it via a tunnel/reverse proxy.
 
 Source and API reference: [`packages/web/`](./packages/web/README.md) (`bun run --filter @tell-ai/web dev`
-for development, `npm run build:web` for `packages/web/dist/`).
+for development, `npm run build` for `packages/web/dist/`).
 
 Full guide (quick start, where to use it, real-world examples, security):
 [docs/web-sandbox.md](docs/web-sandbox.md)

@@ -1,11 +1,12 @@
 // Session permanence for the terminal section: renames, new tabs and the
 // active tab must survive save/load (the Agent<->Terminal reset class of bug),
 // and snapshots must carry the same layout.
-import { describe, it, beforeEach, afterEach } from 'node:test';
+
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
 const { emptySession, saveSession, loadSession, createSnapshot } = loadModule('session.ts');
@@ -35,7 +36,10 @@ describe('terminal section permanence', () => {
     s.terminal = renamedLayout();
     assert.strictEqual(saveSession(dir, s), true);
     const loaded = loadSession(dir);
-    assert.deepStrictEqual(loaded.terminal.tabs.map((t) => t.name), ['opencode', '10: session-10']);
+    assert.deepStrictEqual(
+      loaded.terminal.tabs.map((t) => t.name),
+      ['opencode', '10: session-10'],
+    );
     assert.strictEqual(loaded.terminal.activeTabId, 't-lz');
   });
 

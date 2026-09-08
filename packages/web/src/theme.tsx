@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { clampTerminalWidthCh } from '../terminal-layout.ts';
 
 export type ThemeMode = 'dark' | 'light';
@@ -76,65 +76,101 @@ const ACCENT_COLORS: Record<
   AccentPalette,
   { primary: string; hover: string; subtle: Record<ThemeMode, string>; text: Record<ThemeMode, string> }
 > = {
-  rose:   { primary: '#E11D48', hover: '#F43F5E', subtle: { dark: '#4C0519', light: '#FDE7EC' }, text: { dark: '#FB7185', light: '#BE123C' } },
-  blue:   { primary: '#2563EB', hover: '#3B82F6', subtle: { dark: '#1E3A5F', light: '#DBEAFE' }, text: { dark: '#60A5FA', light: '#1D4ED8' } },
-  emerald:{ primary: '#059669', hover: '#10B981', subtle: { dark: '#064E3B', light: '#D1FAE5' }, text: { dark: '#34D399', light: '#047857' } },
-  amber:  { primary: '#D97706', hover: '#F59E0B', subtle: { dark: '#78350F', light: '#FEF3C7' }, text: { dark: '#FBBF24', light: '#B45309' } },
-  violet: { primary: '#7C3AED', hover: '#8B5CF6', subtle: { dark: '#4C1D95', light: '#EDE9FE' }, text: { dark: '#A78BFA', light: '#6D28D9' } },
-  cyan:   { primary: '#0891B2', hover: '#06B6D4', subtle: { dark: '#164E63', light: '#CFFAFE' }, text: { dark: '#22D3EE', light: '#0E7490' } },
+  rose: {
+    primary: '#E11D48',
+    hover: '#F43F5E',
+    subtle: { dark: '#4C0519', light: '#FDE7EC' },
+    text: { dark: '#FB7185', light: '#BE123C' },
+  },
+  blue: {
+    primary: '#2563EB',
+    hover: '#3B82F6',
+    subtle: { dark: '#1E3A5F', light: '#DBEAFE' },
+    text: { dark: '#60A5FA', light: '#1D4ED8' },
+  },
+  emerald: {
+    primary: '#059669',
+    hover: '#10B981',
+    subtle: { dark: '#064E3B', light: '#D1FAE5' },
+    text: { dark: '#34D399', light: '#047857' },
+  },
+  amber: {
+    primary: '#D97706',
+    hover: '#F59E0B',
+    subtle: { dark: '#78350F', light: '#FEF3C7' },
+    text: { dark: '#FBBF24', light: '#B45309' },
+  },
+  violet: {
+    primary: '#7C3AED',
+    hover: '#8B5CF6',
+    subtle: { dark: '#4C1D95', light: '#EDE9FE' },
+    text: { dark: '#A78BFA', light: '#6D28D9' },
+  },
+  cyan: {
+    primary: '#0891B2',
+    hover: '#06B6D4',
+    subtle: { dark: '#164E63', light: '#CFFAFE' },
+    text: { dark: '#22D3EE', light: '#0E7490' },
+  },
 };
 
 const DARK_VARS: Record<string, string> = {
-  '--color-bg-primary':    '#0A0A0A',
-  '--color-bg-secondary':  '#121212',
-  '--color-bg-tertiary':   '#080808',
-  '--color-bg-elevated':   '#141414',
-  '--color-bg-input':      '#0D0D0D',
-  '--color-text-primary':  '#F5F5F5',
-  '--color-text-secondary':'rgba(255,255,255,0.6)',
-  '--color-text-muted':    'rgba(255,255,255,0.35)',
+  '--color-bg-primary': '#0A0A0A',
+  '--color-bg-secondary': '#121212',
+  '--color-bg-tertiary': '#080808',
+  '--color-bg-elevated': '#141414',
+  '--color-bg-input': '#0D0D0D',
+  '--color-text-primary': '#F5F5F5',
+  '--color-text-secondary': 'rgba(255,255,255,0.6)',
+  '--color-text-muted': 'rgba(255,255,255,0.35)',
   '--color-border-subtle': 'rgba(255,255,255,0.08)',
   '--color-border-medium': 'rgba(255,255,255,0.15)',
   '--color-border-strong': 'rgba(255,255,255,0.25)',
-  '--color-success':       '#10B981',
-  '--color-error':         '#EF4444',
-  '--color-scrollbar-track':'rgba(255,255,255,0.03)',
-  '--color-scrollbar-thumb':'rgba(255,255,255,0.15)',
+  '--color-success': '#10B981',
+  '--color-error': '#EF4444',
+  '--color-scrollbar-track': 'rgba(255,255,255,0.03)',
+  '--color-scrollbar-thumb': 'rgba(255,255,255,0.15)',
 };
 
 const LIGHT_VARS: Record<string, string> = {
-  '--color-bg-primary':    '#FFFFFF',
-  '--color-bg-secondary':  '#F5F5F5',
-  '--color-bg-tertiary':   '#E5E5E5',
-  '--color-bg-elevated':   '#FAFAFA',
-  '--color-bg-input':      '#F0F0F0',
-  '--color-text-primary':  '#0A0A0A',
-  '--color-text-secondary':'rgba(0,0,0,0.6)',
-  '--color-text-muted':    'rgba(0,0,0,0.35)',
+  '--color-bg-primary': '#FFFFFF',
+  '--color-bg-secondary': '#F5F5F5',
+  '--color-bg-tertiary': '#E5E5E5',
+  '--color-bg-elevated': '#FAFAFA',
+  '--color-bg-input': '#F0F0F0',
+  '--color-text-primary': '#0A0A0A',
+  '--color-text-secondary': 'rgba(0,0,0,0.6)',
+  '--color-text-muted': 'rgba(0,0,0,0.35)',
   '--color-border-subtle': 'rgba(0,0,0,0.08)',
   '--color-border-medium': 'rgba(0,0,0,0.15)',
   '--color-border-strong': 'rgba(0,0,0,0.25)',
-  '--color-success':       '#059669',
-  '--color-error':         '#DC2626',
-  '--color-scrollbar-track':'rgba(0,0,0,0.03)',
-  '--color-scrollbar-thumb':'rgba(0,0,0,0.15)',
+  '--color-success': '#059669',
+  '--color-error': '#DC2626',
+  '--color-scrollbar-track': 'rgba(0,0,0,0.03)',
+  '--color-scrollbar-thumb': 'rgba(0,0,0,0.15)',
 };
 
 const FONT_CHOICES: FontChoice[] = ['Inter', 'Space Grotesk', 'JetBrains Mono', 'Custom'];
 
 export function getFontFamily(name: FontChoice, custom?: string): string {
   if (name === 'Custom') {
-    return custom && custom.trim() ? `"${sanitizeFontFamily(custom)}", system-ui, sans-serif` : '"Inter", system-ui, sans-serif';
+    return custom?.trim() ? `"${sanitizeFontFamily(custom)}", system-ui, sans-serif` : '"Inter", system-ui, sans-serif';
   }
   switch (name) {
-    case 'Inter': return '"Inter", system-ui, sans-serif';
-    case 'Space Grotesk': return '"Space Grotesk", system-ui, sans-serif';
-    case 'JetBrains Mono': return '"JetBrains Mono", monospace';
+    case 'Inter':
+      return '"Inter", system-ui, sans-serif';
+    case 'Space Grotesk':
+      return '"Space Grotesk", system-ui, sans-serif';
+    case 'JetBrains Mono':
+      return '"JetBrains Mono", monospace';
   }
 }
 
 function sanitizeFontFamily(raw: string): string {
-  return raw.replace(/["'\\`{};<>]/g, '').trim().slice(0, 120);
+  return raw
+    .replace(/["'\\`{};<>]/g, '')
+    .trim()
+    .slice(0, 120);
 }
 
 function sanitizeCustomFontValue(raw: unknown, fallback: string): string {
@@ -252,16 +288,23 @@ function normalizeConfig(raw: any): ThemeConfig {
     }
     if (typeof raw.terminalWidthCh === 'number' && !Number.isNaN(raw.terminalWidthCh)) {
       c.terminalWidthCh = clampTerminalWidthCh(raw.terminalWidthCh);
-    } else if (typeof raw.terminalWidth === 'number' && !Number.isNaN(raw.terminalWidth) && raw.terminalWidthCh === undefined) {
+    } else if (
+      typeof raw.terminalWidth === 'number' &&
+      !Number.isNaN(raw.terminalWidth) &&
+      raw.terminalWidthCh === undefined
+    ) {
       // Migrate legacy px width to char width (JetBrains Mono ~7px per char at 12px)
       c.terminalWidthCh = clampTerminalWidthCh(raw.terminalWidth / 7);
     }
     if (typeof raw.sidebarCollapsed === 'boolean') c.sidebarCollapsed = raw.sidebarCollapsed;
     if (typeof raw.threadsCollapsed === 'boolean') c.threadsCollapsed = raw.threadsCollapsed;
-    if (raw.customSidebarSide === 'left' || raw.customSidebarSide === 'right') c.customSidebarSide = raw.customSidebarSide;
-    if (['top', 'bottom', 'left', 'right', 'fullscreen', 'hidden'].includes(raw.customTerminal)) c.customTerminal = raw.customTerminal;
+    if (raw.customSidebarSide === 'left' || raw.customSidebarSide === 'right')
+      c.customSidebarSide = raw.customSidebarSide;
+    if (['top', 'bottom', 'left', 'right', 'fullscreen', 'hidden'].includes(raw.customTerminal))
+      c.customTerminal = raw.customTerminal;
     if (['top', 'bottom', 'left', 'right'].includes(raw.customAgentFeed)) c.customAgentFeed = raw.customAgentFeed;
-    if (['top', 'bottom', 'left', 'right'].includes(raw.customChatThreadsSide)) c.customChatThreadsSide = raw.customChatThreadsSide;
+    if (['top', 'bottom', 'left', 'right'].includes(raw.customChatThreadsSide))
+      c.customChatThreadsSide = raw.customChatThreadsSide;
     if (raw.customChatWrap === 'max') {
       c.customChatWrap = 'max';
     } else if (typeof raw.customChatWrap === 'number' && !Number.isNaN(raw.customChatWrap)) {

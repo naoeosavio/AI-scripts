@@ -69,10 +69,11 @@ export default function TellLogoLoop() {
     return () => clearInterval(id);
   }, []);
 
-  const frame = FRAMES[index] ?? FRAMES[0]!;
+  const frame = FRAMES[index] ?? FRAMES[0];
+  if (!frame) return null;
 
   return (
-    <div className="select-none w-full" aria-label="Tell logo">
+    <div className="select-none w-full" role="img" aria-label="Tell logo">
       <div className="overflow-x-auto">
         <pre
           aria-hidden="true"

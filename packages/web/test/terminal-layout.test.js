@@ -1,8 +1,9 @@
 // Terminal layout invariants: tab renames/new tabs must survive view switches
 // (Agent<->Terminal remounts), active ids must never dangle (blank pane grid),
 // lateral width stays in 60..200ch, tab numbers never repeat after renames.
-import { describe, it } from 'node:test';
+
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
 const {

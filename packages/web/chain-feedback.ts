@@ -58,7 +58,8 @@ export function parseFeedback(content: string): ParsedFeedback | null {
  */
 export function findLinkedFeedbackIndex(messages: ChainMessageLike[], fromIndex: number): number {
   for (let j = fromIndex + 1; j < messages.length; j++) {
-    const m = messages[j]!;
+    const m = messages[j];
+    if (!m) continue;
     if (m.role !== 'user') continue;
     if (isChainFeedback(m.content)) return j;
     return -1;

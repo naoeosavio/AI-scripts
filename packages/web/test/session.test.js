@@ -1,20 +1,14 @@
 // session without sleep: mtimeMs mocked via utimesSync (deterministic on coarse filesystems).
-import { describe, it, beforeEach, afterEach } from 'node:test';
+
 import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
-const {
-  emptySession,
-  saveSession,
-  loadSession,
-  createSnapshot,
-  listHistory,
-  sessionPath,
-  historyDir,
-} = loadModule('session.ts');
+const { emptySession, saveSession, loadSession, createSnapshot, listHistory, sessionPath, historyDir } =
+  loadModule('session.ts');
 
 let dir;
 beforeEach(() => {

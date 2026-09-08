@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ShieldCheck, Lock, Eye, EyeOff } from 'lucide-react';
-import TellLogoLoop from './TellLogoLoop.tsx';
+import { Eye, EyeOff, Lock, ShieldCheck } from 'lucide-react';
+import type React from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { setMemoryToken } from '../auth.ts';
+import TellLogoLoop from './TellLogoLoop.tsx';
 
 const TOKEN_MAX = 256;
 
@@ -28,6 +29,7 @@ export default function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const tokenInputId = useId();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -98,14 +100,14 @@ export default function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               <h1 className="font-display text-lg font-black tracking-wide">Tell Web — Acesso restrito</h1>
             </div>
             <p className="text-xs font-mono text-(--color-text-muted)">
-              Digite o <strong className="text-(--color-text-secondary)">TELL_TOKEN</strong> a cada conexão.
-              Nada é salvo no navegador.
+              Digite o <strong className="text-(--color-text-secondary)">TELL_TOKEN</strong> a cada conexão. Nada é
+              salvo no navegador.
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3" autoComplete="off">
             <label
-              htmlFor="tell-token"
+              htmlFor={tokenInputId}
               className="text-[11px] font-bold uppercase tracking-widest text-(--color-text-secondary)"
             >
               Access token
@@ -114,7 +116,7 @@ export default function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-(--color-text-muted) pointer-events-none" />
               <input
                 ref={inputRef}
-                id="tell-token"
+                id={tokenInputId}
                 name="tell-token"
                 type={show ? 'text' : 'password'}
                 value={value}
@@ -164,7 +166,9 @@ export default function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
               Sem o token? No servidor: <code>openssl rand -hex 32</code> e inicie com{' '}
               <code>TELL_TOKEN=&lt;token&gt;</code>.
             </p>
-            <p className="mt-1">Proteções ativas: anti brute-force, atraso anti-timing, sem persistência, mesma origem.</p>
+            <p className="mt-1">
+              Proteções ativas: anti brute-force, atraso anti-timing, sem persistência, mesma origem.
+            </p>
           </div>
         </div>
       </div>

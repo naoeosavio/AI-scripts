@@ -74,31 +74,31 @@ function sanitizeSession(cwd: string, raw: unknown): TellSession {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
   const obj = raw as Record<string, any>;
   const terminal =
-    obj.terminal && typeof obj.terminal === 'object' && !Array.isArray(obj.terminal)
+    obj['terminal'] && typeof obj['terminal'] === 'object' && !Array.isArray(obj['terminal'])
       ? {
-          tabs: asArray<TerminalTabState>(obj.terminal.tabs).filter(
+          tabs: asArray<TerminalTabState>(obj['terminal']['tabs']).filter(
             (t) => t && typeof t === 'object' && typeof t.id === 'string',
           ),
-          activeTabId: typeof obj.terminal.activeTabId === 'string' ? obj.terminal.activeTabId : '',
+          activeTabId: typeof obj['terminal']['activeTabId'] === 'string' ? obj['terminal']['activeTabId'] : '',
         }
       : base.terminal;
   const stats =
-    obj.stats && typeof obj.stats === 'object' && !Array.isArray(obj.stats)
+    obj['stats'] && typeof obj['stats'] === 'object' && !Array.isArray(obj['stats'])
       ? {
-          commandsRun: Number(obj.stats.commandsRun) || 0,
-          aiTurns: Number(obj.stats.aiTurns) || 0,
-          snapshots: Number(obj.stats.snapshots) || 0,
+          commandsRun: Number(obj['stats']['commandsRun']) || 0,
+          aiTurns: Number(obj['stats']['aiTurns']) || 0,
+          snapshots: Number(obj['stats']['snapshots']) || 0,
         }
       : base.stats;
   return {
     ...base,
     ...obj,
-    version: Number(obj.version) || base.version,
-    messages: asArray<{ role: string; content: string; thought?: string | null }>(obj.messages).filter(
+    version: Number(obj['version']) || base.version,
+    messages: asArray<{ role: string; content: string; thought?: string | null }>(obj['messages']).filter(
       (m) => m && typeof m === 'object' && typeof m.role === 'string',
     ),
-    keysUsed: asArray<string>(obj.keysUsed).filter((k) => typeof k === 'string'),
-    filesChanged: asArray<string>(obj.filesChanged).filter((f) => typeof f === 'string'),
+    keysUsed: asArray<string>(obj['keysUsed']).filter((k) => typeof k === 'string'),
+    filesChanged: asArray<string>(obj['filesChanged']).filter((f) => typeof f === 'string'),
     terminal,
     stats,
   };

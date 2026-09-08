@@ -1,15 +1,10 @@
 // pushScrollback 50KB truncation + GC schedule/cancel (no long sleeps, no real node-pty).
-import { describe, it } from 'node:test';
+
 import assert from 'node:assert';
+import { describe, it } from 'node:test';
 import { loadModule } from './helper.js';
 
-const {
-  pushScrollback,
-  scheduleGcTimer,
-  cancelGcTimer,
-  MAX_SCROLLBACK_CHARS,
-  GC_AFTER_MS,
-} = loadModule('pty.ts');
+const { pushScrollback, scheduleGcTimer, cancelGcTimer, MAX_SCROLLBACK_CHARS, GC_AFTER_MS } = loadModule('pty.ts');
 
 function blankTimer() {
   return { timer: null, lastDisconnect: null };
@@ -45,9 +40,13 @@ describe('pty GC schedule/cancel', () => {
   it('schedules the timer and fires onExpire', async () => {
     const state = blankTimer();
     let fired = 0;
-    scheduleGcTimer(state, () => {
-      fired += 1;
-    }, 10);
+    scheduleGcTimer(
+      state,
+      () => {
+        fired += 1;
+      },
+      10,
+    );
     assert.ok(state.timer !== null);
     assert.ok(typeof state.lastDisconnect === 'number');
     await sleep(50);
@@ -58,13 +57,21 @@ describe('pty GC schedule/cancel', () => {
   it('re-scheduling cancels the previous timer', async () => {
     const state = blankTimer();
     let fired = 0;
-    scheduleGcTimer(state, () => {
-      fired += 1;
-    }, 10);
+    scheduleGcTimer(
+      state,
+      () => {
+        fired += 1;
+      },
+      10,
+    );
     const first = state.timer;
-    scheduleGcTimer(state, () => {
-      fired += 10;
-    }, 40);
+    scheduleGcTimer(
+      state,
+      () => {
+        fired += 10;
+      },
+      40,
+    );
     assert.notStrictEqual(state.timer, first);
     await sleep(60);
     assert.strictEqual(fired, 10);
@@ -73,9 +80,13 @@ describe('pty GC schedule/cancel', () => {
   it('cancelGcTimer prevents the firing', async () => {
     const state = blankTimer();
     let fired = 0;
-    scheduleGcTimer(state, () => {
-      fired += 1;
-    }, 10);
+    scheduleGcTimer(
+      state,
+      () => {
+        fired += 1;
+      },
+      10,
+    );
     cancelGcTimer(state);
     assert.strictEqual(state.timer, null);
     await sleep(40);

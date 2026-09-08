@@ -1,5 +1,6 @@
-import React, { createContext, useCallback, useContext, useRef, useState, useEffect } from 'react';
-import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
+import { AlertCircle, CheckCircle, Info, X } from 'lucide-react';
+import type React from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -44,6 +45,7 @@ function ToastRow({ item, onDismiss }: { item: ToastItem; onDismiss: (id: string
         {item.message}
       </span>
       <button
+        type="button"
         onClick={() => onDismiss(item.id)}
         title="Dismiss"
         aria-label="Dismiss notification"
@@ -89,10 +91,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div
-        aria-live="polite"
-        className="fixed bottom-3 right-3 z-50 flex flex-col gap-2 items-end pointer-events-none"
-      >
+      <div aria-live="polite" className="fixed bottom-3 right-3 z-50 flex flex-col gap-2 items-end pointer-events-none">
         {items.map((item) => (
           <div key={item.id} className="pointer-events-auto">
             <ToastRow item={item} onDismiss={dismiss} />
