@@ -4,7 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const ts = require('typescript');
 
-const WEB_SRC = path.join(__dirname, '..', 'src', 'web');
+const WEB_SRC = path.join(__dirname, '..', 'packages', 'web');
 const CACHE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-web-backend-'));
 
 function loadModule(name) {
@@ -136,7 +136,7 @@ test('guards: .env.example template is not sensitive', () => {
 });
 
 test('guards: ordinary paths pass the sensitive guard', () => {
-  assert.strictEqual(isSensitiveRelPath('src/web/server.ts'), false);
+  assert.strictEqual(isSensitiveRelPath('packages/web/server.ts'), false);
   assert.strictEqual(isSensitiveRelPath('environment.md'), false);
   assert.strictEqual(isSensitiveRelPath('telling.txt'), false);
   assert.strictEqual(isSensitiveRelPath('keys.md'), false);

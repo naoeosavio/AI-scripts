@@ -13,17 +13,25 @@ packages/cli/
   dist/Tell.mjs      # built artifact (chmod +x)
 ```
 
-Root orchestration (`package.json:9-18`, bun workspaces `packages/*`):
+Root orchestration (`package.json`, bun workspaces `packages/*` — SDK, CLI, web):
 
 ```bash
 npm run build          # SDK (ESM+CJS+dts+2 browser) then CLI (minified .mjs)
-npm run lint           # tsc --noEmit in both packages
+npm run build:web      # web sandbox: tsup server + vite assets → packages/web/dist/
+npm run lint           # tsc --noEmit in SDK + CLI
+npm run lint:web       # tsc --noEmit in packages/web
 npm run format         # biome check --write packages/
 npm run check          # biome check packages/
 npm run test:security  # build SDK, then node test/test-tell-security.js
-npm run test           # test:security + test:context
+npm run test:web       # web backend harness + packages/web suite
+npm run test           # test:security + test:context + test:web
 npm run ci             # build + lint + format check + test
 ```
+
+> Web notes: `packages/web/server.ts` resolves models through `@tell-ai/sdk`
+> (`MODELS`, `resolve_model_spec`, `get_model`) with keys/URLs injected from the
+> environment — the SDK never reads `process.env` itself. The `auth`/`routes`
+> suites spawn a real server via `tsx` and need its `node_modules` installed.
 
 Package script (`packages/cli/package.json:10-16`): `build: tsup && chmod +x dist/Tell.mjs`, `lint: tsc -p tsconfig.json`, `format/check: biome … src`, `ci: lint + check + build`. Formatting: Biome 2.2.6, single quotes, 2-space, 120 cols (`biome.json`).
 

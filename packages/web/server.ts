@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 import { generateText } from 'ai';
-import { getModel, MODELS, resolveModelSpec } from '../ai/models';
+import { get_model, MODELS, resolve_model_spec, type SDKConfig } from '@tell-ai/sdk';
 import { buildSystemPrompt } from './context-builder';
 import { attachTerminalServer, getScrollback } from './pty';
 import { parseCliArgs, printHelp } from './cli-args';
@@ -56,6 +56,34 @@ const PORT = cliArgs.port ?? Number(process.env.PORT || 3000);
 const HOST = cliArgs.host || '127.0.0.1';
 const EXEC_TIMEOUT_MS = cliArgs.execTimeout ?? 120_000;
 const TELL_TOKEN = process.env.TELL_TOKEN || '';
+
+// API keys / base URLs are injected into the SDK (it never reads process.env).
+function load_sdk_config_from_env(): SDKConfig {
+  const env = (name: string): string | undefined => {
+    const value = (process.env[name] ?? '').trim();
+    return value || undefined;
+  };
+  return {
+    keys: {
+      openai: env('OPENAI_API_KEY'),
+      anthropic: env('ANTHROPIC_API_KEY'),
+      google: env('GOOGLE_API_KEY') || env('GEMINI_API_KEY'),
+      xai: env('XAI_API_KEY'),
+      deepseek: env('DEEPSEEK_API_KEY'),
+      fireworks: env('FIREWORKS_API_KEY'),
+      cerebras: env('CEREBRAS_API_KEY'),
+      moonshotai: env('MOONSHOTAI_API_KEY'),
+      openrouter: env('OPENROUTER_API_KEY'),
+      alibaba: env('ALIBABA_API_KEY'),
+      zhipu: env('ZHIPU_API_KEY'),
+    },
+    urls: {
+      zhipu: env('ZHIPU_BASE_URL'),
+      vast: env('VAST_BASE_URL'),
+      local: env('LOCAL_OPENAI_BASE_URL'),
+    },
+  };
+}
 
 const EXEC_MAX_CONCURRENCY = 2;
 const EXEC_OUTPUT_LIMIT = 200 * 1024;
@@ -393,7 +421,7 @@ app.post('/api/execute', async (req, res) => {
 app.get('/api/models', (req, res) => {
   const formattedModels = Object.entries(MODELS).map(([alias, spec]) => {
     try {
-      const resolved = resolveModelSpec(spec);
+      const resolved = resolve_model_spec(spec);
       return {
         alias,
         spec,
@@ -418,6 +446,8 @@ app.get('/api/models', (req, res) => {
     cerebras: !!process.env.CEREBRAS_API_KEY,
     moonshotai: !!process.env.MOONSHOTAI_API_KEY,
     openrouter: !!process.env.OPENROUTER_API_KEY,
+    alibaba: !!process.env.ALIBABA_API_KEY,
+    zhipu: !!process.env.ZHIPU_API_KEY,
   };
 
   res.json({
@@ -539,10 +569,10 @@ app.post('/api/tell', async (req, res) => {
   serverState.aiTurns += 1;
 
   try {
-    // Resolve model spec and get Vercel AI SDK model instance
-    const handle = await getModel(modelSpec);
+    // Resolve model spec and get AI SDK model instance (via @tell-ai/sdk)
+    const handle = await get_model(modelSpec, load_sdk_config_from_env());
     try {
-      const resolved = resolveModelSpec(modelSpec);
+      const resolved = resolve_model_spec(modelSpec);
       serverState.keysUsed.add(resolved.vendor);
     } catch {
       /* vendor unknown; skip */

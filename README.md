@@ -8,8 +8,9 @@ One-shot terminal assistant, powered by an AI that can execute bash commands. As
 |---|---|---|
 | [`tell-ai`](./packages/cli/README.md) | The `tell` terminal CLI — one prompt at a time, with optional command execution | GPL-3.0 |
 | [`@tell-ai/sdk`](./packages/sdk/README.md) | Browser-safe AI provider library: model resolution, multi-vendor dispatch, RUN/think tag handling, context summarization | MIT |
+| [`@tell-ai/web`](./packages/web/README.md) | Web sandbox server (`tell-web`): browser chat + file explorer + real PTY terminals, launched via `tell --web` | GPL-3.0-only |
 
-The CLI bundles the SDK and resolves API keys from your environment; the SDK works in Node, Bun, and the browser with all configuration injected.
+The CLI bundles the SDK and resolves API keys from your environment; the SDK works in Node, Bun, and the browser with all configuration injected. The web sandbox lives in `packages/web/` (tracked outside the bun workspaces) and is documented in [docs/web-sandbox.md](docs/web-sandbox.md).
 
 ## Quick start
 
@@ -30,11 +31,30 @@ Set your API keys with environment variables (see the [CLI README](./packages/cl
 
 ## Development
 
-Monorepo (bun workspaces) with two packages. All commands run from the root:
+Monorepo (bun workspaces `packages/*`) plus the web sandbox in `packages/web/`. All commands run from the root:
 
 ```bash
-tell --chain "find out why the build is failing and fix it"
+npm run build       # SDK (ESM+CJS+types+2 browser bundles) then CLI (minified .mjs)
+npm run build:web   # web sandbox server + frontend assets (packages/web/dist/)
+npm run lint        # tsc --noEmit in SDK + CLI
+npm run lint:web    # tsc --noEmit in packages/web
+npm run format      # biome check --write packages/
+npm run check       # biome check packages/
+npm test            # security + context + web suites
+npm run test:web    # web backend harness (cli-args/paths/guards/session) only
+npm run ci          # build + lint + check + test
 ```
+
+Requirements: [bun](https://bun.sh) (package manager and runner), Node.js >= 20 (web sandbox, `node-pty` native module), TypeScript.
+
+## Documentation
+
+- [CLI docs](./docs/cli/README.md) — flags, context, execution, chain mode, security
+- [SDK build variants](./docs/sdk/imports.md) — Node ESM/CJS vs browser ESM vs IIFE global
+- [Usage guide](./docs/usage.md), [integrations](./docs/integrations.md) — git hooks, CI/CD, bots, self-hosted models
+- [Web sandbox](./docs/web-sandbox.md) — `tell --web` quick start, hosting scenarios, auth, `.tell/` sessions ([package README](./packages/web/README.md))
+
+## CLI examples
 
 Include piped input with a prompt:
 
@@ -44,6 +64,29 @@ git diff --staged | tell --input "review this change"
 ```
 
 Tell logs conversations under `~/.ai/tell_history`.
+
+Web Sandbox
+-----------
+
+Launch a browser-based terminal + AI console from any working directory:
+
+```bash
+tell --web                      # open http://localhost:3000
+tell -w --cwd /path/to/project  # run the sandbox in another working directory (created if missing)
+tell -w --no-exec "ola"         # start the chat pre-seeded with "ola", auto-execution off
+tell -w -m g --chain -y "go"    # pick model (g), chain mode, auto-confirm execution
+```
+
+The sandbox mirrors your real shell through PTY panes (tmux/codex/opencode/claude-code
+work), generates a system prompt from the project tree + README/AGENTS, and persists
+sessions in `.tell/`. Run it locally, on a repo/server you manage remotely, or expose
+it via a tunnel/reverse proxy.
+
+Source and API reference: [`packages/web/`](./packages/web/README.md) (`bun run --filter @tell-ai/web dev`
+for development, `npm run build:web` for `packages/web/dist/`).
+
+Full guide (quick start, where to use it, real-world examples, security):
+[docs/web-sandbox.md](docs/web-sandbox.md)
 
 ### Flag interactions
 

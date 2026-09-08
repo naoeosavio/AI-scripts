@@ -384,7 +384,7 @@ docker run --rm -it -p 3000:3000 \
 | Problem | Fix |
 |---------|-----|
 | `401 Unauthorized` / login screen keeps rejecting | The server runs with `TELL_TOKEN`. Paste the exact value into the login form (nothing is stored — a stale token can't linger; just retype). After too many tries wait 15 min (`429` + `Retry-After`). |
-| `Failed to load native module: pty.node` | `node-pty` is a native module. Run `npm rebuild node-pty` (from `src/web`) or install build tools (`python3`, `make`, `g++`). |
+| `Failed to load native module: pty.node` | `node-pty` is a native module. Run `npm rebuild node-pty` (from `packages/web`) or install build tools (`python3`, `make`, `g++`). |
 | Port already in use | Set another port: `PORT=3100 tell --web` |
 | Wrong model | Set `TELL_MODEL` (e.g. `TELL_MODEL=g tell --web`) or pick the model in the chat header. |
 | Terminal looks blank / no prompt | Refresh the page; the PTY reconnects. Check the `.tell/` scrollback restore if a session exists. |
