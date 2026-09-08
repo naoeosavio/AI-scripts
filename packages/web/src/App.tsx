@@ -124,6 +124,12 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
 
   const [chainMode, setChainMode] = useState<boolean>(true);
   const [autoExecute, setAutoExecute] = useState<boolean>(false);
+  // Require Approval forces the manual confirm card for every command, even
+  // with Auto-Run on. No-Exec never runs anything (shows what would run).
+  const [requireApproval, setRequireApproval] = useState<boolean>(false);
+  const [noExec, setNoExec] = useState<boolean>(false);
+  // Effective auto-run: either safety toggle forces the confirm path.
+  const canAutoRun = autoExecute && !requireApproval && !noExec;
   const [systemPrompt, setSystemPrompt] = useState<string>(DEFAULT_SYSTEM_PROMPT);
   const [generatedSystemPrompt, setGeneratedSystemPrompt] = useState<string | null>(null);
   const [cwd, setCwd] = useState<string>('');
@@ -625,7 +631,7 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
           setLoading(false);
           return;
         }
-        if (autoExecute) {
+        if (canAutoRun) {
           await executeAndContinue(script, updatedMessages);
         } else {
           setPendingCommand(script);
@@ -739,6 +745,24 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
   const handleConfirmPending = async (editedCommand: string) => {
     const command = editedCommand.trim() || pendingCommand || '';
     setPendingCommand(null);
+    if (noExec) {
+      // No-Exec mode: never POST /api/execute — record what would have run.
+      appendAgentLine('input', command);
+      appendAgentLine('system', 'Command execution disabled (--no-exec) — not run.');
+      if (chainMode) {
+        const feedbackMessage: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: `Execution disabled (--no-exec):\n${command}`,
+        };
+        const updated = [...messages, feedbackMessage];
+        setMessagesAndSync(updated);
+        await runAiTurn(updated);
+      } else {
+        setLoading(false);
+      }
+      return;
+    }
     setLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1270,6 +1294,16 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
         onChainModeChange={(val) => setChainMode(val)}
         autoExecute={autoExecute}
         onAutoExecuteChange={(val) => setAutoExecute(val)}
+        requireApproval={requireApproval}
+        onRequireApprovalChange={(val) => {
+          setRequireApproval(val);
+          if (val) setAutoExecute(false);
+        }}
+        noExec={noExec}
+        onNoExecChange={(val) => {
+          setNoExec(val);
+          if (val) setAutoExecute(false);
+        }}
         onSelectSample={(prompt) => {
           setInputPrompt(prompt);
         }}
