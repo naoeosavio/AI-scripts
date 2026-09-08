@@ -68,7 +68,7 @@ interface HistoryEntry {
   size: number;
 }
 
-export default function App() {
+export default function App({ onLogout }: { onLogout?: () => void }) {
   const {
     config,
     setSettingsHeight,
@@ -1162,6 +1162,16 @@ export default function App() {
           <span className="w-2 h-2 rounded-full bg-(--color-success) animate-pulse" />
           <strong className="text-(--color-success)">Sandbox Ready</strong>
         </span>
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            title="Sair (apaga o token da memória)"
+            aria-label="Sair (apaga o token da memória)"
+            className="px-2 py-1.5 border transition-all cursor-pointer shrink-0 bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-error) hover:bg-white/10 text-[10px] font-bold font-display"
+          >
+            Sair
+          </button>
+        )}
         <button
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           title={sidebarCollapsed ? 'Open Explorer' : 'Minimize Explorer'}
