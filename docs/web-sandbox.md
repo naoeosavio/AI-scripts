@@ -20,6 +20,7 @@ browser tab, no SSH client or local terminal needed.
   - [3. Manage an online server](#3-manage-an-online-server)
   - [4. Via a website / hosted instance](#4-via-a-website--hosted-instance)
 - [Real-world examples](#real-world-examples)
+- [Execution modes](#execution-modes)
 - [Session persistence (`.tell/`)](#session-persistence-tell)
 - [Authentication (`TELL_TOKEN`)](#authentication-tell_token)
 - [Security notes](#security-notes)
@@ -267,6 +268,22 @@ tail -f /var/log/nginx/access.log
 In the chat: *"run the linters, fix whatever fails, and commit the changes"*. The AI
 drafts `<RUN>` commands, you authorize them (or enable Auto-Run), and each command
 runs through the sandbox bridge with output fed back to the model.
+
+---
+
+## Execution modes
+
+The chat header controls how AI-requested commands run:
+
+- **Auto-Run** (seeded by `-y`/`--yes`) — scripts execute immediately.
+- **Require Approval** — every command shows a confirmation card first, even with
+  Auto-Run on. With `--chain`, each step pauses for your approval.
+- **No-Exec** (seeded by `--no-exec`) — nothing executes; confirming a command
+  just records what would have run and the chain continues with that feedback.
+
+Precedence: `No-Exec` > `Require Approval` > `Auto-Run`. These are per-session
+UI toggles; high-risk commands (`sudo`, `rm -rf`, `curl|sh`, …) are always
+blocked server-side — see [Security notes](#security-notes).
 
 ---
 

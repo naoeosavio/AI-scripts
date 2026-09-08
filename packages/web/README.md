@@ -36,6 +36,21 @@ tell-web --help
 | `--no-exec` | off | Disable automatic execution |
 | `-h, --help` | — | Help |
 
+## Execution modes (chat toggles)
+
+The chat header has three execution toggles (client-side, per browser session):
+
+| Toggle | Effect |
+|---|---|
+| `Auto-Run (-y)` | AI-requested `<RUN>` scripts execute immediately, no confirmation card |
+| `Require Approval` | Every command shows the confirmation card, even with Auto-Run on |
+| `No-Exec` | Nothing is ever executed — the confirm card records what would have run |
+
+Precedence: `No-Exec` > `Require Approval` > `Auto-Run`. Enabling a stricter
+mode switches Auto-Run off; Auto-Run is disabled while either safety toggle is on.
+With `--chain`, each command still pauses for approval (Require Approval) or is
+recorded as not-run (No-Exec) while the loop continues with the feedback.
+
 ## Envs (see `.env.example`)
 
 `PORT`, `TELL_MODEL`, `TELL_TOKEN` (`Bearer` auth on `/api/*` except the public
