@@ -117,6 +117,17 @@ async function run_tell(args, response, opts = {}) {
     return { stdout: opts.execStdout || '', stderr: opts.execStderr || '' };
   };
 
+  const spawn_calls = [];
+  function mock_spawn(cmd, args, options) {
+    const child = new EventEmitter();
+    spawn_calls.push({ cmd, args, options });
+    setImmediate(() => {
+      if (opts.spawnError) child.emit('error', opts.spawnError);
+      else child.emit('exit', opts.spawnExitCode ?? 0);
+    });
+    return child;
+  }
+
   const module_obj = { exports: {} };
   function mock_require(name) {
     if (name === '@tell-ai/sdk') {
@@ -137,7 +148,7 @@ async function run_tell(args, response, opts = {}) {
     if (name === './systemPrompt') {
       return { get_system_prompt: (options) => sdk.get_system_prompt(options) };
     }
-    if (name === 'child_process' || name === 'node:child_process') return { exec: mock_exec };
+    if (name === 'child_process' || name === 'node:child_process') return { exec: mock_exec, spawn: mock_spawn };
     if (name === 'os' || name === 'node:os') return { ...require('node:os'), homedir: () => home };
     return require(name);
   }
@@ -163,6 +174,7 @@ async function run_tell(args, response, opts = {}) {
       execCalls: exec_calls,
       tellMessages: tell_messages,
       tellCalls: tell_calls,
+      spawnCalls: spawn_calls,
       exitCode: fake_process.exitCode,
       dir,
       home,

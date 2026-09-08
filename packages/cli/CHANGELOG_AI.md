@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.2 — 2026-09-08
+
+### Features
+
+- Add Alibaba API key support to environment configuration loading
+- Add `-w`/`--web` mode to launch the interactive Tell Web sandbox (`tell-web`): spawns the server with the selected model (`-m`), `--cwd` working directory (created with a warning when missing), `--prompt` pre-seed and `--no-exec`/`--chain`/`-y` passthrough; propagates the sandbox exit code and explains how to install `@tell-ai/web` when the binary is missing
+
+
+### Fixes
+
+- Tighten shell risk detection and expand coverage for remote execution vectors and piped downloads
+- Reduce accumulated context threshold to optimize LLM window limits
+- Defer model label resolution for graceful configuration error reporting
+- Catch top-level errors to ensure formatted error messages and non-zero exit codes
+
+---
+
 ## v0.5.1 — 2026-08-15
 
 To generate the changelog section without any markdown fences or extraneous explanations:

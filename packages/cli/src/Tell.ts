@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import { exec, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -40,6 +40,8 @@ type CliOptions = {
   chain?: boolean;
   exec?: boolean;
   input?: boolean;
+  web?: boolean;
+  cwd?: string;
 };
 
 type ParsedInput = { model: string; parts: string[]; readStdin: boolean };
@@ -535,6 +537,8 @@ function build_program(argv: string[]): Command {
     .option('-y, --yes', 'execute requested commands without confirmation')
     .option('--chain', 'continue after command output until the assistant gives a final answer')
     .option('-i, --input', 'read stdin and include it with the prompt')
+    .option('-w, --web', 'launch the interactive Tell Web sandbox')
+    .option('--cwd <path>', 'working directory for the sandbox (created if missing)')
     .option('--no-exec', 'do not execute requested commands')
     .parse(argv);
 }
@@ -652,6 +656,63 @@ async function maybe_summarize_context(
   }
 }
 
+async function launch_web(opts: {
+  model: string;
+  prompt: string;
+  cwd?: string | undefined;
+  noExec?: boolean | undefined;
+  chain?: boolean | undefined;
+  yes?: boolean | undefined;
+}): Promise<void> {
+  let cwd = process.cwd();
+  if (opts.cwd) {
+    cwd = path.resolve(opts.cwd);
+    if (!fs.existsSync(cwd)) {
+      try {
+        fs.mkdirSync(cwd, { recursive: true });
+        process.stderr.write(`\x1b[33mWarning: '${opts.cwd}' did not exist; created it.\x1b[0m\n`);
+      } catch (err) {
+        console.error(
+          '\x1b[31mFailed to create working directory ' +
+            `${JSON.stringify(opts.cwd)}: ${err instanceof Error ? err.message : String(err)}\x1b[0m`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+  }
+
+  const child_args = ['-m', opts.model, '--cwd', cwd];
+  if (opts.noExec) child_args.push('--no-exec');
+  if (opts.chain) child_args.push('--chain');
+  if (opts.yes) child_args.push('--yes');
+  if (opts.prompt) child_args.push('--prompt', opts.prompt);
+
+  const child = spawn('tell-web', child_args, {
+    stdio: 'inherit',
+    env: { ...process.env, TELL_MODEL: opts.model, NODE_ENV: 'production' },
+    cwd,
+  });
+  child.on('error', (err: unknown) => {
+    const code = (err as { code?: string })?.code;
+    if (code === 'ENOENT') {
+      console.error('\x1b[31mWeb interface not installed. Install it with:\x1b[0m\n  npm install -g @tell-ai/web\n');
+      process.exitCode = 1;
+    } else {
+      console.error(
+        `\x1b[31mFailed to launch web interface: ${err instanceof Error ? err.message : String(err)}\x1b[0m`,
+      );
+      process.exitCode = 1;
+    }
+  });
+  await new Promise<void>((resolve) => {
+    child.on('exit', (exit_code: number | null) => {
+      if (exit_code !== null) process.exitCode = exit_code;
+      resolve();
+    });
+  });
+}
+
 async function run_tell(model: string, prompt: string, opts: CliOptions): Promise<void> {
   let label = '';
   let plan: ContextPlan;
@@ -737,6 +798,17 @@ async function main() {
   const input = parse_args(positional_args, opts.model, Boolean(opts.input));
   const stdin_text = input.readStdin ? await read_stdin().catch(() => '') : '';
   const prompt = format_prompt(input.parts.join(' '), stdin_text, opts);
+  if (opts.web) {
+    await launch_web({
+      model: input.model,
+      prompt,
+      cwd: opts.cwd,
+      noExec: opts.exec === false,
+      chain: opts.chain,
+      yes: opts.yes,
+    });
+    return;
+  }
   const ctx_is_prompt = typeof opts.ctx === 'string' && ctx_value_is_prompt_text(opts.ctx);
   if (!prompt && !ctx_is_prompt) {
     console.error(format_missing_prompt_error(program));

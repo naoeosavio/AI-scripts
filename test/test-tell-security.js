@@ -73,6 +73,17 @@ async function runTell(args, response, opts = {}) {
     return { stdout: opts.execStdout || '', stderr: opts.execStderr || '' };
   };
 
+  const spawnCalls = [];
+  function mockSpawn(cmd, args, options) {
+    const child = new EventEmitter();
+    spawnCalls.push({ cmd, args, options });
+    setImmediate(() => {
+      if (opts.spawnError) child.emit('error', opts.spawnError);
+      else child.emit('exit', opts.spawnExitCode ?? 0);
+    });
+    return child;
+  }
+
   const moduleObj = { exports: {} };
   function mockRequire(name) {
     if (name === '@tell-ai/sdk') {
@@ -93,7 +104,7 @@ async function runTell(args, response, opts = {}) {
     if (name === './systemPrompt') {
       return { get_system_prompt: (options) => sdk.get_system_prompt(options) };
     }
-    if (name === 'child_process' || name === 'node:child_process') return { exec: mockExec };
+    if (name === 'child_process' || name === 'node:child_process') return { exec: mockExec, spawn: mockSpawn };
     if (name === 'os' || name === 'node:os') return { ...require('node:os'), homedir: () => home };
     return require(name);
   }
@@ -113,7 +124,7 @@ async function runTell(args, response, opts = {}) {
   try {
     vm.runInNewContext(tellSource, context, { filename: 'Tell.js' });
     await waitForMain();
-    return { stdout, stderr, execCalls, tellMessages, tellCalls, exitCode: fakeProcess.exitCode, dir, home, work };
+    return { stdout, stderr, execCalls, tellMessages, tellCalls, spawnCalls, exitCode: fakeProcess.exitCode, dir, home, work };
   } finally {
     if (!opts.dir) fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -340,6 +351,73 @@ function assertPromptInjectionPolicy(result) {
   } finally {
     fs.rmSync(injectionDir, { recursive: true, force: true });
   }
+
+  // --web launcher: spawns tell-web instead of calling the model.
+  result = await runTell(['-w', '-m', 'd', 'seed it'], 'unused response');
+  assert.deepStrictEqual(result.tellCalls, []);
+  assert.deepStrictEqual(result.execCalls, []);
+  assert.strictEqual(result.spawnCalls.length, 1);
+  assert.strictEqual(result.spawnCalls[0].cmd, 'tell-web');
+  assert.deepStrictEqual([...result.spawnCalls[0].args.slice(0, 4)], ['-m', 'd', '--cwd', result.work]);
+  assert.ok(result.spawnCalls[0].args.includes('--prompt'));
+  assert.ok(result.spawnCalls[0].args.includes('seed it'));
+  assert.strictEqual(result.spawnCalls[0].options.env.TELL_MODEL, 'd');
+  assert.strictEqual(result.spawnCalls[0].options.env.NODE_ENV, 'production');
+  assert.strictEqual(result.spawnCalls[0].options.cwd, result.work);
+  assert.strictEqual(result.exitCode, 0);
+
+  // --web forwards --no-exec to the sandbox server.
+  result = await runTell(['--web', '--no-exec', '-m', 'g'], 'unused response');
+  assert.ok(result.spawnCalls[0].args.includes('--no-exec'));
+
+  // --web forwards --chain and -y/--yes to the sandbox server.
+  result = await runTell(['-w', '--chain', '-y', '-m', 'g', 'go'], 'unused response');
+  assert.ok(result.spawnCalls[0].args.includes('--chain'));
+  assert.ok(result.spawnCalls[0].args.includes('--yes'));
+
+  // --chain/--yes are absent from the child args when not requested.
+  result = await runTell(['-w', '-m', 'd', 'plain'], 'unused response');
+  assert.ok(!result.spawnCalls[0].args.includes('--chain'));
+  assert.ok(!result.spawnCalls[0].args.includes('--yes'));
+  assert.ok(!result.spawnCalls[0].args.includes('--no-exec'));
+
+  // --web without a prompt still launches (empty seed, no --prompt flag).
+  result = await runTell(['-w', '-m', 'd'], 'unused response');
+  assert.strictEqual(result.spawnCalls.length, 1);
+  assert.ok(!result.spawnCalls[0].args.includes('--prompt'));
+
+  // --web creates a missing --cwd with a warning.
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-security-'));
+    const newdir = path.join(dir, 'work', 'newdir');
+    try {
+      result = await runTell(['-w', '--cwd', newdir, '-m', 'd'], 'unused response', { dir });
+      assert.strictEqual(result.spawnCalls[0].args[3], newdir);
+      assert.ok(fs.existsSync(newdir));
+      assert.match(result.stderr, /did not exist; created it/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  // --web propagates the sandbox exit code.
+  result = await runTell(['-w', '-m', 'd'], 'unused response', { spawnExitCode: 3 });
+  assert.strictEqual(result.exitCode, 3);
+
+  // --web without tell-web installed explains how to install it.
+  const enoent = new Error("spawn tell-web ENOENT");
+  enoent.code = 'ENOENT';
+  result = await runTell(['-w', '-m', 'd'], 'unused response', { spawnError: enoent });
+  assert.strictEqual(result.exitCode, 1);
+  assert.match(result.stderr, /Web interface not installed/);
+  assert.match(result.stderr, /npm install -g @tell-ai\/web/);
+
+  // --web surfaces other spawn failures.
+  result = await runTell(['-w', '-m', 'd'], 'unused response', { spawnError: new Error('denied') });
+  assert.strictEqual(result.exitCode, 1);
+  assert.match(result.stderr, /Failed to launch web interface: Error: denied/);
+
+  console.log('web mode tests passed');
 
   console.log('tell security tests passed');
 })().catch((error) => {
