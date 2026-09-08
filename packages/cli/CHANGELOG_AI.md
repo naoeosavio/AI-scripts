@@ -1,10 +1,57 @@
 # Changelog
 
+## v0.5.1 — 2026-08-15
+
+To generate the changelog section without any markdown fences or extraneous explanations:
+
+### Features
+- Add Z.ai model provider and GLM-5.3 support with OpenAI-compatible adapter
+- Introduce browser-safe bundles and MIT license support in SDK
+- Add custom base URLs and `tell` function for one-shot assistant calls
+- Add addressable, named, and use-or-create context options in CLI
+- Initialize core tell-ai terminal assistant CLI package and persistence
+
+### Refactors
+- Streamline context flags, addressing syntax, and unify `--ctx` usage
+- Extract system prompt generation logic into SDK and dedicated modules
+- Improve model spec detection and context argument handling in CLI
+- Migrate CLI package to ESM modules and update workspace metadata
+
+### Documentation
+- Structure project README and add dedicated package readmes
+
+### Chores
+- Update project license, changelogs, and SDK versions across the monorepo
+
+---
+
+## v0.5.0 — 2026-08-05
+
+### Features
+- Split the codebase into a bun workspaces monorepo; `tell-ai` is now the CLI package (0.5.0), with model resolution, tag handling and summarization moved into the new `@tell-ai/sdk` library.
+- Environment resolution (env vars + `~/.config/<vendor>.token` fallback) now lives exclusively in the CLI (`packages/cli/src/env.ts`), which assembles the `SDKConfig` for `create_ask_ai(spec, config)`.
+
+### Refactors
+- `tell_silently` now delegates to the SDK `tell()` (with `ask` + `raw`), making `tell()` the single implementation of "call the model with the tell system prompt" shared by CLI and web.
+- `packages/cli/src/systemPrompt.ts` is now a thin wrapper around the SDK prompt, passing `process.cwd()` and platform info; CLI behavior unchanged.
+- CLI package builds to a minified CJS bundle (`dist/Tell.js`, `#!/usr/bin/env node`) with `commander`; the SDK builds to ESM + CJS + declarations via tsup.
+- Extracted the strict TypeScript configuration into `tsconfig.base.json`, extended by both packages.
+- Root package is now a private workspace that orchestrates everything with `bun run --filter`.
+- Removed `gpt-tokenizer` usage and the stale root `src/` layout (`src/ai`, `src/config`, `src/summarize.ts`, `src/Tell.ts`).
+
+### Tests
+- Security test suite now transpiles `packages/cli/src/Tell.ts` and mocks `@tell-ai/sdk` from the real built SDK (tag functions are exercised for real), depending on the SDK build step.
+
+### Documentation
+- Updated `AGENTS.md` to describe the monorepo architecture, package boundaries, and injected-config design.
+
+---
+
 ## v0.4.2 — 2026-07-25
 
 ### Features
-- Include reasoning text in AI responses, wrapping reasoning steps in `<think>` tags when present.
-- Expand context buffer capacity to 256 MiB and filter internal reasoning blocks (`<think>` tags) from conversation history.
+- Include reasoning text in AI responses, wrapping reasoning steps in ` thinking` tags when present.
+- Expand context buffer capacity to 256 MiB and filter internal reasoning blocks (` thinking` tags) from conversation history.
 - Implement incremental context saving to persist state during long-running conversation loops, with periodic file writes.
 - Replace naive context truncation with AI-driven summarization when conversation history exceeds token limits, preserving critical information with fallback to truncation.
 
@@ -41,7 +88,7 @@
 
 - Added command confirmation timeout: prompts auto-reject after a configurable period (`EXEC_TIMEOUT`), preventing indefinite hangs.
 - Ensured the assistant's visible response is always printed when the chain limit is reached or auto-continue is disabled.
-- Model responses now strip `<think>` blocks before command extraction and output, preventing commands inside think tags from being executed.
+- Model responses now strip ` thinking` blocks before command extraction and output, preventing commands inside think tags from being executed.
 - Improved model selection for Vast and Local providers by consistently using `provider.chat(model)`; added response filtering for run command extraction.
 
 ### Fixes

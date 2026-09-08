@@ -1,50 +1,36 @@
-tell-ai
-======
+# tell-ai
 
-One-shot terminal assistant.
+One-shot terminal assistant, powered by an AI that can execute bash commands. Ask a question, get an answer — and optionally, a command executed for you.
 
-What It Includes
-----------------
+## What it includes
 
-- `tell` — terminal CLI for one prompt at a time
+| Package | Description | License |
+|---|---|---|
+| [`tell-ai`](./packages/cli/README.md) | The `tell` terminal CLI — one prompt at a time, with optional command execution | GPL-3.0 |
+| [`@tell-ai/sdk`](./packages/sdk/README.md) | Browser-safe AI provider library: model resolution, multi-vendor dispatch, RUN/think tag handling, context summarization | MIT |
 
-Usage
------
+The CLI bundles the SDK and resolves API keys from your environment; the SDK works in Node, Bun, and the browser with all configuration injected.
+
+## Quick start
 
 ```bash
 npm install -g tell-ai
-```
-
-Run a prompt:
-
-```bash
 tell "explain this directory"
-tell d "run ls -la"
-tell -m d "run ls -la"
-tell -m --help
+tell d "run ls -la"   # asks before executing
 ```
 
-Command execution is interactive by default:
+Set your API keys with environment variables (see the [CLI README](./packages/cli/README.md#api-keys)).
 
-```bash
-tell d "run ls -la"       # asks before executing
-tell -y d "run ls -la"    # executes without confirmation
-tell --no-exec d "run ls" # never executes requested commands
-```
+## Key ideas
 
-`-y`/`--yes` is intended for disposable or sandboxed environments. The CLI blocks known high-risk command patterns, but this is a heuristic guard, not a security boundary. Do not use automatic execution in production, critical hosts, or trusted workstations unless it is contained by a real sandbox such as a container or VM.
+- **One-shot by default** — no conversation loop unless you ask for one (`-c` persistent context, `--chain` multi-step reasoning).
+- **Interactive execution** — the model proposes `<RUN>...</RUN>` commands and you approve them; `-y` auto-executes, `--no-exec` never executes.
+- **10+ vendors through short aliases** — `g` for GPT-5.6 Sol, `o` for Claude Opus 5, `d` for DeepSeek V4 Flash, and more, with thinking-level suffixes (`+`, `++`).
+- **Browser-safe SDK** — ships a self-contained ESM bundle and a script-tag global, no build step needed for the web.
 
-Persistent context across sessions:
+## Development
 
-```bash
-tell -c "remember that this project uses PostgreSQL"
-tell -c "now add a users table migration"   # remembers the previous message
-```
-
-Context is stored per working directory and model under `~/.ai/tell_context`.
-Without `-c`, each invocation starts fresh.
-
-Multi-step chain mode — the assistant can run a command, see its output, and continue with follow-up commands until it reaches a final answer:
+Monorepo (bun workspaces) with two packages. All commands run from the root:
 
 ```bash
 tell --chain "find out why the build is failing and fix it"
@@ -58,26 +44,6 @@ git diff --staged | tell --input "review this change"
 ```
 
 Tell logs conversations under `~/.ai/tell_history`.
-
-Web Sandbox
------------
-
-Launch a browser-based terminal + AI console from any working directory:
-
-```bash
-tell --web                      # open http://localhost:3000
-tell -w --cwd /path/to/project  # run the sandbox in another working directory (created if missing)
-tell -w --no-exec "ola"         # start the chat pre-seeded with "ola", auto-execution off
-tell -w -m g --chain -y "go"    # pick model (g), chain mode, auto-confirm execution
-```
-
-The sandbox mirrors your real shell through PTY panes (tmux/codex/opencode/claude-code
-work), generates a system prompt from the project tree + README/AGENTS, and persists
-sessions in `.tell/`. Run it locally, on a repo/server you manage remotely, or expose
-it via a tunnel/reverse proxy.
-
-Full guide (quick start, where to use it, real-world examples, security):
-[docs/web-sandbox.md](docs/web-sandbox.md)
 
 ### Flag interactions
 
@@ -140,4 +106,4 @@ License
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE) file for more details.
+The repository is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE). The `@tell-ai/sdk` package is separately licensed under MIT (see `packages/sdk/LICENSE`).

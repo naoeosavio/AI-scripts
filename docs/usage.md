@@ -31,18 +31,18 @@ p      openai:gpt-5.5-pro:medium
 p+     openai:gpt-5.5-pro:high
 p++    openai:gpt-5.5-pro:xhigh
 P      openai:gpt-5.5-pro:xhigh
-s--    anthropic:claude-sonnet-4-6:none
-s-     anthropic:claude-sonnet-4-6:low
-s      anthropic:claude-sonnet-4-6:medium
-s+     anthropic:claude-sonnet-4-6:high
-s++    anthropic:claude-sonnet-4-6:max
-S      anthropic:claude-sonnet-4-6:high
-o--    anthropic:claude-opus-4-8:none
-o-     anthropic:claude-opus-4-8:low
-o      anthropic:claude-opus-4-8:medium
-o+     anthropic:claude-opus-4-8:high
-o++    anthropic:claude-opus-4-8:max
-O      anthropic:claude-opus-4-8:high
+s--    anthropic:claude-sonnet-5:none
+s-     anthropic:claude-sonnet-5:low
+s      anthropic:claude-sonnet-5:medium
+s+     anthropic:claude-sonnet-5:high
+s++    anthropic:claude-sonnet-5:max
+S      anthropic:claude-sonnet-5:high
+o--    anthropic:claude-opus-5:none
+o-     anthropic:claude-opus-5:low
+o      anthropic:claude-opus-5:medium
+o+     anthropic:claude-opus-5:high
+o++    anthropic:claude-opus-5:max
+O      anthropic:claude-opus-5:high
 f--    anthropic:claude-fable-5:none
 f-     anthropic:claude-fable-5:low
 f      anthropic:claude-fable-5:medium
@@ -53,10 +53,10 @@ i-     google:gemini-3.1-pro-preview:low
 i      google:gemini-3.1-pro-preview:medium
 i+     google:gemini-3.1-pro-preview:high
 I      google:gemini-3.1-pro-preview:high
-l-     google:gemini-3.1-flash-lite-preview:low
-l      google:gemini-3.1-flash-lite-preview:medium
-l+     google:gemini-3.1-flash-lite-preview:high
-L      google:gemini-3.1-flash-lite-preview:high
+l-     google:gemini-3.5-flash-lite-preview:low
+l      google:gemini-3.5-flash-lite-preview:medium
+l+     google:gemini-3.5-flash-lite-preview:high
+L      google:gemini-3.5-flash-lite-preview:high
 x-     xai:grok-4-0709:low
 x      xai:grok-4-0709:medium
 X      xai:grok-4-0709:high
@@ -68,12 +68,12 @@ df-    deepseek:deepseek-v4-flash:low
 df     deepseek:deepseek-v4-flash:medium
 df+    deepseek:deepseek-v4-flash:high
 DF     deepseek:deepseek-v4-flash:high
-z--    fireworks:glm-5p2:none
-z-     fireworks:glm-5p2:low
-z      fireworks:glm-5p2:medium
-z+     fireworks:glm-5p2:high
-z++    fireworks:glm-5p2:max
-Z      fireworks:glm-5p2:high
+z--    zai:glm-5.3:none
+z-     zai:glm-5.3:low
+z      zai:glm-5.3:medium
+z+     zai:glm-5.3:high
+z++    zai:glm-5.3:max
+Z      zai:glm-5.3:high
 k      moonshotai:kimi-k2.7-code:none
 K      moonshotai:kimi-k3:max
 q      local:/root/model:none
@@ -127,20 +127,37 @@ tell --chain "find out why the build is failing and fix it"
 npm run build 2>&1 | tell --chain -i "fix the build errors"
 ```
 
-## Persistent context (`-c`)
+## Persistent context (`-c`, `--ctx`, `-n`)
 
-Keep conversation history across invocations per directory and model. Stored at `~/.ai/tell_context/`.
+Context flags are explicit — no value guessing. Only named contexts are saved:
 
 ```bash
-tell -c "remember that this project uses PostgreSQL"
-tell -c "now add a users table migration"   # remembers the previous message
+tell -c "remember that this project uses PostgreSQL"   # default context for this dir+model
+tell --ctx "remember this too"                         # bare/multi-word --ctx = same as -c
+
+tell --ctx myproj "seed the project"                   # use-or-create named: resumes if it exists
+tell --ctx myproj "continue the project"               # ...otherwise creates it fresh
+tell --ctx myproj -n "start over"                      # explicit reset (always starts empty)
+
+tell -l                                                # list saved contexts
+tell --ctx @0 "resume the most recent one"             # recency index (must exist)
+tell --ctx '#a1b2c3' "resume by hash prefix"           # explicit # = hash, must exist
 ```
 
-Without `-c`, each invocation starts fresh. Context is automatically truncated at 200,000 characters.
+Context files live at `~/.ai/tell_context/`. Without any context flag, each invocation starts fresh and the default context is cleared. Context is automatically truncated at 200,000 characters.
+
+**One token vs multi-word:** a single token after `--ctx` is always a name (or `@N`/`#hash` ref), never a prompt:
+
+```bash
+tell d --ctx ola                # "ola" = context NAME, no prompt → error: missing prompt
+tell d --ctx ola "say hello"    # resumes/creates named context "ola" with prompt "say hello"
+tell d -c ola                   # one-word prompt on the default context
+tell d --ctx "say hello"        # multi-word value = prompt on the default context
+```
 
 ## Flag interactions
 
-How `-c` (persistent context) and `--chain` (multi-step loop) combine:
+How `-c` (default context) and `--chain` (multi-step loop) combine:
 
 | Flags | Reads context? | Deletes? | Writes? | Loop? |
 |-------|--------|---------|--------|------|
@@ -150,7 +167,7 @@ How `-c` (persistent context) and `--chain` (multi-step loop) combine:
 | `-c --chain` | yes | no | yes (incremental) | yes (8 rounds) |
 
 Without any flag, context is deleted on start (one-shot execution, no history kept).  
-`-c` loads previous conversation and appends the result at the end.  
+`-c` loads the previous conversation and appends the result at the end.  
 `--chain` loops up to 8 rounds feeding command outputs to the model, but does not persist context across invocations.  
 `-c --chain` reads previous context, loops up to 8 rounds, and writes incrementally — each round's output is appended to the context file.
 
