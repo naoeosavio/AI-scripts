@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.2 — 2026-09-08
+
+### Features
+- Export `get_model` and the `ModelHandle` type so Node consumers (e.g. the web server) can resolve a vendor provider handle for multi-turn `generateText()` calls without going through `create_ask_ai()`
+- Add new model shortcut tiers (e.g., `e`, `r`, `al`, `af`, `zf`, `m`) and update provider model versions
+- Add support for the Cerebras vendor and dedicated handler
+
+### Fixes
+- Tighten OpenAI vendor detection and improve base URL handling defaults
+- Resolve `:fast` model aliases correctly in model spec parsing and unify reasoning configuration
+
+### Tests
+- Add comprehensive test suite covering web backend functionality, chat threads, session management, terminal layout, PTY, HTTP routes, and server guards
+- Add dedicated `test/test-sdk.js` suite (wired as `test:sdk`, first in `npm test`): public export surface, `resolve_model_spec` aliases/fast/thinking budgets, `MODELS` table round-trip invariant, offline `get_model` handles (incl. vast/local URL errors), exec/no-exec system prompts and tag helpers
+---
+
 ## v0.2.1 — 2026-08-15
 
 ### Features
