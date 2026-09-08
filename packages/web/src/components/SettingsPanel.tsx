@@ -397,14 +397,13 @@ export default function SettingsPanel({
                       className="flex-1 accent-(--color-accent) cursor-pointer"
                     />
                   </div>
-                  <div className="grid grid-cols-5 gap-1.5">
+                  <div className="grid grid-cols-4 gap-1.5">
                     {(
                       [
                         { id: 'top', label: 'Top', Icon: PanelTop },
                         { id: 'bottom', label: 'Bottom', Icon: PanelBottom },
                         { id: 'left', label: 'Left', Icon: PanelLeft },
                         { id: 'right', label: 'Right', Icon: PanelRight },
-                        { id: 'hidden', label: 'Hidden', Icon: EyeOff },
                       ] as { id: TerminalPlacement; label: string; Icon: typeof PanelLeft }[]
                     ).map(({ id, label, Icon }) => (
                       <button
@@ -421,6 +420,17 @@ export default function SettingsPanel({
                       </button>
                     ))}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setCustomTerminal('hidden')}
+                    className={`mt-1.5 flex w-full items-center justify-center gap-1 px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                      config.customTerminal === 'hidden'
+                        ? 'bg-(--color-accent) border-(--color-accent) text-white'
+                        : 'bg-(--color-bg-secondary) border-(--color-border-medium) text-(--color-text-muted) hover:text-(--color-text-primary)'
+                    }`}
+                  >
+                    <EyeOff className="w-3 h-3" /> Hidden
+                  </button>
                 </div>
                 <div>
                   <span className="block text-[9px] uppercase tracking-wider text-(--color-text-muted) font-bold mb-1">

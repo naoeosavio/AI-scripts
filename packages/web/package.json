@@ -12,7 +12,7 @@
   },
   "files": ["dist"],
   "scripts": {
-    "dev": "tsx server/server.ts",
+    "dev": "tsx src/server/server.ts",
     "build": "tsup && vite build --emptyOutDir false && chmod +x dist/server.js",
     "lint": "tsc -p tsconfig.json",
     "format": "biome check --write src",
