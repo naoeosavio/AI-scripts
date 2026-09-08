@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/* Fonts: system-first stacks (offline-safe). The previous Google Fonts
+ * @import blocked first paint without network. If you want the exact
+ * Inter/Space Grotesk/JetBrains Mono faces, self-host them (e.g.
+ * @fontsource packages) with font-display:swap and keep these fallbacks. */
+
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+/* Light / Dark color tokens (dark defaults; light overrides applied via [data-theme] + JS) */
+:root {
+  --ui-scale: 1;
+
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #121212;
+  --color-bg-tertiary: #080808;
+  --color-bg-elevated: #141414;
+  --color-bg-input: #0d0d0d;
+
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-muted: rgba(255, 255, 255, 0.35);
+
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-medium: rgba(255, 255, 255, 0.15);
+  --color-border-strong: rgba(255, 255, 255, 0.25);
+
+  --color-accent: #e11d48;
+  --color-accent-hover: #f43f5e;
+  --color-accent-subtle: #4c0519;
+  --color-accent-text: #fb7185;
+
+  --color-success: #10b981;
+  --color-error: #ef4444;
+
+  --color-scrollbar-track: rgba(255, 255, 255, 0.03);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+}
+
+/* Font families and accent tokens are runtime-overridable via the ThemeProvider
+ * (inline root vars from theme.tsx are the single source of truth — they win).
+ * Only neutral tokens are mirrored here as first-paint fallbacks. */
+:root[data-theme="light"] {
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f5f5f5;
+  --color-bg-tertiary: #e5e5e5;
+  --color-bg-elevated: #fafafa;
+  --color-bg-input: #f0f0f0;
+
+  --color-text-primary: #0a0a0a;
+  --color-text-secondary: rgba(0, 0, 0, 0.6);
+  --color-text-muted: rgba(0, 0, 0, 0.35);
+
+  --color-border-subtle: rgba(0, 0, 0, 0.08);
+  --color-border-medium: rgba(0, 0, 0, 0.15);
+  --color-border-strong: rgba(0, 0, 0, 0.25);
+
+  --color-success: #059669;
+  --color-error: #dc2626;
+
+  --color-scrollbar-track: rgba(0, 0, 0, 0.03);
+  --color-scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --color-scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+}
+
+/* Custom global overrides */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+/* Real UI scale: zoom the app root (scales px-type text too).
+ * --ui-scale is runtime-updated by theme.tsx from the Scale setting. */
+#root {
+  zoom: var(--ui-scale);
+}
+
+/* Global keyboard focus indicator (accent ring, brutalist outline) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Decorative pulsing only: spinning loaders stay (they are functional feedback) */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none;
+  }
+}
+
+/* Custom scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-scrollbar-track);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-thumb-hover);
+}

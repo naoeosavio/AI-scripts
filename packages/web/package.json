@@ -1,0 +1,55 @@
+{
+  "name": "@tell-ai/web",
+  "version": "0.2.1",
+  "type": "module",
+  "description": "Tell AI web interface — installs the tell CLI alongside it",
+  "license": "GPL-3.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "tell-web": "dist/server.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "dev": "tsx src/server/server.ts",
+    "build": "tsup && vite build --emptyOutDir false && chmod +x dist/server.js",
+    "lint": "tsc -p tsconfig.json",
+    "format": "biome check --write src",
+    "check": "biome check src",
+    "ci": "npm run lint && npm run check && npm run build && npm run test",
+    "start": "node dist/server.js",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "test": "node --test ../../test/test-web-backend.js && node --test ../../test/test-web-sandbox.js"
+  },
+  "dependencies": {
+    "@tell-ai/sdk": "^0.2.1",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "commander": "^15.0.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "node-pty": "1.1.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/ws": "8.18.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
+    "tailwindcss": "^4.1.14",
+    "tsup": "8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}

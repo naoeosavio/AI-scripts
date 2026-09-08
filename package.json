@@ -2,18 +2,19 @@
   "name": "tell-ai-monorepo",
   "private": true,
   "version": "0.5.0",
-  "description": "Monorepo for the tell-ai CLI and the @tell-ai/sdk browser-safe AI library",
+  "description": "Monorepo for the tell-ai CLI, the @tell-ai/sdk browser-safe AI library, and the @tell-ai/web sandbox server",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "build": "bun run --filter @tell-ai/sdk build && bun run --filter tell-ai build",
-    "lint": "bun run --filter @tell-ai/sdk lint && bun run --filter tell-ai lint",
+    "build": "bun run --filter @tell-ai/sdk build && bun run --filter tell-ai build && bun run --filter @tell-ai/web build",
+    "lint": "bun run --filter @tell-ai/sdk lint && bun run --filter tell-ai lint && bun run --filter @tell-ai/web lint" ,
     "format": "biome check --write packages",
     "check": "biome check packages",
     "test:security": "bun run --filter @tell-ai/sdk build && node test/test-tell-security.js",
     "test:context": "bun run --filter @tell-ai/sdk build && node test/test-tell-context.js",
-    "test": "bun run test:security && bun run test:context",
+    "test:web": "node test/test-web-backend.js && node test/test-web-sandbox.js",
+    "test": "bun run test:security && bun run test:context && bun run test:web",
     "ci": "bun run build && bun run lint && bun run check && bun run test"
   },
   "repository": {

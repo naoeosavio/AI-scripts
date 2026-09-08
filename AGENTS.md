@@ -6,19 +6,20 @@ This file provides guidance to AI when working with code in this repository.
 
 - Use `bun` as the package manager (not npm/pnpm/yarn for installing dependencies).
 - Formatting and linting are handled by Biome v2.2.6 (config in `biome.json`): single quotes, 2-space indent, 120-char line width.
-- Monorepo workspace (bun): `packages/sdk` (`@tell-ai/sdk`, browser-safe LIB) and `packages/cli` (`tell-ai`, bin `tell`).
+- Monorepo workspace (bun): `packages/sdk` (`@tell-ai/sdk`, browser-safe LIB) and `packages/cli` (`tell-ai`, bin `tell`), plus the web sandbox in `packages/web/` (`@tell-ai/web`, bin `tell-web`, tracked outside the workspaces).
 
 ## Build / test / lint / format
 
 All commands run from the root and delegate to the packages:
 
 ```bash
-npm run build          # builds @tell-ai/sdk (ESM+CJS+dts + 2 browser bundles) then tell-ai (minified CJS, bun shebang)
-npm run lint           # tsc --noEmit in both packages (type-check only)
+npm run build          # SDK (ESM+CJS+dts + 2 browser bundles) + tell-ai (minified .mjs) + web sandbox (tsup server + vite assets → packages/web/dist/)
+npm run lint           # tsc --noEmit in all three packages (type-check only)
 npm run format         # biome check --write packages/  (auto-fix formatting)
 npm run check          # biome check packages/  (check only)
-npm test               # alias for test:security
+npm test               # security + context + web suites
 npm run test:security  # build the SDK, then node test/test-tell-security.js
+npm run test:web       # node test/test-web-backend.js (backend harness) + node --test test/test-web-sandbox.js (sandbox suite)
 npm run ci             # build + lint + format check + test (runs in order)
 ```
 
@@ -117,5 +118,6 @@ API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OP
 
 - `docs/sdk/imports.md` — SDK build variants (Node ESM/CJS vs browser ESM vs IIFE global)
 - `docs/usage.md`, `docs/integrations.md` — CLI usage and integrations
+- `docs/web-sandbox.md`, `packages/web/README.md` — web sandbox guide (`tell --web`) and package reference (flags, `/api/*` routes, `.tell/` layout); backend harness `test/test-web-backend.js`, sandbox suite `test/test-web-sandbox.js` (`bun run --filter @tell-ai/web test`)
 - `examples/web/` — browser demo: `proxy.ts` (API proxy + static serving) + `index.html` (uses the IIFE `TellSDK` build) + `demo.ts` (end-to-end walkthrough)
 - `packages/sdk/CHANGELOG_AI.md`, `packages/cli/CHANGELOG_AI.md` — Version history per package

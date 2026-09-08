@@ -171,6 +171,69 @@ Without any flag, context is deleted on start (one-shot execution, no history ke
 `--chain` loops up to 8 rounds feeding command outputs to the model, but does not persist context across invocations.  
 `-c --chain` reads previous context, loops up to 8 rounds, and writes incrementally — each round's output is appended to the context file.
 
+## Web sandbox (`-w` / `--web`)
+
+Launch the interactive Tell Web sandbox in your browser:
+
+```bash
+tell --web                       # open the sandbox at http://localhost:3000
+tell -w --cwd /path/to/project   # run in another working directory (created if missing)
+tell -w --no-exec "ola"          # start the chat pre-seeded with "ola", auto-execution off
+tell -w -m g --chain -y "refactor"  # pick model, chain mode, auto-confirm execution
+```
+
+Options:
+
+- `--cwd <path>` — working directory for the sandbox. If it does not exist it is created
+  and a warning is shown. Defaults to the current working directory.
+- A trailing prompt (e.g. `"ola"`) pre-seeds the first chat message.
+- `--no-exec` — disables automatic execution of AI-generated commands in the sandbox.
+- `-y` / `--yes` — auto-confirm command execution (turns on auto-execution in the sandbox).
+- `--chain` — multi-step mode: keep going after command output until the AI gives a final answer.
+- `-m` / `--model <model>` — set the sandbox model (shortcode or full spec).
+
+The project context (directory tree + README/AGENTS system prompt) is always generated
+by default in the sandbox — no separate flag needed.
+
+The web server runs in the selected working directory. If the `tell-web` binary is
+not installed, install it with `npm install -g @tell-ai/web`.
+
+> Full guide with deployment scenarios, real-world examples and security notes:
+> [Web Sandbox](web-sandbox.md).
+
+### Auto-generated system prompt
+
+The sandbox generates a persistent system prompt from the project itself:
+
+- Directory tree up to 4 levels deep (skipping `node_modules`, `.git`, `dist`, `.env`, `.tell`)
+- `README.md` contents if present
+- `AGENTS.md` / `agent.md` contents if present
+- Platform, working directory, timestamp, and the `<RUN>` execution protocol
+
+You can still edit the prompt in the Settings panel; "Reset" restores the generated one.
+
+### Console Interface (real PTY)
+
+Each pane is a real pseudo-terminal (`node-pty` + WebSocket + xterm.js). Commands run
+in a persistent interactive bash session with a real TTY, so `tmux`, `vim`, `htop`,
+`codex`, `opencode`, `claude-code`, and `tell-ai` work as in your local shell.
+Tabs and splits support up to 4 tabs / 4 panes each.
+
+### Session persistence (`.tell/`)
+
+The sandbox auto-saves its state to a hidden `.tell/` directory in the project root:
+
+```
+.tell/session.json                 # current state (atomic write, debounced)
+.tell/history/<timestamp>.json     # snapshots
+.tell/latest -> history/...        # symlink to most recent snapshot
+```
+
+Restored on the next visit: chat messages, system prompt, selected model, terminal
+tabs/panes and scrollback. The server also tracks `keysUsed` (provider names only —
+**never the key values**), `filesChanged` (editor saves + `git status`), and usage
+stats. "Snapshot Now" in the Settings panel forces a snapshot.
+
 ## Logging
 
 Conversations are logged to `~/.ai/tell_history/` with timestamps.
