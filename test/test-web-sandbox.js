@@ -63,7 +63,7 @@ const TSX_CLI = path.join(WEB_SRC, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 // Server guards: isHighRiskScript + isSensitiveRelPath (task_build cases)
 // ---------------------------------------------------------------------------
 describe('web sandbox: server guards', () => {
-  const { isHighRiskScript, isSensitiveRelPath } = loadModule('guards.ts');
+  const { isHighRiskScript, isSensitiveRelPath } = loadModule('src/server/guards.ts');
 
   describe('isHighRiskScript (server guard)', () => {
     it('blocks sudo/doas', () => {
@@ -122,7 +122,7 @@ describe('web sandbox: chain feedback', () => {
     findLinkedFeedbackIndex,
     displaySideFor,
     defaultFeedbackOpen,
-  } = loadModule('chain-feedback.ts');
+  } = loadModule('src/shared/chain-feedback.ts');
 
   const CMD = 'touch system-info.js && chmod +x system-info.js';
   const OUT = 'created\nok';
@@ -234,7 +234,7 @@ describe('web sandbox: chat threads', () => {
     deleteThreadFromList,
     sanitizeThreads,
     resolveActiveThreadId,
-  } = loadModule('chat-threads.ts');
+  } = loadModule('src/shared/chat-threads.ts');
 
   let seq = 0;
   const rid = () => `id-${++seq}`;
@@ -371,7 +371,7 @@ describe('web sandbox: terminal layout', () => {
     parsePersistedTerminalLayout,
     TERMINAL_WIDTH_CH_MIN,
     TERMINAL_WIDTH_CH_MAX,
-  } = loadModule('terminal-layout.ts');
+  } = loadModule('src/shared/terminal-layout.ts');
 
   function tab(id, name) {
     return { id, name, panes: [{ id: `pane-${id}`, title: 'bash' }], activePaneId: `pane-${id}` };
@@ -468,8 +468,8 @@ describe('web sandbox: terminal layout', () => {
 // snapshots must carry the same layout.
 // ---------------------------------------------------------------------------
 describe('web sandbox: terminal session permanence', () => {
-  const { emptySession, saveSession, loadSession, createSnapshot } = loadModule('session.ts');
-  const { parsePersistedTerminalLayout } = loadModule('terminal-layout.ts');
+  const { emptySession, saveSession, loadSession, createSnapshot } = loadModule('src/server/session.ts');
+  const { parsePersistedTerminalLayout } = loadModule('src/shared/terminal-layout.ts');
 
   let dir;
   beforeEach(() => {
@@ -548,7 +548,7 @@ describe('web sandbox: terminal session permanence', () => {
 // ---------------------------------------------------------------------------
 describe('web sandbox: session mtime', () => {
   const { emptySession, saveSession, loadSession, createSnapshot, listHistory, sessionPath, historyDir } =
-    loadModule('session.ts');
+    loadModule('src/server/session.ts');
 
   let dir;
   beforeEach(() => {
@@ -601,7 +601,8 @@ describe('web sandbox: session mtime', () => {
 // no real node-pty).
 // ---------------------------------------------------------------------------
 describe('web sandbox: pty scrollback and GC', () => {
-  const { pushScrollback, scheduleGcTimer, cancelGcTimer, MAX_SCROLLBACK_CHARS, GC_AFTER_MS } = loadModule('pty.ts');
+  const { pushScrollback, scheduleGcTimer, cancelGcTimer, MAX_SCROLLBACK_CHARS, GC_AFTER_MS } =
+    loadModule('src/server/pty.ts');
 
   function blankTimer() {
     return { timer: null, lastDisconnect: null };
@@ -698,7 +699,8 @@ describe('web sandbox: pty scrollback and GC', () => {
 // tokenless upgrades. Spins a real server via tsx.
 // ---------------------------------------------------------------------------
 describe('web sandbox: auth', () => {
-  const { isValidTokenInput, loginBackoffMs, authFailureMessage, AUTH_TOKEN_MAX_LENGTH } = loadModule('guards.ts');
+  const { isValidTokenInput, loginBackoffMs, authFailureMessage, AUTH_TOKEN_MAX_LENGTH } =
+    loadModule('src/server/guards.ts');
 
   describe('auth guards (pure)', () => {
     it('AUTH_TOKEN_MAX_LENGTH is 256', () => {
@@ -781,7 +783,7 @@ describe('web sandbox: auth', () => {
   before(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-web-auth-'));
     fs.writeFileSync(path.join(dir, 'hello.txt'), 'hi\n');
-    child = spawn(process.execPath, [TSX_CLI, 'server.ts', '--cwd', dir], {
+    child = spawn(process.execPath, [TSX_CLI, 'src/server/server.ts', '--cwd', dir], {
       cwd: WEB_SRC,
       env: { ...process.env, PORT: '0', TELL_TOKEN: TOKEN },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -960,7 +962,7 @@ describe('web sandbox: api routes', () => {
     fs.writeFileSync(path.join(dir, 'hello.txt'), 'hi\n');
     const env = { ...process.env, PORT: '0' };
     delete env.TELL_TOKEN;
-    child = spawn(process.execPath, [TSX_CLI, 'server.ts', '--cwd', dir], {
+    child = spawn(process.execPath, [TSX_CLI, 'src/server/server.ts', '--cwd', dir], {
       cwd: WEB_SRC,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

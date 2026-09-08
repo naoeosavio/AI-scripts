@@ -23,7 +23,7 @@ import {
   FEEDBACK_PREFIX_RE,
   findLinkedFeedbackIndex,
   parseFeedback,
-} from '../../chain-feedback.ts';
+} from '../shared/chain-feedback.ts';
 import { useTheme } from '../theme.tsx';
 
 export interface ChatMessage {

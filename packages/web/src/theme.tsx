@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { clampTerminalWidthCh } from '../terminal-layout.ts';
+import { clampTerminalWidthCh } from './shared/terminal-layout.ts';
 
 export type ThemeMode = 'dark' | 'light';
 export type AccentPalette = 'rose' | 'blue' | 'emerald' | 'amber' | 'violet' | 'cyan';
@@ -7,7 +7,7 @@ export type FontChoice = 'Inter' | 'Space Grotesk' | 'JetBrains Mono' | 'Custom'
 export type ScaleLevel = 0.85 | 0.92 | 1.0 | 1.08 | 1.15;
 export type LayoutMode = 'default' | 'focused' | 'custom';
 export type SidebarSide = 'left' | 'right';
-export type TerminalPlacement = 'left' | 'right' | 'top' | 'bottom' | 'fullscreen' | 'hidden';
+export type TerminalPlacement = 'left' | 'right' | 'top' | 'bottom' | 'hidden';
 export type AgentFeedPlacement = 'top' | 'bottom' | 'left' | 'right';
 export type ChatThreadsSide = 'left' | 'right' | 'top' | 'bottom';
 export type ChatWrap = number | 'max';
@@ -300,7 +300,7 @@ function normalizeConfig(raw: any): ThemeConfig {
     if (typeof raw.threadsCollapsed === 'boolean') c.threadsCollapsed = raw.threadsCollapsed;
     if (raw.customSidebarSide === 'left' || raw.customSidebarSide === 'right')
       c.customSidebarSide = raw.customSidebarSide;
-    if (['top', 'bottom', 'left', 'right', 'fullscreen', 'hidden'].includes(raw.customTerminal))
+    if (['top', 'bottom', 'left', 'right', 'hidden'].includes(raw.customTerminal))
       c.customTerminal = raw.customTerminal;
     if (['top', 'bottom', 'left', 'right'].includes(raw.customAgentFeed)) c.customAgentFeed = raw.customAgentFeed;
     if (['top', 'bottom', 'left', 'right'].includes(raw.customChatThreadsSide))

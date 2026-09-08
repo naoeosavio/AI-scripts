@@ -23,13 +23,13 @@ function loadModule(name) {
       esModuleInterop: true,
     },
   }).outputText;
-  const file = path.join(CACHE_DIR, name.replace(/\.ts$/, '.cjs'));
+  const file = path.join(CACHE_DIR, name.replace(/\//g, '_').replace(/\.ts$/, '.cjs'));
   fs.writeFileSync(file, js);
   return require(file);
 }
 
-const { parseCliArgs, printHelp } = loadModule('cli-args.ts');
-const { resolveWithin } = loadModule('paths.ts');
+const { parseCliArgs, printHelp } = loadModule('src/server/cli-args.ts');
+const { resolveWithin } = loadModule('src/server/paths.ts');
 const {
   isSensitiveRelPath,
   isHighRiskScript,
@@ -37,7 +37,7 @@ const {
   isValidPaneId,
   clampTerminalSize,
   validateTellPayload,
-} = loadModule('guards.ts');
+} = loadModule('src/server/guards.ts');
 const {
   emptySession,
   loadSession,
@@ -47,8 +47,8 @@ const {
   sessionPath,
   historyDir,
   sessionDir,
-} = loadModule('session.ts');
-const { buildProjectContext } = loadModule('context-builder.ts');
+} = loadModule('src/server/session.ts');
+const { buildProjectContext } = loadModule('src/server/context-builder.ts');
 
 let failures = 0;
 function test(name, fn) {
@@ -143,7 +143,7 @@ test('guards: .env.example template is not sensitive', () => {
 });
 
 test('guards: ordinary paths pass the sensitive guard', () => {
-  assert.strictEqual(isSensitiveRelPath('packages/web/server.ts'), false);
+  assert.strictEqual(isSensitiveRelPath('packages/web/src/server/server.ts'), false);
   assert.strictEqual(isSensitiveRelPath('environment.md'), false);
   assert.strictEqual(isSensitiveRelPath('telling.txt'), false);
   assert.strictEqual(isSensitiveRelPath('keys.md'), false);

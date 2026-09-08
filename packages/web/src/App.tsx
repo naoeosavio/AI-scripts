@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { clampTerminalWidthCh, mergeRestoredTerminalLayout, resolveSafeActiveTabId } from '../terminal-layout.ts';
 import { apiFetch } from './api.ts';
 import AgentFeed from './components/AgentFeed.tsx';
 import ChatSection, { type ChatMessage } from './components/ChatSection.tsx';
@@ -26,7 +25,8 @@ import FileViewer from './components/FileViewer.tsx';
 import SettingsPanel from './components/SettingsPanel.tsx';
 import Terminal, { type TerminalLayout, type TerminalLine, type TerminalTabMeta } from './components/Terminal.tsx';
 import { useToast } from './components/Toast.tsx';
-import { useTheme } from './theme.tsx';
+import { clampTerminalWidthCh, mergeRestoredTerminalLayout, resolveSafeActiveTabId } from './shared/terminal-layout.ts';
+import { type TerminalPlacement, useTheme } from './theme.tsx';
 
 // Fallback until /api/context loads: the server replaces this with the
 // generated prompt (project tree + README/AGENTS + @tell-ai/sdk protocol).
@@ -92,8 +92,8 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
   // Layout resolution: presets pin sidebar/terminal; 'custom' reads user-decided config
   const sidebarSide: 'left' | 'right' =
     config.layout === 'focused' ? 'right' : config.layout === 'default' ? 'right' : config.customSidebarSide;
-  const terminalPlacement: 'left' | 'right' | 'top' | 'bottom' | 'fullscreen' | 'hidden' =
-    config.layout === 'focused' ? 'fullscreen' : config.layout === 'default' ? 'bottom' : config.customTerminal;
+  const terminalPlacement: TerminalPlacement =
+    config.layout === 'focused' ? 'hidden' : config.layout === 'default' ? 'bottom' : config.customTerminal;
   const agentFeedPlacement: 'top' | 'bottom' | 'left' | 'right' =
     config.layout === 'custom' ? config.customAgentFeed : 'top';
   const threadsSide: 'left' | 'right' | 'top' | 'bottom' =
@@ -1209,11 +1209,11 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
           <button
             type="button"
             onClick={onLogout}
-            title="Sair (apaga o token da memória)"
-            aria-label="Sair (apaga o token da memória)"
+            title="Sign out (wipes the in-memory token)"
+            aria-label="Sign out (wipes the in-memory token)"
             className="px-2 py-1.5 border transition-all cursor-pointer shrink-0 bg-white/5 border-(--color-border-subtle) text-(--color-text-secondary) hover:text-(--color-error) hover:bg-white/10 text-[10px] font-bold font-display"
           >
-            Sair
+            Sign out
           </button>
         )}
         <button

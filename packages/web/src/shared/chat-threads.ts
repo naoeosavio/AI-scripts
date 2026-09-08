@@ -1,7 +1,7 @@
 // Pure chat-thread helpers (no React/DOM): title, duplicate, fork, delete.
 // The .tsx component owns rendering/localStorage; all list math lives here
 // so the section/duplication bugs are pinned by tests.
-import type { ChatMessage } from './src/components/ChatSection.tsx';
+import type { ChatMessage } from '../components/ChatSection.tsx';
 
 export interface ChatThread {
   id: string;

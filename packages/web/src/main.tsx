@@ -29,8 +29,7 @@ function Shell() {
         // No TELL_TOKEN on the server → skip login entirely.
         if (!required) setAuthenticated(true);
       } catch {
-        if (!cancelled)
-          setStatusError('Não foi possível contatar o servidor. Verifique se ele está rodando e recarregue.');
+        if (!cancelled) setStatusError('Could not reach the server. Check that it is running and reload.');
       }
     })();
     return () => {
@@ -67,7 +66,7 @@ function Shell() {
           </div>
         ) : authRequired === null ? (
           <div className="min-h-screen flex items-center justify-center bg-(--color-bg-primary)">
-            <p className="text-xs font-mono text-(--color-text-muted) animate-pulse">Conectando…</p>
+            <p className="text-xs font-mono text-(--color-text-muted) animate-pulse">Connecting…</p>
           </div>
         ) : !authenticated ? (
           <LoginScreen onSuccess={() => setAuthenticated(true)} />
@@ -75,7 +74,7 @@ function Shell() {
           <Suspense
             fallback={
               <div className="min-h-screen flex items-center justify-center bg-(--color-bg-primary)">
-                <p className="text-xs font-mono text-(--color-text-muted) animate-pulse">Carregando ambiente…</p>
+                <p className="text-xs font-mono text-(--color-text-muted) animate-pulse">Loading environment…</p>
               </div>
             }
           >

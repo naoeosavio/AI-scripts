@@ -26,7 +26,7 @@ npm run test           # test:security + test:context + test:web
 npm run ci             # build + lint + format check + test
 ```
 
-> Web notes: `packages/web/server.ts` resolves models through `@tell-ai/sdk`
+> Web notes: `packages/web/server/server.ts` resolves models through `@tell-ai/sdk`
 > (`MODELS`, `resolve_model_spec`, `get_model`) with keys/URLs injected from the
 > environment — the SDK never reads `process.env` itself. `buildSystemPrompt`
 > composes the project context (tree + README/AGENTS) with the SDK's

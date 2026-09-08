@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  EyeOff,
   FileText,
   Focus,
   History,
@@ -396,13 +397,14 @@ export default function SettingsPanel({
                       className="flex-1 accent-(--color-accent) cursor-pointer"
                     />
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-5 gap-1.5">
                     {(
                       [
                         { id: 'top', label: 'Top', Icon: PanelTop },
                         { id: 'bottom', label: 'Bottom', Icon: PanelBottom },
                         { id: 'left', label: 'Left', Icon: PanelLeft },
                         { id: 'right', label: 'Right', Icon: PanelRight },
+                        { id: 'hidden', label: 'Hidden', Icon: EyeOff },
                       ] as { id: TerminalPlacement; label: string; Icon: typeof PanelLeft }[]
                     ).map(({ id, label, Icon }) => (
                       <button

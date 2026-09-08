@@ -1,10 +1,10 @@
 import { Copy, GitFork, MessagesSquare, Plus, Trash2 } from 'lucide-react';
-import type { ChatThread as PureChatThread } from '../../chat-threads.ts';
+import type { ChatThread as PureChatThread } from '../shared/chat-threads.ts';
 import {
   resolveActiveThreadId as pureResolveActiveThreadId,
   sanitizeThreads as pureSanitizeThreads,
   threadTitleFromMessages as pureThreadTitle,
-} from '../../chat-threads.ts';
+} from '../shared/chat-threads.ts';
 import type { ChatMessage } from './ChatSection.tsx';
 
 export {
@@ -12,7 +12,7 @@ export {
   deleteThreadFromList,
   duplicateThread,
   forkThreadFromMessage,
-} from '../../chat-threads.ts';
+} from '../shared/chat-threads.ts';
 
 export interface ChatThread {
   id: string;

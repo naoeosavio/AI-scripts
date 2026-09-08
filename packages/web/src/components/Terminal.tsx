@@ -19,8 +19,8 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { mergeRestoredTerminalLayout, resolveSafeActiveTabId } from '../../terminal-layout.ts';
 import { wsAuthQuery } from '../auth.ts';
+import { mergeRestoredTerminalLayout, resolveSafeActiveTabId } from '../shared/terminal-layout.ts';
 import { useTheme, xtermThemeFromConfig } from '../theme.tsx';
 import { useToast } from './Toast.tsx';
 
