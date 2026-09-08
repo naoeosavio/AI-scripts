@@ -399,7 +399,10 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
           const savedDraft =
             rawDraft && typeof rawDraft === 'object' && !Array.isArray(rawDraft)
               ? {
-                  text: typeof (rawDraft as { text?: unknown }).text === 'string' ? (rawDraft as { text: string }).text : '',
+                  text:
+                    typeof (rawDraft as { text?: unknown }).text === 'string'
+                      ? (rawDraft as { text: string }).text
+                      : '',
                   fromPrompt:
                     typeof (rawDraft as { fromPrompt?: unknown }).fromPrompt === 'string'
                       ? (rawDraft as { fromPrompt: string }).fromPrompt
@@ -410,7 +413,7 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
           if (serverPrompt && savedDraft?.fromPrompt !== serverPrompt) {
             serverPromptRef.current = serverPrompt;
             setInputPrompt(serverPrompt);
-          } else if (savedDraft && savedDraft.text) {
+          } else if (savedDraft?.text) {
             serverPromptRef.current = savedDraft.fromPrompt;
             setInputPrompt(savedDraft.text);
           }

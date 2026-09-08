@@ -13,6 +13,7 @@
 !test/
 !package.json
 !README*
+!CONTRIBUTING*
 !LICENSE*
 !.gitignore
 !tsconfig*
@@ -24,9 +25,9 @@
 !packages/*/
 !packages/**/src/
 !packages/**/src/**
+!packages/**/src/**
 !packages/**/src/**/*
 !packages/**/src/*
 !packages/*/package.json
 !packages/*/tsconfig.json
 !packages/*/tsup.config.ts
-packages/*/dist/

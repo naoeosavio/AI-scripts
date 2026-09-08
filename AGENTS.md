@@ -6,7 +6,7 @@ This file provides guidance to AI when working with code in this repository.
 
 - Use `bun` as the package manager (not npm/pnpm/yarn for installing dependencies).
 - Formatting and linting are handled by Biome v2.2.6 (config in `biome.json`): single quotes, 2-space indent, 120-char line width.
-- Monorepo workspace (bun): `packages/sdk` (`@tell-ai/sdk`, browser-safe LIB) and `packages/cli` (`tell-ai`, bin `tell`), plus the web sandbox in `packages/web/` (`@tell-ai/web`, bin `tell-web`, tracked outside the workspaces).
+- Monorepo workspace (bun): `packages/sdk` (`@tell-ai/sdk`, browser-safe LIB), `packages/cli` (`tell-ai`, bin `tell`) and `packages/web` (`@tell-ai/web`, bin `tell-web`).
 
 ## Build / test / lint / format
 
@@ -29,12 +29,12 @@ TypeScript is checked with `tsc` but bundled with `tsup` (ESBuild). Entry points
 
 `tell-ai` is a one-shot terminal assistant — a CLI that sends a prompt to an LLM and optionally executes bash commands the model returns inside `<RUN>...</RUN>` tags. It supports 10+ AI vendors through short model aliases, persistent conversation context, and a chain mode for iterative command sequences.
 
-The codebase has three layers:
+The codebase has four layers:
 
 ### Monorepo root (bun workspace)
 
-- `package.json` — private, `"workspaces": ["packages/*"]`, orchestration scripts via `bun run --filter @tell-ai/sdk …` / `--filter tell-ai`.
-- `tsconfig.base.json` — strict shared TS config (noUncheckedIndexedAccess, exactOptionalPropertyTypes, erasableSyntaxOnly…), extended by both packages.
+- `package.json` — private, `"workspaces": ["packages/*"]`, orchestration scripts via `bun run --filter @tell-ai/sdk …` / `--filter tell-ai` / `--filter @tell-ai/web`.
+- `tsconfig.base.json` — strict shared TS config (noUncheckedIndexedAccess, exactOptionalPropertyTypes, erasableSyntaxOnly…), extended by all three packages.
 
 ### LIB: `packages/sdk` (`@tell-ai/sdk` — ~600 lines)
 
@@ -43,6 +43,7 @@ Browser-safe AI provider layer: **zero `node:*` imports, zero `process.env` read
 Key exports from `packages/sdk/src/index.ts`:
 - **`MODELS`** — Record of 70+ short aliases (e.g., `g` → `openai:gpt-5.6-sol:medium`)
 - **`resolve_model_spec(model)`** — Parses `vendor:model:thinking` specs, handles dot-prefix fast mode
+- **`get_model(spec, config)`** — Returns a `ModelHandle` (`{ model, reasoning, fast}`) backed by the vendor provider; used by `create_ask_ai()` and directly by the web server for multi-turn `generateText()` calls
 - **`create_ask_ai(spec, config)`** — Returns an `AskInstance` with an `ask()` method backed by `generateText()`
 - **`tell(message, options)`** — `tell --no-exec` as a function: builds the system prompt (execution disabled by default), calls the model, returns the answer with `<think>`/`<RUN>` stripped. `TellOptions`: `model?`, `keys?`, `urls?`, `exec?`, `cwd?`, `platform?`, `context?`, `system?`, `ask?` (reuse an existing `AskInstance`), `raw?` (skip stripping, used by the CLI's `tell_silently`)
 - **`get_system_prompt(options)`** — Shared tell system prompt with `PromptOptions { chain?, exec?, cwd?, platform? }`; `exec: false` emits the no-command-execution variant used by `tell()` in the browser
@@ -86,6 +87,26 @@ Files:
 - `src/systemPrompt.ts` — the `<RUN>`/injection-policy execution system prompt (`get_system_prompt()`), with `PromptOptions`
 - `src/env.ts` — Node-only: reads `process.env` + `~/.config/<vendor>.token` files, assembles the `SDKConfig` passed to `create_ask_ai()`
 
+### WEB: `packages/web` (`@tell-ai/web` — browser sandbox + `tell-web` server)
+
+Browser-based terminal + AI console (`tell-web` bin → `dist/server.js`), anchored to a working directory (`--cwd`). Built by tsup (`src/server/server.ts` → `dist/server.js`, ESM) + vite frontend assets into the same `dist/` (`--emptyOutDir false`, served from `__dirname` in production; vite middleware in dev). `node-pty` (native), `ws` and `vite` stay external. Requires Node `>=20`. Depends on `@tell-ai/sdk` (workspace) for model resolution (`MODELS`, `resolve_model_spec`, `get_model`) and the shared system prompt (`get_system_prompt({ chain: true })` composed with the project context); keys/URLs are injected from `process.env` in `server.ts` (`load_sdk_config_from_env`, env-only, no token files).
+
+Key behaviors:
+- Real PTY panes (`node-pty` + WebSocket + xterm.js, up to 8 sessions max, scrollback persisted)
+- Token auth (`TELL_TOKEN`, Bearer on `/api/*` + `?token=` on WS, memory-only login screen, rate-limited verify)
+- `.tell/` session persistence (`session.json`, `history/`, `latest` symlink)
+- Stricter `isHighRiskScript()` than the CLI (`src/server/guards.ts`: blocks all interpreter `-c`/`-e`, `env` launches, `base64 -d`, shell expansions — test-pinned divergence, do not "dedupe")
+- Execution toggles (chat header, per browser session): `Auto-Run` / `Require Approval` / `No-Exec` (`No-Exec` > per-command risk gate via `POST /api/risk-check`, fail-closed to approval); feedback cards start minimized
+- Sensitive files never served (`.env*` except `.env.example`, `.tell/**`, `.git/**`, `*.key`, `*.pem`); per-IP rate limits on chat/execute/auth
+
+Files:
+- `src/server/server.ts` — express app + `/api/*` routes + vite/static serving (~730 lines)
+- `src/server/guards.ts` — pure guards (sensitive paths, rate limiter, PTY/auth guards, payload validation, risk patterns); loaded directly by `test/test-web-backend.js`, keep dependency-light
+- `src/server/context-builder.ts` — project tree (4 levels) + README/AGENTS system-prompt context
+- `src/server/cli-args.ts`, `src/server/paths.ts`, `src/server/pty.ts`, `src/server/session.ts` — flags, traversal guard, terminal server, `.tell/` persistence
+- `src/shared/` — `chain-feedback.ts`, `chat-threads.ts`, `terminal-layout.ts` (pure, shared by UI + tests)
+- `src/App.tsx`, `src/components/`, `src/api.ts`, `src/auth.ts`, `src/theme.tsx` — React frontend (execution toggles live in `ChatSection.tsx`)
+
 ### Model alias conventions
 
 - **First character(s)** = vendor+model: `g` = GPT-5.6 Sol, `o` = Claude Opus 5, `s` = Claude Sonnet 5, `f` = Claude Fable 5, `l` = Gemini 3.6 Flash, `j` = Gemini 3.5 Flash Lite, `d` = DeepSeek V4 Flash, `z` = GLM-5.3 (Z.ai)
@@ -108,11 +129,11 @@ Canonical format: `vendor:official_model_name:thinking_budget` (e.g., `openai:gp
 - **[@ai-sdk/openai-compatible](https://www.npmjs.com/package/@ai-sdk/openai-compatible)** — OpenAI-compatible provider (Z.ai GLM via `zai:` vendor)
 - **[commander](https://www.npmjs.com/package/commander)** — CLI argument parsing
 
-The provider packages above are dependencies of `@tell-ai/sdk`; `commander` lives in `tell-ai`.
+The provider packages above are dependencies of `@tell-ai/sdk`; `commander` lives in `tell-ai`. The web package adds `express`, `ws`, `node-pty` (native), `vite` + `react`/`@xterm/*` for the frontend.
 
 ## API key configuration
 
-API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `ALIBABA_API_KEY`, etc.) with fallback to `~/.config/<vendor>.token` files, then injected into the SDK as `SDKConfig`. The SDK never touches the environment itself.
+API keys are resolved in the CLI (`packages/cli/src/env.ts`): env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `ALIBABA_API_KEY`, etc.) with fallback to `~/.config/<vendor>.token` files, then injected into the SDK as `SDKConfig`. The web server resolves keys from `process.env` only (`load_sdk_config_from_env` in `packages/web/src/server/server.ts`, no token files). The SDK never touches the environment itself.
 
 ## Related docs
 
@@ -120,4 +141,4 @@ API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OP
 - `docs/usage.md`, `docs/integrations.md` — CLI usage and integrations
 - `docs/web-sandbox.md`, `packages/web/README.md` — web sandbox guide (`tell --web`) and package reference (flags, `/api/*` routes, `.tell/` layout); backend harness `test/test-web-backend.js`, sandbox suite `test/test-web-sandbox.js` (`bun run --filter @tell-ai/web test`)
 - `examples/web/` — browser demo: `proxy.ts` (API proxy + static serving) + `index.html` (uses the IIFE `TellSDK` build) + `demo.ts` (end-to-end walkthrough)
-- `packages/sdk/CHANGELOG_AI.md`, `packages/cli/CHANGELOG_AI.md` — Version history per package
+- `packages/sdk/CHANGELOG_AI.md`, `packages/cli/CHANGELOG_AI.md`, `packages/web/CHANGELOG_AI.md` — Version history per package
