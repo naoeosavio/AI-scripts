@@ -202,8 +202,8 @@ describe('web sandbox: chain feedback', () => {
   });
 
   describe('defaultFeedbackOpen', () => {
-    it('starts short results expanded and long ones collapsed', () => {
-      assert.strictEqual(defaultFeedbackOpen(executed('ls', 'a')), true);
+    it('starts results minimized (collapsed) regardless of length', () => {
+      assert.strictEqual(defaultFeedbackOpen(executed('ls', 'a')), false);
       assert.strictEqual(defaultFeedbackOpen(executed('ls', 'x'.repeat(2000))), false);
     });
   });

@@ -4,11 +4,11 @@
 
 export const FEEDBACK_PREFIX_RE = /^(Executed command|Skipped by user):/;
 
-/** Long feedback bodies start collapsed (same threshold as the old <details> card). */
+/** Feedback cards start minimized (collapsed) by default; the user expands per card. */
 export const FEEDBACK_COLLAPSE_CHARS = 400;
 
-export function defaultFeedbackOpen(content: string): boolean {
-  return content.length <= FEEDBACK_COLLAPSE_CHARS;
+export function defaultFeedbackOpen(_content: string): boolean {
+  return false;
 }
 
 export type FeedbackKind = 'executed' | 'skipped';
