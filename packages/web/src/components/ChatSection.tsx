@@ -280,32 +280,32 @@ export default function ChatSection({
 
           {/* Yes Auto Execute Toggle */}
           <label
-            className={`flex items-center gap-2 transition-colors ${requireApproval || noExec ? 'cursor-not-allowed text-(--color-text-muted) opacity-50' : 'cursor-pointer text-(--color-text-secondary) hover:text-(--color-text-primary)'}`}
+            className={`flex items-center gap-2 transition-colors ${noExec ? 'cursor-not-allowed text-(--color-text-muted) opacity-50' : 'cursor-pointer text-(--color-text-secondary) hover:text-(--color-text-primary)'}`}
             title={
               noExec
                 ? 'Disabled while No-Exec is on'
                 : requireApproval
-                  ? 'Disabled while Require Approval is on'
+                  ? 'Auto-Run with Require Approval: safe commands run directly, risky need approval'
                   : undefined
             }
           >
             <input
               type="checkbox"
               checked={autoExecute}
-              disabled={requireApproval || noExec}
+              disabled={noExec}
               onChange={(e) => onAutoExecuteChange(e.target.checked)}
               className="accent-(--color-accent) rounded-none bg-(--color-bg-secondary) border-(--color-border-medium) focus:ring-0 cursor-pointer w-3.5 h-3.5 disabled:cursor-not-allowed"
             />
             <span className="font-bold tracking-wider text-[10px] uppercase">Auto-Run (-y)</span>
           </label>
 
-          {/* Require Approval Toggle — every command needs manual confirmation */}
+          {/* Require Approval Toggle — risky commands need manual confirmation */}
           <label
             className={`flex items-center gap-2 transition-colors ${noExec ? 'cursor-not-allowed text-(--color-text-muted) opacity-50' : 'cursor-pointer text-(--color-text-secondary) hover:text-(--color-text-primary)'}`}
             title={
               noExec
                 ? 'Disabled while No-Exec is on (nothing runs)'
-                : 'Force manual approval for every command, even with Auto-Run'
+                : 'Risky commands need manual approval; safe ones follow Auto-Run'
             }
           >
             <input

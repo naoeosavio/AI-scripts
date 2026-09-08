@@ -372,6 +372,16 @@ app.post('/api/save-file', (req, res) => {
   }
 });
 
+// API: Classify a command without executing it (drives the
+// Require Approval + Auto-Run combo: safe runs directly, risky needs approval)
+app.post('/api/risk-check', (req, res) => {
+  const { command } = req.body;
+  if (!command || typeof command !== 'string') {
+    return res.status(400).json({ error: 'Command is required' });
+  }
+  return res.json({ highRisk: isHighRiskScript(command) });
+});
+
 // API: Execute bash command safely
 app.post('/api/execute', async (req, res) => {
   const { command } = req.body;

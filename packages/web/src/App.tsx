@@ -128,8 +128,9 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
   // with Auto-Run on. No-Exec never runs anything (shows what would run).
   const [requireApproval, setRequireApproval] = useState<boolean>(false);
   const [noExec, setNoExec] = useState<boolean>(false);
-  // Effective auto-run: either safety toggle forces the confirm path.
-  const canAutoRun = autoExecute && !requireApproval && !noExec;
+  // Effective auto-run: No-Exec kills it; Require Approval keeps it for safe
+  // commands only (risky ones are routed to the confirm card per command).
+  const canAutoRun = autoExecute && !noExec;
   const [systemPrompt, setSystemPrompt] = useState<string>(DEFAULT_SYSTEM_PROMPT);
   const [generatedSystemPrompt, setGeneratedSystemPrompt] = useState<string | null>(null);
   const [cwd, setCwd] = useState<string>('');
@@ -632,6 +633,13 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
           return;
         }
         if (canAutoRun) {
+          if (requireApproval && (await isHighRiskCommand(script, controller.signal))) {
+            // Combo mode: safe runs directly, risky needs manual approval.
+            appendAgentLine('system', 'High-risk script held for approval (Require Approval).');
+            setPendingCommand(script);
+            setLoading(false);
+            return;
+          }
           await executeAndContinue(script, updatedMessages);
         } else {
           setPendingCommand(script);
@@ -692,6 +700,23 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
     text.length > FEEDBACK_OUTPUT_LIMIT ? `…[truncated]\n${text.slice(-FEEDBACK_OUTPUT_LIMIT)}` : text;
 
   // Execute and continue chain loop (Auto mode)
+  // Classify a command via the server guard without executing it.
+  // Fail-closed: any error routes the command to manual approval.
+  const isHighRiskCommand = async (script: string, signal: AbortSignal): Promise<boolean> => {
+    try {
+      const res = await apiFetch('/api/risk-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({ command: script }),
+      });
+      const data = await res.json();
+      return data.highRisk === true;
+    } catch {
+      return true;
+    }
+  };
+
   const executeAndContinue = async (script: string, currentMessages: ChatMessage[]) => {
     const controller = abortRef.current ?? new AbortController();
     abortRef.current = controller;
@@ -1295,10 +1320,7 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
         autoExecute={autoExecute}
         onAutoExecuteChange={(val) => setAutoExecute(val)}
         requireApproval={requireApproval}
-        onRequireApprovalChange={(val) => {
-          setRequireApproval(val);
-          if (val) setAutoExecute(false);
-        }}
+        onRequireApprovalChange={(val) => setRequireApproval(val)}
         noExec={noExec}
         onNoExecChange={(val) => {
           setNoExec(val);

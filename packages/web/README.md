@@ -43,13 +43,14 @@ The chat header has three execution toggles (client-side, per browser session):
 | Toggle | Effect |
 |---|---|
 | `Auto-Run (-y)` | AI-requested `<RUN>` scripts execute immediately, no confirmation card |
-| `Require Approval` | Every command shows the confirmation card, even with Auto-Run on |
+| `Require Approval` | Risky commands show the confirmation card; safe ones follow Auto-Run (run directly when on, confirm card when off) |
 | `No-Exec` | Nothing is ever executed — the confirm card records what would have run |
 
-Precedence: `No-Exec` > `Require Approval` > `Auto-Run`. Enabling a stricter
-mode switches Auto-Run off; Auto-Run is disabled while either safety toggle is on.
-With `--chain`, each command still pauses for approval (Require Approval) or is
-recorded as not-run (No-Exec) while the loop continues with the feedback.
+Precedence: `No-Exec` > per-command risk gate. Enabling No-Exec switches
+Auto-Run off. With `--chain`, each held command still pauses for approval
+(Require Approval) or is recorded as not-run (No-Exec) while the loop continues
+with the feedback. The risk gate is fail-closed: if classification fails, the
+command goes to manual approval.
 
 ## Envs (see `.env.example`)
 
@@ -68,6 +69,7 @@ token lives only in browser memory — retyped on every connection) + vendor key
 | GET | `/api/file/raw?path=` | Download bytes |
 | POST | `/api/save-file` | `{path, content, expectedMtime}` (409 if changed on disk) |
 | POST | `/api/execute` | `{command}` — blocks high-risk patterns, 429 (10/min, max 2 concurrent) |
+| POST | `/api/risk-check` | `{command}` → `{highRisk}` — classify without executing (drives Require Approval gating) |
 | GET | `/api/models` | Models/aliases + `keysStatus` per vendor |
 | GET | `/api/auth/status` | Public: `{authRequired}` only (drives the isolated login screen) |
 | POST | `/api/auth/verify` | Public + rate-limited (5/15min/IP): `{token}` → `200`/`401` generic/`429` + `Retry-After` |
