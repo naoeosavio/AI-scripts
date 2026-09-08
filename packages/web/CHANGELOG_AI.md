@@ -6,6 +6,7 @@
 - Add per-command risk gating for approval mode via `/api/risk-check`
 - Introduce Require Approval and No-Exec safety modes for execution control
 - Implement session management and terminal layout features
+- `--prompt` fills the chat inbox instead of injecting a chat message: `/api/config` exposes `initialPrompt`, which the client puts in the input box (never auto-sent); unsent inbox text persists as `session.draft` through the existing session pipeline, so a reload restores what was typed and a fresh boot prompt wins over it
 
 ### Fixes
 - Update development script server entry path

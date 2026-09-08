@@ -1014,11 +1014,31 @@ describe('web sandbox: api routes', () => {
       assert.ok(typeof body.name === 'string' && body.name.length > 0);
     });
 
+    it('/session persists the inbox draft round-trip', async () => {
+      const put = await fetch(`${base}/api/session`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session: { draft: { text: 'half-typed', fromPrompt: 'go' } } }),
+      });
+      assert.strictEqual(put.status, 200);
+      const get = await fetch(`${base}/api/session`);
+      assert.strictEqual(get.status, 200);
+      const body = await get.json();
+      assert.deepStrictEqual(body.session.draft, { text: 'half-typed', fromPrompt: 'go' });
+    });
+
     it('/api/config exposes the sandbox cwd', async () => {
       const res = await fetch(`${base}/api/config`);
       assert.strictEqual(res.status, 200);
       const body = await res.json();
       assert.strictEqual(body.cwd, dir);
+    });
+
+    it('/api/config reports a null initialPrompt without --prompt', async () => {
+      const res = await fetch(`${base}/api/config`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.strictEqual(body.initialPrompt, null);
     });
 
     it('/risk-check flags risky commands without executing', async () => {
@@ -1044,6 +1064,85 @@ describe('web sandbox: api routes', () => {
         body: JSON.stringify({}),
       });
       assert.strictEqual(res.status, 400);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Initial prompt: `--prompt` fills the chat inbox via /api/config instead of
+// being injected as a chat message. Spins a real server via tsx.
+// ---------------------------------------------------------------------------
+describe('web sandbox: initial prompt', () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  let dir;
+  let child;
+  let base;
+
+  async function waitForServer(proc, timeoutMs = 45000) {
+    let out = '';
+    const portPromise = new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`server did not start within ${timeoutMs}ms. Output: ${out.slice(-2000)}`)),
+        timeoutMs,
+      );
+      proc.stdout.on('data', (d) => {
+        out += d.toString();
+        const m = out.match(/running at http:\/\/\S+:(\d+)/);
+        if (m) {
+          clearTimeout(timer);
+          resolve(Number(m[1]));
+        }
+      });
+      proc.stderr.on('data', (d) => {
+        out += d.toString();
+      });
+      proc.on('exit', (code) => reject(new Error(`server exited with code ${code}. Output: ${out.slice(-2000)}`)));
+    });
+    const port = await portPromise;
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/api/auth/status`);
+        if (res.ok) return `http://127.0.0.1:${port}`;
+      } catch {
+        /* still booting */
+      }
+      if (Date.now() > deadline) throw new Error('/api/auth/status did not respond');
+      await sleep(250);
+    }
+  }
+
+  before(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tell-web-prompt-'));
+    const env = { ...process.env, PORT: '0' };
+    delete env.TELL_TOKEN;
+    child = spawn(process.execPath, [TSX_CLI, 'src/server/server.ts', '--cwd', dir, '--prompt', 'go'], {
+      cwd: WEB_SRC,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    base = await waitForServer(child);
+  });
+
+  after(() => {
+    if (child && !child.killed) child.kill('SIGTERM');
+    if (dir) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  describe('initial prompt handoff (task_build)', () => {
+    it('/api/config exposes the prompt text', async () => {
+      const res = await fetch(`${base}/api/config`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.strictEqual(body.initialPrompt, 'go');
+    });
+
+    it('/api/session does not inject the prompt as a message', async () => {
+      const res = await fetch(`${base}/api/session`);
+      assert.strictEqual(res.status, 200);
+      const body = await res.json();
+      assert.deepStrictEqual(body.session.messages ?? [], []);
     });
   });
 });

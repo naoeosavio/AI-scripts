@@ -52,9 +52,10 @@ tell --web                       # open http://localhost:3000
 
 > `-w` / `--web` enables the auto-generated project context. You can run the sandbox
 > in another directory with `--cwd <path>` (created with a warning if it does not
-> exist) and pre-seed the first chat message by passing a prompt, e.g.
-> `tell -w --no-exec "ola"`. The legacy `--sandbox-web` / positional `tell web`
-> forms are removed.
+> exist) and fill the chat inbox by passing a prompt, e.g.
+> `tell -w --no-exec "ola"` (never auto-sent and never a chat message).
+> Unsent inbox text is kept in the persisted session, so a reload restores
+> what you typed; a fresh boot `--prompt` takes over the box.
 
 Open **http://localhost:3000**. You get a dashboard with three areas:
 

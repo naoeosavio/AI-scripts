@@ -26,7 +26,7 @@ tell-web --help
 | Flag | Default | Description |
 |---|---|---|
 | `--cwd <path>` | current cwd | Sandbox directory |
-| `--prompt <text>` | — | Initial chat prompt |
+| `--prompt <text>` | — | Fill the chat inbox (never auto-sent, never a message) |
 | `-m, --model <id>` | `TELL_MODEL` or `l` | Model shortcode or spec |
 | `--port <n>` | `PORT` or `3000` | TCP port |
 | `--host <addr>` | `127.0.0.1` | Bind address (`0.0.0.0` for LAN) |
@@ -73,7 +73,7 @@ token lives only in browser memory — retyped on every connection) + vendor key
 | GET | `/api/models` | Models/aliases + `keysStatus` per vendor |
 | GET | `/api/auth/status` | Public: `{authRequired}` only (drives the isolated login screen) |
 | POST | `/api/auth/verify` | Public + rate-limited (5/15min/IP): `{token}` → `200`/`401` generic/`429` + `Retry-After` |
-| GET | `/api/config` | `defaultModel`, `autoExecute`, `chain`, `yes`, `cwd` (requires auth when `TELL_TOKEN` is set) |
+| GET | `/api/config` | `defaultModel`, `autoExecute`, `chain`, `yes`, `cwd`, `initialPrompt` (requires auth when `TELL_TOKEN` is set) |
 | GET | `/api/context` | Generated system prompt (tree + README + conventions) |
 | POST | `/api/tell` | `{messages, modelAlias?, systemPrompt?}` (400 invalid payload, 429) |
 | GET/PUT | `/api/session` | Persisted state + server facts + live scrollbacks |

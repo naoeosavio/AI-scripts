@@ -27,6 +27,8 @@ export interface TellSession {
   systemPrompt: string;
   generatedContextHash: string;
   messages: Array<{ role: string; content: string; thought?: string | null }>;
+  /** Unsent chat inbox text + which server `--prompt` it came from (null = typed). */
+  draft: { text: string; fromPrompt: string | null };
   terminal: { tabs: TerminalTabState[]; activeTabId: string };
   keysUsed: string[];
   filesChanged: string[];
@@ -55,6 +57,7 @@ export function emptySession(cwd: string): TellSession {
     systemPrompt: '',
     generatedContextHash: '',
     messages: [],
+    draft: { text: '', fromPrompt: null },
     terminal: { tabs: [], activeTabId: '' },
     keysUsed: [],
     filesChanged: [],
@@ -90,6 +93,14 @@ function sanitizeSession(cwd: string, raw: unknown): TellSession {
           snapshots: Number(obj['stats']['snapshots']) || 0,
         }
       : base.stats;
+  const raw_draft = obj['draft'];
+  const draft =
+    raw_draft && typeof raw_draft === 'object' && !Array.isArray(raw_draft) && typeof raw_draft['text'] === 'string'
+      ? {
+          text: raw_draft['text'],
+          fromPrompt: typeof raw_draft['fromPrompt'] === 'string' ? raw_draft['fromPrompt'] : null,
+        }
+      : base.draft;
   return {
     ...base,
     ...obj,
@@ -101,6 +112,7 @@ function sanitizeSession(cwd: string, raw: unknown): TellSession {
     filesChanged: asArray<string>(obj['filesChanged']).filter((f) => typeof f === 'string'),
     terminal,
     stats,
+    draft,
   };
 }
 

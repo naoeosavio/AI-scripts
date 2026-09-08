@@ -214,6 +214,8 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chainDepthRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // Last server `--prompt` applied to the inbox (drives draft precedence).
+  const serverPromptRef = useRef<string | null>(null);
   // Latest "console takes the main area" value, readable from async closures
   const consoleActiveRef = useRef(false);
   const chatVisibleRefOuter = useRef(true);
@@ -224,12 +226,13 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
         model: modelAlias,
         systemPrompt,
         messages,
+        draft: { text: inputPrompt, fromPrompt: serverPromptRef.current },
         terminal: layoutRef.current
           ? { tabs: layoutRef.current.tabs, activeTabId: layoutRef.current.activeTabId }
           : { tabs: [], activeTabId: '' },
       },
     };
-  }, [modelAlias, systemPrompt, messages]);
+  }, [modelAlias, systemPrompt, messages, inputPrompt]);
 
   const persistSession = useCallback(() => {
     apiFetch('/api/session', {
@@ -303,6 +306,8 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
         if (data.defaultModel) setModelAlias(data.defaultModel);
         if (typeof data.autoExecute === 'boolean') setAutoExecute(data.autoExecute);
         if (typeof data.chain === 'boolean') setChainMode(data.chain);
+        // Server `--prompt`: fill the chat inbox (never auto-sent, never a message).
+        if (typeof data.initialPrompt === 'string' && data.initialPrompt) setInputPrompt(data.initialPrompt);
       } catch (error) {
         console.error('Error fetching server config:', error);
       }
@@ -321,6 +326,16 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
         }
       } catch (error) {
         console.error('Error fetching project context:', error);
+      }
+    };
+    // Server `--prompt` for the inbox (read separately so fetchConfig stays untouched).
+    const readServerPrompt = async (): Promise<string | null> => {
+      try {
+        const res = await apiFetch('/api/config');
+        const data = await res.json();
+        return typeof data.initialPrompt === 'string' && data.initialPrompt ? data.initialPrompt : null;
+      } catch {
+        return null;
       }
     };
     const fetchSession = async () => {
@@ -377,6 +392,28 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
           }
           if (Array.isArray(s.keysUsed))
             setSessionInfo({ keysUsed: s.keysUsed, filesChanged: s.filesChanged || [], stats: s.stats || {} });
+          // Inbox draft via the existing session pipeline (never auto-sent): a
+          // fresh server `--prompt` wins and becomes the new baseline,
+          // otherwise the saved draft (reload) is restored.
+          const rawDraft = (s as { draft?: unknown }).draft;
+          const savedDraft =
+            rawDraft && typeof rawDraft === 'object' && !Array.isArray(rawDraft)
+              ? {
+                  text: typeof (rawDraft as { text?: unknown }).text === 'string' ? (rawDraft as { text: string }).text : '',
+                  fromPrompt:
+                    typeof (rawDraft as { fromPrompt?: unknown }).fromPrompt === 'string'
+                      ? (rawDraft as { fromPrompt: string }).fromPrompt
+                      : null,
+                }
+              : null;
+          const serverPrompt = await readServerPrompt();
+          if (serverPrompt && savedDraft?.fromPrompt !== serverPrompt) {
+            serverPromptRef.current = serverPrompt;
+            setInputPrompt(serverPrompt);
+          } else if (savedDraft && savedDraft.text) {
+            serverPromptRef.current = savedDraft.fromPrompt;
+            setInputPrompt(savedDraft.text);
+          }
         }
       } catch (error) {
         console.error('Error fetching session:', error);

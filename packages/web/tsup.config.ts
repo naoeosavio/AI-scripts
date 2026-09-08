@@ -14,7 +14,11 @@ export default defineConfig({
   outDir: 'dist',
   // node-pty (native), ws and vite (rollup's native loader) cannot be bundled
   // into the ESM bundle — they are resolved from node_modules at runtime.
-  external: ['node-pty', 'ws', 'vite'],
+  // The AI stack (@tell-ai/sdk + ai + providers) must also stay external:
+  // bundling it pulls in @vercel/oidc (a transitive dep of `ai`), whose
+  // dynamic require() of node builtins crashes in pure ESM at startup
+  // (Error: Dynamic require of "path" is not supported).
+  external: ['node-pty', 'ws', 'vite', '@tell-ai/sdk', 'ai', /^@ai-sdk\//, '@vercel/oidc'],
   minify: true,
   banner: {
     js: '#!/usr/bin/env node',

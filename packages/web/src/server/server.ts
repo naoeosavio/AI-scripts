@@ -549,6 +549,7 @@ app.get('/api/config', (_req, res) => {
     chain: CHAIN,
     yes: YES,
     cwd: CWD,
+    initialPrompt: INITIAL_PROMPT || null,
   });
 });
 
@@ -623,9 +624,8 @@ app.post('/api/tell', async (req, res) => {
 // API: Get current session (persisted + live server facts + live scrollbacks)
 app.get('/api/session', (_req, res) => {
   const session = mergePaneScrollback(loadSession(CWD) || emptySession(CWD));
-  if (INITIAL_PROMPT && (!session.messages || session.messages.length === 0)) {
-    session.messages = [{ role: 'user', content: INITIAL_PROMPT }];
-  }
+  // NOTE: INITIAL_PROMPT is intentionally NOT injected into messages — the
+  // client fills the chat inbox with it instead (see /api/config).
   session.keysUsed = [...serverState.keysUsed];
   session.filesChanged = [...serverState.filesChanged];
   session.stats = { ...session.stats, commandsRun: serverState.commandsRun, aiTurns: serverState.aiTurns };

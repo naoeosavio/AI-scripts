@@ -295,6 +295,26 @@ test('session: garbage file loads as null, not crash', () => {
   assert.strictEqual(loadSession(dir), null);
 });
 
+test('session: inbox draft round-trips through save/load', () => {
+  const dir = tmpProject();
+  const session = emptySession(dir);
+  session.draft = { text: 'hello inb', fromPrompt: 'go' };
+  assert.strictEqual(saveSession(dir, session), true);
+  const loaded = loadSession(dir);
+  assert.deepStrictEqual(loaded && loaded.draft, { text: 'hello inb', fromPrompt: 'go' });
+});
+
+test('session: malformed draft coerces to the empty default', () => {
+  const dir = tmpProject();
+  fs.mkdirSync(sessionDir(dir), { recursive: true });
+  fs.writeFileSync(
+    sessionPath(dir),
+    JSON.stringify({ ...JSON.parse(JSON.stringify(emptySession(dir))), draft: { text: 42, fromPrompt: 7 } }),
+  );
+  const loaded = loadSession(dir);
+  assert.deepStrictEqual(loaded && loaded.draft, { text: '', fromPrompt: null });
+});
+
 test('session: oversized session is refused by saveSession', () => {
   const dir = tmpProject();
   const session = emptySession(dir);
@@ -372,6 +392,19 @@ test('context: oversized doc is partially read, not exploded', () => {
   assert.ok(ctx.readme);
   assert.ok(ctx.readme.includes('[truncated'));
   assert.ok(ctx.readme.length < 128 * 1024);
+});
+
+// ---------------------------------------------------------------------------
+// Build config: the AI stack must stay external to the server bundle
+// ---------------------------------------------------------------------------
+test('build: tsup keeps the AI stack external (no bundled @vercel/oidc)', () => {
+  // Regression: bundling `ai` pulled @vercel/oidc's dynamic require() of node
+  // builtins into dist/server.js, crashing at startup in pure ESM
+  // (Error: Dynamic require of "path" is not supported).
+  const tsup = fs.readFileSync(path.join(WEB_SRC, 'tsup.config.ts'), 'utf8');
+  for (const dep of ['@tell-ai/sdk', "'ai'", '@vercel/oidc', '@ai-sdk']) {
+    assert.ok(tsup.includes(dep), `tsup.config.ts should externalize ${dep}`);
+  }
 });
 
 if (failures > 0) {
