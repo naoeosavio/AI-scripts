@@ -19,7 +19,7 @@ npm run format         # biome check --write packages/  (auto-fix formatting)
 npm run check          # biome check packages/  (check only)
 npm test               # security + context + web suites
 npm run test:security  # build the SDK, then node test/test-tell-security.js
-npm run test:web       # node test/test-web-backend.js (web backend harness)
+npm run test:web       # node test/test-web-backend.js (backend harness) + node --test test/test-web-sandbox.js (sandbox suite)
 npm run ci             # build + lint + format check + test (runs in order)
 ```
 
@@ -118,6 +118,6 @@ API keys are resolved only in the CLI (`packages/cli/src/env.ts`): env vars (`OP
 
 - `docs/sdk/imports.md` — SDK build variants (Node ESM/CJS vs browser ESM vs IIFE global)
 - `docs/usage.md`, `docs/integrations.md` — CLI usage and integrations
-- `docs/web-sandbox.md`, `packages/web/README.md` — web sandbox guide (`tell --web`) and package reference (flags, `/api/*` routes, `.tell/` layout); backend harness `test/test-web-backend.js`, suite `bun run --filter @tell-ai/web test`
+- `docs/web-sandbox.md`, `packages/web/README.md` — web sandbox guide (`tell --web`) and package reference (flags, `/api/*` routes, `.tell/` layout); backend harness `test/test-web-backend.js`, sandbox suite `test/test-web-sandbox.js` (`bun run --filter @tell-ai/web test`)
 - `examples/web/` — browser demo: `proxy.ts` (API proxy + static serving) + `index.html` (uses the IIFE `TellSDK` build) + `demo.ts` (end-to-end walkthrough)
 - `packages/sdk/CHANGELOG_AI.md`, `packages/cli/CHANGELOG_AI.md` — Version history per package
