@@ -8,7 +8,7 @@ One-shot terminal assistant, powered by an AI that can execute bash commands. As
 |---|---|---|
 | [`tell-ai`](./packages/cli/README.md) | The `tell` terminal CLI — one prompt at a time, with optional command execution | GPL-3.0 |
 | [`@tell-ai/sdk`](./packages/sdk/README.md) | Browser-safe AI provider library: model resolution, multi-vendor dispatch, RUN/think tag handling, context summarization | MIT |
-| [`@tell-ai/web`](./packages/web/README.md) | Web sandbox server (`tell-web`): browser chat + file explorer + real PTY terminals, launched via `tell --web` | GPL-3.0-only |
+| [`@tell-ai/web`](./packages/web/README.md) | Web sandbox server (`tell-web`): browser chat + file explorer + real PTY terminals, launched via `tell --web` | GPL-3.0 |
 
 The CLI bundles the SDK and resolves API keys from your environment; the SDK works in Node, Bun, and the browser with all configuration injected. The web sandbox lives in `packages/web/` (tracked outside the bun workspaces) and is documented in [docs/web-sandbox.md](docs/web-sandbox.md).
 

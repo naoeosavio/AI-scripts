@@ -1,9 +1,9 @@
 {
   "name": "@tell-ai/web",
-  "version": "0.2",
+  "version": "0.2.1",
   "type": "module",
   "description": "Tell AI web interface — installs the tell CLI alongside it",
-  "license": "GPL-3.0-only",
+  "license": "GPL-3.0",
   "engines": {
     "node": ">=20"
   },
