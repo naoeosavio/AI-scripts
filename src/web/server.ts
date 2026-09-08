@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -17,6 +18,8 @@ import {
   isHighRiskScript,
   createRateLimiter,
   validateTellPayload,
+  isValidTokenInput,
+  authFailureMessage,
 } from './guards';
 import {
   emptySession,
@@ -58,10 +61,35 @@ const EXEC_MAX_CONCURRENCY = 2;
 const EXEC_OUTPUT_LIMIT = 200 * 1024;
 const executeRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });
 const tellRateLimit = createRateLimiter({ max: 10, windowMs: 60_000 });
+// Brute-force shield for the login page: 5 attempts per 15min per IP.
+const authRateLimit = createRateLimiter({ max: 5, windowMs: 15 * 60_000 });
 let activeExecutions = 0;
 
 function clientIp(req: { ip?: string; socket: { remoteAddress?: string } }): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+/**
+ * Constant-time token comparison (sha256 both sides first so different
+ * lengths don't leak via timingSafeEqual's length check or early exit).
+ */
+function tokensEqual(provided: string, expected: string): boolean {
+  const a = crypto.createHash('sha256').update(provided, 'utf8').digest();
+  const b = crypto.createHash('sha256').update(expected, 'utf8').digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Same-origin guard for auth endpoints (mirrors the WS Origin check). */
+function isCrossSite(req: express.Request): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== req.headers.host;
+  } catch {
+    return true;
+  }
 }
 
 app.use(express.json({ limit: '1mb' }));
@@ -79,12 +107,16 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Bearer token auth for the API surface (opt-in via TELL_TOKEN)
+// Bearer token auth for the API surface (opt-in via TELL_TOKEN).
+// Public (bootstrapping the isolated login page): /api/auth/status, /api/auth/verify.
+// Everything else under /api/* — including /api/config (cwd/model leak) — requires auth.
 app.use((req, res, next) => {
   if (!TELL_TOKEN) return next();
-  if (!req.path.startsWith('/api/') || req.path === '/api/config') return next();
+  if (!req.path.startsWith('/api/')) return next();
+  if (req.path === '/api/auth/status' || req.path === '/api/auth/verify') return next();
   const header = req.headers.authorization || '';
-  if (header === `Bearer ${TELL_TOKEN}`) return next();
+  const provided = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (provided && tokensEqual(provided, TELL_TOKEN)) return next();
   res.setHeader('WWW-Authenticate', 'Bearer realm="tell-web"');
   res.status(401).json({ error: 'Unauthorized: missing or invalid token' });
 });
@@ -423,7 +455,53 @@ function sanitizeReasoning(val: any, depth = 0): string | null {
   return truncateReasoning(String(val));
 }
 
+// API: Auth status (PUBLIC — only surface the login page needs before auth).
+// Returns nothing sensitive: just whether a token is required.
+app.get('/api/auth/status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.json({ authRequired: Boolean(TELL_TOKEN) });
+});
+
+// API: Verify the access token (PUBLIC + strictly rate-limited).
+// Body: { token: string }. Generic 401 on any failure (no oracle),
+// artificial delay on failure, Retry-After on 429. Never logs the token.
+app.post('/api/auth/verify', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  if (isCrossSite(req)) {
+    res.status(403).json({ error: 'Forbidden: cross-site request blocked' });
+    return;
+  }
+  const ip = clientIp(req);
+  if (!authRateLimit.check(ip)) {
+    res.setHeader('Retry-After', '900');
+    res.status(429).json({ error: 'Too many login attempts. Try again in 15 minutes.' });
+    return;
+  }
+  // No token configured → login is skipped entirely.
+  if (!TELL_TOKEN) {
+    res.json({ ok: true, authRequired: false });
+    return;
+  }
+  const token = (req.body as any)?.token;
+  if (!isValidTokenInput(token)) {
+    await delay(500);
+    console.warn(`[auth] failed login attempt from ${ip} at ${new Date().toISOString()} (malformed)`);
+    res.status(401).json({ error: authFailureMessage() });
+    return;
+  }
+  if (tokensEqual(token, TELL_TOKEN)) {
+    res.json({ ok: true, authRequired: true });
+    return;
+  }
+  await delay(500);
+  console.warn(`[auth] failed login attempt from ${ip} at ${new Date().toISOString()}`);
+  res.status(401).json({ error: authFailureMessage() });
+});
+
 // API: Server configuration (default model set via TELL_MODEL, e.g. `tell g web`)
+// Requires auth when TELL_TOKEN is set (cwd/model must not leak to anonymous clients).
 app.get('/api/config', (req, res) => {
   res.json({
     defaultModel: DEFAULT_MODEL,

@@ -100,6 +100,42 @@ export function clampTerminalSize(cols: number, rows: number): { cols: number; r
 }
 
 // ---------------------------------------------------------------------------
+// Auth guards (login page — pure, testable, no runtime deps)
+// ---------------------------------------------------------------------------
+
+/** Max raw token length accepted by POST /api/auth/verify (also enforced client-side). */
+export const AUTH_TOKEN_MAX_LENGTH = 256;
+
+/**
+ * True when the supplied value is a plausible token candidate.
+ * Deliberately strict: non-empty string, bounded length, no NUL/CR/LF
+ * (prevents log injection, header splitting and oversized-body abuse).
+ * Wrong-but-plausible tokens still get a generic 401 upstream (no oracle).
+ */
+export function isValidTokenInput(token: unknown): boolean {
+  if (typeof token !== 'string') return false;
+  if (token.length < 1 || token.length > AUTH_TOKEN_MAX_LENGTH) return false;
+  if (token.includes('\0') || token.includes('\n') || token.includes('\r')) return false;
+  if (token.trim().length === 0) return false;
+  return true;
+}
+
+/**
+ * Client-side backoff after consecutive failed logins (progressive throttle).
+ * 0-2 fails: no wait; 3-4 fails: 5s; 5+ fails: 30s. Server rate-limit is authoritative.
+ */
+export function loginBackoffMs(failCount: number): number {
+  if (failCount >= 5) return 30_000;
+  if (failCount >= 3) return 5_000;
+  return 0;
+}
+
+/** Generic auth failure message — never reveals whether the token was malformed or wrong. */
+export function authFailureMessage(): string {
+  return 'Invalid token';
+}
+
+// ---------------------------------------------------------------------------
 // /api/tell payload validation
 // ---------------------------------------------------------------------------
 

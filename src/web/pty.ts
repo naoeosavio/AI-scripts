@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import http from 'node:http';
 import { spawn, IPty } from 'node-pty';
 import type { WebSocket } from 'ws';
@@ -5,6 +6,13 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import { isValidPaneId, clampTerminalSize } from './guards';
+
+/** Constant-time WS token check (sha256 both sides so lengths don't leak). */
+function wsTokensEqual(provided: string, expected: string): boolean {
+  const a = crypto.createHash('sha256').update(provided, 'utf8').digest();
+  const b = crypto.createHash('sha256').update(expected, 'utf8').digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 export const MAX_SCROLLBACK_CHARS = 50 * 1024;
 export const GC_AFTER_MS = 5 * 60 * 1000;
@@ -181,10 +189,13 @@ export function attachTerminalServer(server: http.Server, opts: TerminalServerOp
       }
     }
 
-    // Bearer token parity with the REST API
-    if (opts.token && searchParams.get('token') !== opts.token) {
-      socket.destroy();
-      return;
+    // Bearer token parity with the REST API (constant-time; in-memory token only)
+    if (opts.token) {
+      const provided = searchParams.get('token') || '';
+      if (!provided || !wsTokensEqual(provided, opts.token)) {
+        socket.destroy();
+        return;
+      }
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {

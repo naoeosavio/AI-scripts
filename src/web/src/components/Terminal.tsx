@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal as Xterm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { wsAuthQuery } from '../api.ts';
+import { wsAuthQuery } from '../auth.ts';
 import {
   Terminal as TerminalIcon,
   Play,
