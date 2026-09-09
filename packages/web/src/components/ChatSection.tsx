@@ -102,6 +102,8 @@ const VENDOR_KEY_ALIASES: Record<string, string> = { google: 'google' };
 const NEAR_BOTTOM_PX = 80;
 // Hard cap for the prompt textarea
 const MAX_INPUT_CHARS = 8000;
+// Input grows line by line up to this many visual lines, then scrolls
+const MAX_INPUT_LINES = 9;
 
 export default function ChatSection({
   messages,
@@ -133,6 +135,7 @@ export default function ChatSection({
   const { config } = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const nearBottomRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -147,7 +150,7 @@ export default function ChatSection({
   const chatWrap = config.layout === 'custom' ? config.customChatWrap : 80;
   const isMaxWrap = chatWrap === 'max';
   const wrapStyle: React.CSSProperties = isMaxWrap
-    ? { maxWidth: 'none', width: '100%', marginLeft: 0, marginRight: 0 }
+    ? { maxWidth: 'none', width: '100%' }
     : { maxWidth: `${chatWrap}ch`, width: '100%' };
 
   const handleScroll = useCallback(() => {
@@ -169,6 +172,22 @@ export default function ChatSection({
       setShowJump(true);
     }
   }, []);
+
+  // Auto-resize the prompt input: grows up to MAX_INPUT_LINES visual lines,
+  // then scrolls inside the box (overflowY toggles at the cap).
+  // Runs on every render (refs only) so it re-fits after submit/clear too.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const cs = getComputedStyle(el);
+    const lineHeight = parseFloat(cs.lineHeight) || 19.5;
+    const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const maxHeight = lineHeight * MAX_INPUT_LINES + padY;
+    el.style.maxHeight = `${maxHeight}px`;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight + 1 ? 'auto' : 'hidden';
+  });
 
   const handleCopy = async (id: string, text: string) => {
     try {
@@ -445,7 +464,7 @@ export default function ChatSection({
                   <div className="w-8 h-8 bg-white/5 border border-(--color-border-medium) text-(--color-text-primary) rounded-none flex items-center justify-center shrink-0 select-none">
                     <Terminal className="w-4 h-4 text-(--color-accent)" />
                   </div>
-                  <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'flex-1 max-w-full' : 'max-w-[85%]'}`}>
+                  <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'max-w-full' : 'max-w-[85%]'}`}>
                     <div className="rounded-none text-xs leading-relaxed bg-(--color-bg-secondary) text-(--color-text-primary) border border-(--color-border-subtle) selection:bg-(--color-accent-subtle) overflow-hidden">
                       <button
                         type="button"
@@ -536,7 +555,7 @@ export default function ChatSection({
                 )}
 
                 {/* Message Bubble */}
-                <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'flex-1 max-w-full' : 'max-w-[85%]'}`}>
+                <div className={`space-y-2 min-w-0 ${isMaxWrap ? 'max-w-full' : 'max-w-[85%]'}`}>
                   {/* Thought/Reasoning Panel */}
                   {m.thought && (
                     <div className="bg-(--color-bg-secondary) border-l-2 border-(--color-accent) p-3.5 text-[11px] text-(--color-text-secondary) font-mono space-y-1">
@@ -805,27 +824,29 @@ export default function ChatSection({
         onSubmit={onSubmit}
         className="p-4 border-t border-(--color-border-subtle) bg-(--color-bg-primary) select-none shrink-0"
       >
-        <div
-          style={wrapStyle}
-          className="flex items-end gap-3 mx-auto bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1"
-        >
-          <textarea
-            value={inputPrompt}
-            onChange={(e) => onInputChange(e.target.value.slice(0, MAX_INPUT_CHARS))}
-            onKeyDown={handleKeyDown}
-            disabled={loading}
-            rows={1}
-            maxLength={MAX_INPUT_CHARS}
-            placeholder={
-              loading ? 'Executing… (Stop button cancels the chain)' : 'Ask the agent… (Shift+Enter = newline)'
-            }
-            className="flex-1 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-(--color-text-secondary) focus:outline-none leading-relaxed font-sans select-text resize-none max-h-32 overflow-y-auto custom-scrollbar"
-          />
+        <div style={wrapStyle} className="flex items-end gap-2 mx-auto">
+          {/* Char counter: outside the box (left), fixed size, aligned with the last text line */}
           {inputPrompt.length > 0 && (
-            <span className="text-[8px] font-mono text-(--color-text-muted) pb-2 shrink-0 select-none">
+            <span className="text-[8px] font-mono text-(--color-text-muted) pb-3 shrink-0 select-none">
               {inputPrompt.length}/{MAX_INPUT_CHARS}
             </span>
           )}
+          {/* Growing box: textarea only — counter and action button live outside so they never expand */}
+          <div className="flex-1 min-w-0 flex items-end bg-(--color-bg-secondary) border border-(--color-border-medium) px-3 py-1">
+            <textarea
+              ref={inputRef}
+              value={inputPrompt}
+              onChange={(e) => onInputChange(e.target.value.slice(0, MAX_INPUT_CHARS))}
+              onKeyDown={handleKeyDown}
+              disabled={loading}
+              rows={1}
+              maxLength={MAX_INPUT_CHARS}
+              placeholder={
+                loading ? 'Executing… (Stop button cancels the chain)' : 'Ask the agent… (Shift+Enter = newline)'
+              }
+              className="flex-1 min-w-0 bg-transparent border-none py-2 text-xs text-(--color-text-primary) placeholder-(--color-text-secondary) focus:outline-none leading-relaxed font-sans select-text resize-none overflow-hidden custom-scrollbar"
+            />
+          </div>
           {loading ? (
             <button
               type="button"

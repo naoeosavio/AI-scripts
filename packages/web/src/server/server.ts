@@ -701,9 +701,11 @@ app.post('/api/session/snapshot', async (req, res) => {
 
 // Setup Vite dev server middleware in development, and static file serving in production
 async function startServer() {
+  const server = http.createServer(app);
+
   if (process.env['NODE_ENV'] !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: { server } },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -715,7 +717,6 @@ async function startServer() {
     });
   }
 
-  const server = http.createServer(app);
   attachTerminalServer(server, { cwd: CWD, token: TELL_TOKEN || undefined });
 
   server.listen(PORT, HOST, () => {
