@@ -668,8 +668,11 @@ describe('web sandbox: session mtime', () => {
 // no real node-pty).
 // ---------------------------------------------------------------------------
 describe('web sandbox: pty scrollback and GC', () => {
-  const { pushScrollback, scheduleGcTimer, cancelGcTimer, MAX_SCROLLBACK_CHARS, GC_AFTER_MS } =
-    loadModule('src/server/pty.ts');
+  // Load policy first: pty.ts closes over this same instance, so
+  // configureScrollbackMax below drives pushScrollback's budget.
+  const { DEFAULT_MAX_SCROLLBACK_CHARS, configureScrollbackMax, getMaxScrollbackChars } =
+    loadModule('src/server/pty-policy.ts');
+  const { pushScrollback, scheduleGcTimer, cancelGcTimer, GC_AFTER_MS } = loadModule('src/server/pty.ts');
 
   function blankTimer() {
     return { timer: null, lastDisconnect: null };
@@ -677,13 +680,19 @@ describe('web sandbox: pty scrollback and GC', () => {
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  afterEach(() => {
+    configureScrollbackMax(undefined);
+  });
+
   describe('pty scrollback', () => {
-    it('truncates at 50KB keeping the tail', () => {
-      assert.strictEqual(MAX_SCROLLBACK_CHARS, 50 * 1024);
+    it('truncates at the configured budget keeping the tail', () => {
+      assert.strictEqual(DEFAULT_MAX_SCROLLBACK_CHARS, 256 * 1024);
+      configureScrollbackMax(50 * 1024);
+      assert.strictEqual(getMaxScrollbackChars(), 50 * 1024);
       const buf = { scrollback: [], scrollbackChars: 0 };
       pushScrollback(buf, 'a'.repeat(40 * 1024));
       pushScrollback(buf, 'b'.repeat(40 * 1024));
-      assert.ok(buf.scrollbackChars <= MAX_SCROLLBACK_CHARS);
+      assert.ok(buf.scrollbackChars <= getMaxScrollbackChars());
       assert.ok(buf.scrollback.join('').endsWith('b'.repeat(10)));
       assert.ok(!buf.scrollback.join('').startsWith('a'));
     });
@@ -756,6 +765,237 @@ describe('web sandbox: pty scrollback and GC', () => {
       assert.strictEqual(state.timer, null);
       await sleep(40);
       assert.strictEqual(fired, 0);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pty-policy: GC keep/kill decision + scrollback budget (task-pty-policy).
+// Pure module (only node:fs) — mocked procfs plus one live /proc check.
+// ---------------------------------------------------------------------------
+describe('web sandbox: pty-policy', () => {
+  const policy = loadModule('src/server/pty-policy.ts');
+
+  function mockProcFs(files) {
+    return {
+      readText: (p) => {
+        if (!Object.hasOwn(files, p)) throw new Error(`ENOENT: ${p}`);
+        return files[p];
+      },
+    };
+  }
+
+  describe('isActiveChildState', () => {
+    it('keeps running states R/S/D', () => {
+      assert.strictEqual(policy.isActiveChildState('R'), true);
+      assert.strictEqual(policy.isActiveChildState('S'), true);
+      assert.strictEqual(policy.isActiveChildState('D'), true);
+    });
+
+    it('keeps suspended states T/t (Ctrl-Z jobs)', () => {
+      assert.strictEqual(policy.isActiveChildState('T'), true);
+      assert.strictEqual(policy.isActiveChildState('t'), true);
+    });
+
+    it('drops zombie/dead/idle states Z/X/x/I', () => {
+      assert.strictEqual(policy.isActiveChildState('Z'), false);
+      assert.strictEqual(policy.isActiveChildState('X'), false);
+      assert.strictEqual(policy.isActiveChildState('x'), false);
+      assert.strictEqual(policy.isActiveChildState('I'), false);
+    });
+  });
+
+  describe('childStateOfLine', () => {
+    it('parses the state after comm', () => {
+      assert.strictEqual(policy.childStateOfLine('1234 (bash) S 1 1234 1234 0 -1 4194304'), 'S');
+    });
+
+    it('handles comm with parens and spaces', () => {
+      assert.strictEqual(policy.childStateOfLine('42 (my (weird) proc) R 1 42 42 0 -1 4194304'), 'R');
+    });
+
+    it('returns null when unparseable', () => {
+      assert.strictEqual(policy.childStateOfLine('garbage without parens'), null);
+      assert.strictEqual(policy.childStateOfLine(''), null);
+    });
+  });
+
+  describe('shouldKeepSession', () => {
+    it('keeps when any state is active', () => {
+      assert.strictEqual(policy.shouldKeepSession(['Z', 'S']), true);
+      assert.strictEqual(policy.shouldKeepSession([]), false);
+      assert.strictEqual(policy.shouldKeepSession(['Z', 'X']), false);
+    });
+  });
+
+  describe('readChildStates/hasActiveChild (mocked procfs)', () => {
+    it('collects child states', () => {
+      const procFs = mockProcFs({
+        '/proc/100/task/100/children': '101 102',
+        '/proc/101/stat': '101 (htop) R 100 101 101 0 -1 4194304',
+        '/proc/102/stat': '102 (sleep) S 100 102 102 0 -1 4194304',
+      });
+      assert.deepStrictEqual(policy.readChildStates(100, procFs), ['R', 'S']);
+      assert.strictEqual(policy.hasActiveChild(100, procFs), true);
+    });
+
+    it('zombie-only children read idle', () => {
+      const procFs = mockProcFs({
+        '/proc/100/task/100/children': '101',
+        '/proc/101/stat': '101 (ls) Z 100 101 101 0 -1 0',
+      });
+      assert.strictEqual(policy.hasActiveChild(100, procFs), false);
+    });
+
+    it('ignores children reaped between listing and stat read', () => {
+      const procFs = mockProcFs({
+        '/proc/100/task/100/children': '101 102',
+        '/proc/102/stat': '102 (vim) S 100 102 102 0 -1 4194304',
+      });
+      assert.deepStrictEqual(policy.readChildStates(100, procFs), ['S']);
+    });
+
+    it('empty children file reads idle (transient ls/pwd already gone)', () => {
+      const procFs = mockProcFs({ '/proc/100/task/100/children': '' });
+      assert.deepStrictEqual(policy.readChildStates(100, procFs), []);
+      assert.strictEqual(policy.hasActiveChild(100, procFs), false);
+    });
+
+    it('missing /proc degrades to idle (mac/Windows)', () => {
+      assert.deepStrictEqual(policy.readChildStates(100, mockProcFs({})), []);
+      assert.strictEqual(policy.hasActiveChild(100, mockProcFs({})), false);
+    });
+
+    it('skips malformed pid tokens', () => {
+      const procFs = mockProcFs({
+        '/proc/100/task/100/children': 'abc -3 0 102',
+        '/proc/102/stat': '102 (sleep) S 100 102 102 0 -1 4194304',
+      });
+      assert.deepStrictEqual(policy.readChildStates(100, procFs), ['S']);
+    });
+
+    it('sees a live spawned child (linux only)', async () => {
+      if (process.platform !== 'linux') return;
+      const { once } = require('node:events');
+      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)']);
+      try {
+        const deadline = Date.now() + 2000;
+        let seen = false;
+        while (Date.now() < deadline) {
+          if (policy.hasActiveChild(process.pid)) {
+            seen = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        assert.strictEqual(seen, true);
+      } finally {
+        child.kill();
+        await once(child, 'exit');
+      }
+    });
+  });
+
+  describe('shellBasename/isBusyForeground/safeForeground', () => {
+    it('basenames paths, strips login dash, tolerates backslashes', () => {
+      assert.strictEqual(policy.shellBasename('/usr/bin/htop'), 'htop');
+      assert.strictEqual(policy.shellBasename('/bin/bash'), 'bash');
+      assert.strictEqual(policy.shellBasename('-bash'), 'bash');
+      assert.strictEqual(policy.shellBasename('bash'), 'bash');
+      assert.strictEqual(
+        policy.shellBasename('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'),
+        'powershell.exe',
+      );
+    });
+
+    it('flags a foreign foreground process as busy', () => {
+      assert.strictEqual(policy.isBusyForeground('/usr/bin/htop', '/bin/bash'), true);
+      assert.strictEqual(policy.isBusyForeground('opencode', '/bin/bash'), true);
+    });
+
+    it('reads the shell itself as idle', () => {
+      assert.strictEqual(policy.isBusyForeground('/bin/bash', '/bin/bash'), false);
+      assert.strictEqual(policy.isBusyForeground('bash', '/bin/bash'), false);
+      assert.strictEqual(policy.isBusyForeground('-bash', '/bin/bash'), false);
+    });
+
+    it('unknown or empty foreground defers to the child-probe', () => {
+      assert.strictEqual(policy.isBusyForeground(undefined, '/bin/bash'), false);
+      assert.strictEqual(policy.isBusyForeground('', '/bin/bash'), false);
+      assert.strictEqual(policy.isBusyForeground('HTOP', '/bin/bash'), true);
+    });
+
+    it('safeForeground never throws', () => {
+      assert.strictEqual(policy.safeForeground({ process: 'htop' }), 'htop');
+      assert.strictEqual(policy.safeForeground({}), undefined);
+      assert.strictEqual(policy.safeForeground({ process: 42 }), undefined);
+      const dying = {};
+      Object.defineProperty(dying, 'process', {
+        get() {
+          throw new Error('fd closed');
+        },
+      });
+      assert.strictEqual(policy.safeForeground(dying), undefined);
+    });
+  });
+
+  describe('shouldKeepPane', () => {
+    it('keeps on busy foreground even without a pid', () => {
+      assert.strictEqual(policy.shouldKeepPane({ foreground: 'htop', shellFile: '/bin/bash', pid: undefined }), true);
+    });
+
+    it('keeps on active child with an idle prompt', () => {
+      const procFs = mockProcFs({
+        '/proc/100/task/100/children': '101',
+        '/proc/101/stat': '101 (sleep) S 100 101 101 0 -1 4194304',
+      });
+      assert.strictEqual(
+        policy.shouldKeepPane({ foreground: '/bin/bash', shellFile: '/bin/bash', pid: 100 }, procFs),
+        true,
+      );
+    });
+
+    it('kills idle shell: prompt plus no living children', () => {
+      const procFs = mockProcFs({ '/proc/100/task/100/children': '' });
+      assert.strictEqual(
+        policy.shouldKeepPane({ foreground: '/bin/bash', shellFile: '/bin/bash', pid: 100 }, procFs),
+        false,
+      );
+      assert.strictEqual(
+        policy.shouldKeepPane({ foreground: undefined, shellFile: '/bin/bash', pid: undefined }),
+        false,
+      );
+    });
+  });
+
+  describe('scrollback budget', () => {
+    afterEach(() => {
+      policy.configureScrollbackMax(undefined);
+    });
+
+    it('defaults to 256KB', () => {
+      assert.strictEqual(policy.DEFAULT_MAX_SCROLLBACK_CHARS, 256 * 1024);
+      assert.strictEqual(policy.getMaxScrollbackChars(), 256 * 1024);
+    });
+
+    it('accepts explicit overrides', () => {
+      policy.configureScrollbackMax(1024);
+      assert.strictEqual(policy.getMaxScrollbackChars(), 1024);
+    });
+
+    it('resets to default on invalid values', () => {
+      policy.configureScrollbackMax(1024);
+      policy.configureScrollbackMax(NaN);
+      assert.strictEqual(policy.getMaxScrollbackChars(), 256 * 1024);
+      policy.configureScrollbackMax(0);
+      assert.strictEqual(policy.getMaxScrollbackChars(), 256 * 1024);
+      policy.configureScrollbackMax(-5);
+      assert.strictEqual(policy.getMaxScrollbackChars(), 256 * 1024);
+    });
+
+    it('clamps huge overrides to the 16MB ceiling', () => {
+      policy.configureScrollbackMax(1024 * 1024 * 1024);
+      assert.strictEqual(policy.getMaxScrollbackChars(), 16 * 1024 * 1024);
     });
   });
 });

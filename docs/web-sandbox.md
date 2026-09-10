@@ -187,6 +187,8 @@ Environment=PORT=3000
 Environment=TELL_MODEL=g
 # Generate once with `openssl rand -hex 32`; clients paste it in the browser prompt.
 Environment=TELL_TOKEN=replace-with-generated-token
+# Optional: per-pane terminal scrollback budget in chars (default 262144 = 256KB).
+Environment=TELL_SCROLLBACK_MAX=262144
 ExecStart=/usr/bin/tell --web
 Restart=always
 
@@ -238,8 +240,11 @@ spinners, and prompts correctly.
 **Example 3 — Keep long tasks alive with tmux.**
 
 Start a build or a test server, detach, and come back later — the PTY session stays
-alive even after you close the browser (it is garbage-collected after ~5 minutes
-without a connection, and your scrollback is saved):
+alive even after you close the browser. An idle shell is garbage-collected after
+~5 minutes without a connection, but panes running a program (`htop`, `opencode`,
+`vim`, background jobs) are kept while the process is detected (Linux procfs);
+explicitly closing the pane/tab still kills it immediately. Your scrollback is
+saved (budget per pane: `TELL_SCROLLBACK_MAX`, default 256KB):
 
 ```bash
 tmux new -s build

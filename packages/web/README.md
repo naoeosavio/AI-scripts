@@ -63,6 +63,13 @@ token lives only in browser memory — retyped on every connection) + vendor key
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`,
 `FIREWORKS_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`, …).
 
+`TELL_SCROLLBACK_MAX` (bytes/chars per terminal pane, default `262144` = 256KB)
+caps the PTY scrollback buffer. Panes running a program (`htop`, `opencode`,
+`vim`, background jobs) survive the 5min idle GC — it re-arms while a child
+process or a foreign foreground process is detected (Linux procfs); explicit
+pane/tab close still kills immediately. Daemonized (double-forked) processes
+are not detected.
+
 ## Endpoints `/api/*`
 
 | Method | Route | Notes |

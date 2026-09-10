@@ -21,6 +21,7 @@ import {
 } from './guards';
 import { resolveWithin } from './paths';
 import { attachTerminalServer, getScrollback } from './pty';
+import { configureScrollbackMax } from './pty-policy';
 import {
   createSnapshot,
   emptySession,
@@ -56,6 +57,7 @@ const PORT = cliArgs.port ?? Number(process.env['PORT'] || 3000);
 const HOST = cliArgs.host || '127.0.0.1';
 const EXEC_TIMEOUT_MS = cliArgs.execTimeout ?? 120_000;
 const TELL_TOKEN = process.env['TELL_TOKEN'] || '';
+configureScrollbackMax(Number(process.env['TELL_SCROLLBACK_MAX']) || undefined);
 
 // API keys / base URLs are injected into the SDK (it never reads process.env).
 function load_sdk_config_from_env(): SDKConfig {

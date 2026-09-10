@@ -6,6 +6,7 @@ import { type IPty, spawn } from 'node-pty';
 import type { WebSocket } from 'ws';
 import { WebSocketServer } from 'ws';
 import { clampTerminalSize, isValidPaneId } from './guards';
+import { getMaxScrollbackChars, safeForeground, shouldKeepPane } from './pty-policy';
 
 /** Constant-time WS token check (sha256 both sides so lengths don't leak). */
 function wsTokensEqual(provided: string, expected: string): boolean {
@@ -14,7 +15,6 @@ function wsTokensEqual(provided: string, expected: string): boolean {
   return crypto.timingSafeEqual(a, b);
 }
 
-export const MAX_SCROLLBACK_CHARS = 50 * 1024;
 export const GC_AFTER_MS = 5 * 60 * 1000;
 export const MAX_SESSIONS = 12;
 
@@ -28,6 +28,8 @@ export interface TerminalServerOptions {
 interface PaneSession {
   paneId: string;
   pty: IPty;
+  /** Binary the PTY spawned (compared against the foreground process). */
+  shell: string;
   clients: Set<WebSocket>;
   scrollback: string[];
   scrollbackChars: number;
@@ -46,7 +48,8 @@ export interface ScrollbackBuffer {
 export function pushScrollback(session: ScrollbackBuffer, data: string): void {
   session.scrollback.push(data);
   session.scrollbackChars += data.length;
-  while (session.scrollbackChars > MAX_SCROLLBACK_CHARS && session.scrollback.length > 0) {
+  const maxChars = getMaxScrollbackChars();
+  while (session.scrollbackChars > maxChars && session.scrollback.length > 0) {
     const dropped = session.scrollback.shift();
     if (dropped) session.scrollbackChars -= dropped.length;
   }
@@ -91,6 +94,11 @@ function scheduleGc(paneId: string, session: PaneSession, delayMs: number = GC_A
     () => {
       const s = sessions.get(paneId);
       if (s && s.clients.size === 0) {
+        // Busy pane (foreground program or living child): re-arm instead of killing.
+        if (shouldKeepPane({ foreground: safeForeground(s.pty), shellFile: s.shell, pid: s.pty.pid })) {
+          scheduleGc(paneId, s, delayMs);
+          return;
+        }
         try {
           s.pty.kill();
         } catch {
@@ -112,7 +120,8 @@ function ensureSession(paneId: string, opts: TerminalServerOptions): PaneSession
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
   };
-  const pty = spawn(opts.shell || '/bin/bash', [], {
+  const shell = opts.shell || '/bin/bash';
+  const pty = spawn(shell, [], {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -123,6 +132,7 @@ function ensureSession(paneId: string, opts: TerminalServerOptions): PaneSession
   session = {
     paneId,
     pty,
+    shell,
     clients: new Set(),
     scrollback: [],
     scrollbackChars: 0,
