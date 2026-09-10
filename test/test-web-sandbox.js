@@ -463,6 +463,73 @@ describe('web sandbox: terminal layout', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Execution toggles: Auto-Run / Require Approval / No-Exec persist through
+// page reloads (localStorage), and garbage/shape errors fall back to null so
+// the server /api/config default seeds on the first visit only.
+// ---------------------------------------------------------------------------
+describe('web sandbox: exec toggles', () => {
+  const { EXEC_TOGGLES_KEY, loadExecToggles, saveExecToggles } = loadModule('src/shared/exec-toggles.ts');
+
+  const previousLocalStorage = globalThis.localStorage;
+  let store;
+
+  function makeStorage() {
+    store = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+      clear: () => store.clear(),
+      key: (i) => [...store.keys()][i] ?? null,
+      get length() {
+        return store.size;
+      },
+    };
+  }
+
+  beforeEach(makeStorage);
+  afterEach(() => {
+    if (previousLocalStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousLocalStorage;
+  });
+
+  it('has no saved state before anything writes (server default seeds)', () => {
+    assert.strictEqual(loadExecToggles(), null);
+  });
+
+  it('round-trips the four toggles', () => {
+    saveExecToggles({ autoExecute: true, requireApproval: true, noExec: false, chainMode: false });
+    assert.deepStrictEqual(loadExecToggles(), {
+      autoExecute: true,
+      requireApproval: true,
+      noExec: false,
+      chainMode: false,
+    });
+  });
+
+  it('stores under the v1 key', () => {
+    saveExecToggles({ noExec: true });
+    assert.ok(store.has(EXEC_TOGGLES_KEY));
+    assert.deepStrictEqual(JSON.parse(store.get(EXEC_TOGGLES_KEY)), { noExec: true });
+  });
+
+  it('ignores non-boolean fields and partial saves', () => {
+    store.set(EXEC_TOGGLES_KEY, JSON.stringify({ autoExecute: 'yes', requireApproval: 1, chain: true }));
+    // No valid boolean key survived -> same as "no saved state".
+    assert.strictEqual(loadExecToggles(), null);
+    store.set(EXEC_TOGGLES_KEY, JSON.stringify({ autoExecute: true, chainMode: false, junk: ['x'] }));
+    assert.deepStrictEqual(loadExecToggles(), { autoExecute: true, chainMode: false });
+  });
+
+  it('treats garbage/corrupted storage as no saved state', () => {
+    store.set(EXEC_TOGGLES_KEY, 'not-json{{{');
+    assert.strictEqual(loadExecToggles(), null);
+    store.set(EXEC_TOGGLES_KEY, JSON.stringify({ tabs: [] }));
+    assert.strictEqual(loadExecToggles(), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Terminal session permanence: renames, new tabs and the active tab must
 // survive save/load (the Agent<->Terminal reset class of bug), and
 // snapshots must carry the same layout.

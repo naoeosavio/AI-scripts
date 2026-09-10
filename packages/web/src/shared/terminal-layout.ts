@@ -47,7 +47,7 @@ export function nextTabNumber(seq: number, tabs: TerminalTabLike[]): { seq: numb
   return { seq: next, num: next };
 }
 
-function isVirginDefaultTab(tabs: TerminalTabLike[]): boolean {
+export function isVirginDefaultTab(tabs: TerminalTabLike[]): boolean {
   return (
     tabs.length === 1 && tabs[0]?.id === 'tab-1' && tabs[0]?.panes.length === 1 && tabs[0]?.panes[0]?.id === 'pane-1'
   );

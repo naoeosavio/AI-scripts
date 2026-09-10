@@ -25,7 +25,13 @@ import FileViewer from './components/FileViewer.tsx';
 import SettingsPanel from './components/SettingsPanel.tsx';
 import Terminal, { type TerminalLayout, type TerminalLine, type TerminalTabMeta } from './components/Terminal.tsx';
 import { useToast } from './components/Toast.tsx';
-import { clampTerminalWidthCh, mergeRestoredTerminalLayout, resolveSafeActiveTabId } from './shared/terminal-layout.ts';
+import { loadExecToggles, saveExecToggles } from './shared/exec-toggles.ts';
+import {
+  clampTerminalWidthCh,
+  isVirginDefaultTab,
+  mergeRestoredTerminalLayout,
+  resolveSafeActiveTabId,
+} from './shared/terminal-layout.ts';
 import { type TerminalPlacement, useTheme } from './theme.tsx';
 
 // Fallback until /api/context loads: the server replaces this with the
@@ -122,12 +128,17 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
     openrouter: false,
   });
 
-  const [chainMode, setChainMode] = useState<boolean>(true);
-  const [autoExecute, setAutoExecute] = useState<boolean>(false);
+  // Execution toggles persist in localStorage (survive reloads); the server
+  // /api/config values only seed the very first visit (no saved choice yet).
+  const savedExecTogglesRef = useRef<ReturnType<typeof loadExecToggles>>(loadExecToggles());
+  const [chainMode, setChainMode] = useState<boolean>(savedExecTogglesRef.current?.chainMode ?? true);
+  const [autoExecute, setAutoExecute] = useState<boolean>(savedExecTogglesRef.current?.autoExecute ?? false);
   // Require Approval forces the manual confirm card for every command, even
   // with Auto-Run on. No-Exec never runs anything (shows what would run).
-  const [requireApproval, setRequireApproval] = useState<boolean>(false);
-  const [noExec, setNoExec] = useState<boolean>(false);
+  const [requireApproval, setRequireApproval] = useState<boolean>(
+    savedExecTogglesRef.current?.requireApproval ?? false,
+  );
+  const [noExec, setNoExec] = useState<boolean>(savedExecTogglesRef.current?.noExec ?? false);
   // Effective auto-run: No-Exec kills it; Require Approval keeps it for safe
   // commands only (risky ones are routed to the confirm card per command).
   const canAutoRun = autoExecute && !noExec;
@@ -192,19 +203,24 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
     if (!restoredLayout || !restoredLayout.tabs.length || adoptedRestoredRef.current) return;
     adoptedRestoredRef.current = true;
     setTerminalTabs((prev) => {
-      const isVirgin =
-        prev.length === 1 &&
-        prev[0]?.id === 'tab-1' &&
-        prev[0]?.panes.length === 1 &&
-        prev[0]?.panes[0]?.id === 'pane-1';
-      if (isVirgin) {
+      if (isVirginDefaultTab(prev)) {
         setActiveTerminalTabId(restoredLayout.activeTabId || restoredLayout.tabs[0]?.id || 'tab-1');
         layoutRef.current = restoredLayout;
         return restoredLayout.tabs;
       }
-      return mergeRestoredTerminalLayout(prev, restoredLayout);
+      const merged = mergeRestoredTerminalLayout(prev, restoredLayout);
+      layoutRef.current = { tabs: merged, activeTabId: restoredLayout.activeTabId };
+      return merged;
     });
   }, [restoredLayout]);
+
+  // Keep layoutRef aligned with the live tabs on mount (before the first
+  // onLayoutChange fires) so the debounced save never emits an empty layout.
+  useEffect(() => {
+    if (!layoutRef.current && !isVirginDefaultTab(terminalTabs)) {
+      layoutRef.current = { tabs: terminalTabs, activeTabId: activeTerminalTabId };
+    }
+  }, [terminalTabs, activeTerminalTabId]);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [snapshotBusy, setSnapshotBusy] = useState<boolean>(false);
@@ -221,18 +237,25 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
   const chatVisibleRefOuter = useRef(true);
 
   const collectSessionPayload = useCallback(() => {
+    // Terminal layout from the live state (never emit empty while tabs exist):
+    // layoutRef may be null on a fresh mount before the first onLayoutChange.
+    const liveLayout = { tabs: terminalTabs, activeTabId: activeTerminalTabId };
+    const resolvedTerminal =
+      layoutRef.current && layoutRef.current.tabs.length > 0
+        ? layoutRef.current
+        : isVirginDefaultTab(terminalTabs)
+          ? { tabs: [], activeTabId: '' }
+          : liveLayout;
     return {
       session: {
         model: modelAlias,
         systemPrompt,
         messages,
         draft: { text: inputPrompt, fromPrompt: serverPromptRef.current },
-        terminal: layoutRef.current
-          ? { tabs: layoutRef.current.tabs, activeTabId: layoutRef.current.activeTabId }
-          : { tabs: [], activeTabId: '' },
+        terminal: resolvedTerminal,
       },
     };
-  }, [modelAlias, systemPrompt, messages, inputPrompt]);
+  }, [modelAlias, systemPrompt, messages, inputPrompt, terminalTabs, activeTerminalTabId]);
 
   const persistSession = useCallback(() => {
     apiFetch('/api/session', {
@@ -242,7 +265,9 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
     }).catch(() => {});
   }, [collectSessionPayload]);
 
-  // Debounced autosave whenever the client-owned state changes
+  // Debounced autosave whenever the client-owned state changes. Terminal layout
+  // changes retrigger through collectSessionPayload -> persistSession (tabs are
+  // part of the payload deps), so no extra signal is needed here.
   useEffect(() => {
     if (!sessionReady) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -251,6 +276,11 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [persistSession, sessionReady]);
+
+  // Execution toggles persist to localStorage so a reload keeps the user's last choice.
+  useEffect(() => {
+    saveExecToggles({ autoExecute, requireApproval, noExec, chainMode });
+  }, [autoExecute, requireApproval, noExec, chainMode]);
 
   // Best-effort final save on page unload. Trim the payload until it fits the
   // keepalive body budget (drop old messages first, then all of them); skip if still oversized.
@@ -304,8 +334,11 @@ export default function App({ onLogout }: { onLogout?: (() => void) | undefined 
         const res = await apiFetch('/api/config');
         const data = await res.json();
         if (data.defaultModel) setModelAlias(data.defaultModel);
-        if (typeof data.autoExecute === 'boolean') setAutoExecute(data.autoExecute);
-        if (typeof data.chain === 'boolean') setChainMode(data.chain);
+        // Server config only seeds toggles on the first visit; saved choices win on reload.
+        if (typeof data.autoExecute === 'boolean' && savedExecTogglesRef.current?.autoExecute === undefined)
+          setAutoExecute(data.autoExecute);
+        if (typeof data.chain === 'boolean' && savedExecTogglesRef.current?.chainMode === undefined)
+          setChainMode(data.chain);
         // Server `--prompt`: fill the chat inbox (never auto-sent, never a message).
         if (typeof data.initialPrompt === 'string' && data.initialPrompt) setInputPrompt(data.initialPrompt);
       } catch (error) {

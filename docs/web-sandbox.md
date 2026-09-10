@@ -276,6 +276,8 @@ runs through the sandbox bridge with output fed back to the model.
 
 The chat header controls how AI-requested commands run:
 
+- **Chain Mode** (seeded by `--chain`) — iterate through `<RUN>` steps until
+  the final answer, feeding each command's output back to the model.
 - **Auto-Run** (seeded by `-y`/`--yes`) — scripts execute immediately.
 - **Require Approval** — risky commands show a confirmation card first; safe ones
   follow Auto-Run (run directly when on, confirmation card when off). Combine
@@ -284,8 +286,10 @@ The chat header controls how AI-requested commands run:
 - **No-Exec** (seeded by `--no-exec`) — nothing executes; confirming a command
   just records what would have run and the chain continues with that feedback.
 
-Precedence: `No-Exec` > per-command risk gate. These are per-session
-UI toggles; high-risk commands (`sudo`, `rm -rf`, `curl|sh`, …) are always
+Precedence: `No-Exec` > per-command risk gate. These are client-side toggles
+whose last choice is remembered in `localStorage` (survives page reloads;
+`localStorage` → first-visit only, server flags like `-y`/`--no-exec` seed the
+default); high-risk commands (`sudo`, `rm -rf`, `curl|sh`, …) are always
 blocked server-side — see [Security notes](#security-notes).
 
 ---

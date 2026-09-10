@@ -38,10 +38,13 @@ tell-web --help
 
 ## Execution modes (chat toggles)
 
-The chat header has three execution toggles (client-side, per browser session):
+The chat header has execution toggles (client-side). Their last choice
+persists in `localStorage` across page reloads; server flags (`--chain`, `-y`,
+`--no-exec`) seed the default on the first visit only:
 
 | Toggle | Effect |
 |---|---|
+| `Chain Mode (–chain)` | Continue iterating through `<RUN>` steps until the final answer |
 | `Auto-Run (-y)` | AI-requested `<RUN>` scripts execute immediately, no confirmation card |
 | `Require Approval` | Risky commands show the confirmation card; safe ones follow Auto-Run (run directly when on, confirm card when off) |
 | `No-Exec` | Nothing is ever executed — the confirm card records what would have run |
